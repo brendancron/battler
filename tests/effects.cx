@@ -2,12 +2,12 @@ import { Character, EventKind, Action } from "battler/core/creature";
 import { Battle } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import {
-    attack_up, attack_down, defense_down, poison, regen, timed, taunt, bloodlust, bloodlust_multiplier,
+    attack_up, attack_down, defense_down, poison, regen, timed, taunt, rage, rage_multiplier,
     last_rites, keen_eye, vigil, hex, greater_health_potion, panacea, panacea_supply, energize, inner_peace, soul_harvest, shield,
     predator, predator_multiplier, barrier, retaliate
 } from "battler/content/effects";
 import { pow } from "battler/core/maths";
-import { bloodlust_a, bloodlust_b, last_rites_percent, vigil_heal, inner_peace_heal, potion_line_percent, shield_decay, predator_bonus_percent, predator_line_percent } from "battler/content/tuning";
+import { rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, shield_decay, predator_bonus_percent, predator_line_percent } from "battler/content/tuning";
 import { duel, who, slot, transcript, logged, has_effect } from "support";
 
 fn add(b: Battle, c: Character, fx: List<Action>) { perform(engine(), b, "test", fx); }
@@ -113,10 +113,10 @@ fn timed_effects_wear_off_after_their_rounds() {
 fn cleanse_removes_debuffs_only() {
     var b = duel(["A"], ["B"]);
     var a = who(b, slot(0, 0));
-    a.effects.push(bloodlust());
+    a.effects.push(rage());
     add(b, a, [Action.AddEffect(a, poison(5)), Action.AddEffect(a, attack_up()), Action.AddEffect(a, hex()), Action.Cleanse(a)]);
     assert(!has_effect(a, "Poison") && !has_effect(a, "Hex"), "debuffs gone");
-    assert(has_effect(a, "Attack up") && has_effect(a, "Bloodlust"), "buffs and passives stay");
+    assert(has_effect(a, "Attack up") && has_effect(a, "Rage"), "buffs and passives stay");
 }
 
 // Targeting
@@ -153,30 +153,30 @@ fn keen_eye_ignores_taunts() {
 // Passives
 
 @test
-fn bloodlust_follows_the_formula() {
+fn rage_follows_the_formula() {
     var b = duel(["Barbarian"], ["B"]);
     var barb = who(b, slot(0, 0));
-    barb.effects.push(bloodlust());
-    assert(near(bloodlust_multiplier(barb), 1.0), "full hp");
+    barb.effects.push(rage());
+    assert(near(rage_multiplier(barb), rage_c()), "full hp");
     barb.hp = 50;
-    var half = 1.0 + bloodlust_a() * pow(0.5, bloodlust_b());
-    assert(near(bloodlust_multiplier(barb), half), "half");
+    var half = rage_c() + rage_a() * pow(0.5, rage_b());
+    assert(near(rage_multiplier(barb), half), "half");
     barb.hp = 25;
-    var quarter = 1.0 + bloodlust_a() * pow(0.75, bloodlust_b());
-    assert(near(bloodlust_multiplier(barb), quarter), "quarter");
+    var quarter = rage_c() + rage_a() * pow(0.75, rage_b());
+    assert(near(rage_multiplier(barb), quarter), "quarter");
     assert(barb.current_attack() == (100.0 * quarter).to_int(), "attack multiplied");
 }
 
 @test
-fn bloodlust_multiplies_with_attack_up() {
+fn rage_multiplies_with_attack_up() {
     var b = duel(["Barbarian"], ["B"]);
     var barb = who(b, slot(0, 0));
-    barb.effects.push(bloodlust());
+    barb.effects.push(rage());
     barb.hp = 50;
     var alone = barb.current_attack();
     add(b, barb, [Action.AddEffect(barb, attack_up())]);
     var both = barb.current_attack();
-    assert(both >= alone * 3 / 2 - 1 && both <= alone * 3 / 2 + 1, "attack up's 1.5 on top of Bloodlust");
+    assert(both >= alone * 3 / 2 - 1 && both <= alone * 3 / 2 + 1, "attack up's 1.5 on top of Rage");
 }
 
 @test
@@ -247,15 +247,21 @@ fn vigil_heals_the_lowest_ally_at_round_end() {
 }
 
 @test
-fn inner_peace_heals_at_the_end_of_its_own_turn() {
+fn inner_peace_purges_the_oldest_debuff_at_the_end_of_its_own_turn() {
     var b = duel(["Monk"], ["B"]);
     var m = who(b, slot(0, 0));
     m.effects.push(inner_peace());
-    m.take(90);
+    m.effects.push(attack_down());
+    m.effects.push(attack_up());
+    m.effects.push(poison(5));
     announce(engine(), b, EventKind.TurnEnded(who(b, slot(1, 0))));
-    assert(m.hp == 10, "not on others' turns");
+    assert(has_effect(m, "Attack down"), "not on others' turns");
     announce(engine(), b, EventKind.TurnEnded(m));
-    assert(m.hp == smaller(100, 10 + inner_peace_heal()), "on its own");
+    assert(!has_effect(m, "Attack down"), "the oldest debuff goes");
+    assert(has_effect(m, "Poison"), "only one");
+    assert(has_effect(m, "Attack up") && has_effect(m, "Inner Peace"), "buffs and passives stay");
+    announce(engine(), b, EventKind.TurnEnded(m));
+    assert(!has_effect(m, "Poison"), "the next one on its next turn");
 }
 
 @test
@@ -469,14 +475,14 @@ fn poison_hits_the_shield_first() {
 }
 
 @test
-fn a_shield_is_not_hp_for_bloodlust() {
+fn a_shield_is_not_hp_for_rage() {
     var b = duel(["Barbarian"], ["B"]);
     var barb = who(b, slot(0, 0));
-    barb.effects.push(bloodlust());
+    barb.effects.push(rage());
     barb.take(80);
-    var before = bloodlust_multiplier(barb);
+    var before = rage_multiplier(barb);
     add(b, barb, [Action.AddEffect(barb, shield(50))]);
-    assert(near(bloodlust_multiplier(barb), before), "still at its 20-HP strength");
+    assert(near(rage_multiplier(barb), before), "still at its 20-HP strength");
 }
 
 @test

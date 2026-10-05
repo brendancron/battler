@@ -5,7 +5,7 @@ import { MoveDef, hit, follow_up_hit, damage } from "../core/move";
 import { character, Tier, Effect } from "../core/creature";
 import {
     attack_up, attack_down, defense_down, poison, regen, retaliate, taunt, guarding_taunt, timed, hex, greater_health_potion, energize, barrier, shield, heal_block,
-    minion_marker, totems_blessing, totem_spirit, speed_up, speed_down, crescendo, invincible, bleed, chill, cryosleep, strings, copy_effect
+    minion_marker, totems_blessing, totem_spirit, speed_up, speed_down, attack_up_next_turn, crescendo, invincible, bleed, chill, cryosleep, strings, copy_effect
 } from "effects";
 import {
     cleave_power, cleave_cooldown, smite_power, smite_cooldown, guard_rounds,
@@ -21,12 +21,12 @@ import {
     shield_bash_rounds, shield_bash_cooldown, bulwark_shield, bulwark_cooldown,
     healing_rain_regen, healing_rain_rounds, healing_rain_cooldown, ancestral_call_percent,
     ancestral_call_cooldown, totem_hp, totem_defense, backstab_power, backstab_cooldown,
-    execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown, allegro_cut,
+    execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown,
     largo_rounds, largo_cooldown, crescendo_rounds, crescendo_cooldown, fairy_ring_cooldown, wither_power, wither_cooldown,
     raise_dead_cooldown, skeleton_hp, skeleton_attack, skeleton_defense, bite_power, bite_cooldown, hemorrhage_power,
     hemorrhage_bleed, hemorrhage_rounds, hemorrhage_cooldown, blizzard_power, blizzard_cooldown, frostbite_power,
     frostbite_cooldown, avalanche_power, avalanche_cooldown, glacial_roar_rounds, glacial_roar_cooldown, cryosleep_heal,
-    cryosleep_cooldown, piston_slam_power, piston_slam_cooldown, lockdown_rounds, lockdown_cooldown, thunderstorm_power,
+    cryosleep_cooldown, piston_slam_power, piston_slam_cooldown, piston_slam_rounds, lockdown_rounds, lockdown_cooldown, overclock_cut, overclock_cooldown, thunderstorm_power,
     thunderstorm_cooldown, chain_lightning_powers, chain_lightning_cooldown, shuriken_power, shuriken_cooldown, plunder_power,
     plunder_cooldown, trick_blade_power, trick_blade_cooldown, puppet_percent, pixie_dust_shield, pixie_dust_cooldown
 } from "tuning";
@@ -552,13 +552,13 @@ fn totem_move(): MoveDef {
 
 fn allegro_apply(battle: Battle, user: Character, target: Target): List<Action> {
     match target {
-        Target.Single(ally) => { return [Action.AddEffect(ally, speed_up()), Action.ShortenCooldowns(ally, allegro_cut())]; }
+        Target.Single(ally) => { return [Action.AddEffect(ally, speed_up()), Action.AddEffect(ally, attack_up_next_turn())]; }
         _ => { return []; }
     }
     return [];
 }
 
-/** One ally, not the Bard: a tier faster for its next turn, and its cooldowns shorter. */
+/** One ally, not the Bard: a tier faster and attack up, both for its next turn. */
 fn allegro(): MoveDef {
     return MoveDef { name: "Allegro", shape: TargetShape.OtherAlly, apply: allegro_apply, cooldown: allegro_cooldown(), basic: false };
 }
@@ -738,9 +738,33 @@ fn cryosleep_move(): MoveDef {
 
 // Construct. See docs/characters.md#construct.
 
-fn piston_slam(): MoveDef { return single_hit("Piston Slam", piston_slam_power(), piston_slam_cooldown()); }
+fn piston_slam_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [hit(user, defender, piston_slam_power()), Action.AddEffect(defender, timed(attack_down(), piston_slam_rounds()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a hit, and attack down. Being Fast, it often lands before the foe acts. */
+fn piston_slam(): MoveDef {
+    return MoveDef { name: "Piston Slam", shape: TargetShape.SingleFoe, apply: piston_slam_apply, cooldown: piston_slam_cooldown(), basic: false };
+}
 
 fn lockdown(): MoveDef { return taunt_move("Lockdown", lockdown_rounds(), lockdown_cooldown()); }
+
+fn overclock_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    for (ally in battle.sides[user.team].active) {
+        if (!ally.fainted()) { out.push(Action.ShortenCooldowns(ally, overclock_cut())); }
+    }
+    return out;
+}
+
+/** The whole team, the Construct too: every running cooldown shorter. Its own starts after. */
+fn overclock(): MoveDef {
+    return MoveDef { name: "Overclock", shape: TargetShape.User, apply: overclock_apply, cooldown: overclock_cooldown(), basic: false };
+}
 
 // Stormbringer. See docs/characters.md#stormbringer.
 

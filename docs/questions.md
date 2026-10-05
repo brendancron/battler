@@ -19,8 +19,9 @@ Set aside on purpose; can be added without changing what exists.
 - **Default trigger order** ([events.md](events.md)). After the triggers on the
   character an event is about, what order the rest fire in. It is a strategy,
   so it can be settled when it matters.
-- **Barbarian passive values** ([characters.md](characters.md)). The final `a`
-  and `b` in its formula, after playtesting. Placeholders are a = 2, b = 2.
+- **Barbarian passive values** ([characters.md](characters.md)). The final `c`,
+  `a` and `b` in Rage's formula, after playtesting. v0.0.2 has c = 0.77,
+  a = 1.3, b = 1.75.
 - **Power, heal and cooldown numbers** ([characters.md](characters.md),
   [moves.md](moves.md)). Every move's power, heal amount and cooldown is a
   placeholder until balancing.
@@ -53,8 +54,6 @@ Set aside on purpose; can be added without changing what exists.
   and Hemorrhage for now; Crimson Veil was rejected.
 - **Cryomancer passive and third move** ([characters.md](characters.md#cryomancer)).
   It has Blizzard and Frostbite for now.
-- **Construct third move** ([characters.md](characters.md#construct)). It has
-  Piston Slam and Lockdown for now.
 - **Stormbringer passive and third move** ([characters.md](characters.md#stormbringer)).
   It has Thunderstorm and Chain Lightning, and no passive for now.
 - **Ninja second and third moves** ([characters.md](characters.md#ninja)). It

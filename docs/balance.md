@@ -90,7 +90,9 @@ and lives in its own file. A better way to play goes into a **new** AI, not
 into an old one, so the old ones stay as fixed benchmarks and the balance
 checker can show whether each generation really beats the last
 (`--ai Tactician,Strategist`). Random (0), Greedy (1), Tactician (2),
-Strategist (3).
+Strategist (3). Guardian (4), which predicts the foes' moves and values
+protection by the damage it stops, is designed but not built
+([guardian.md](guardian.md)).
 
 Strategist's waste weight (÷ 4 per turn of cooldown) is a placeholder, tuned
 by running it against Tactician.
@@ -121,6 +123,10 @@ without playing.
 - One table per thing rated (characters, archetypes, AIs, home and away,
   archetype counts, team mixes), each with a bar showing how far above or
   below the middle (1000 Elo, 50%, a score of 0) each row is.
+- The characters table also shows each character's base attack, defense and
+  attack × defense, to sort by and see how stats line up with win rates.
+  They're the stats the version was played with: the data script carries
+  them as `window.BALANCE_STATS`.
 - Click a heading to sort by that column, again to reverse. A filter by name
   and a minimum number of games apply to every table; tabs show one table
   or all of them. The page remembers these in the browser.

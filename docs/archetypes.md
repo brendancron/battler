@@ -59,7 +59,7 @@ Each character is listed under its primary archetype only.
 | Vampire     | Warrior   | Normal   |
 | Cryomancer  | Mage      | Normal   |
 | Frost Giant | Tank      | Slow     |
-| Construct   | Tank      | Normal   |
+| Construct   | Tank      | Fast     |
 | Stormbringer | Mage     | Fast     |
 | Ninja       | Rogue     | Fast     |
 | Swashbuckler | Rogue    | Fast     |

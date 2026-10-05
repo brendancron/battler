@@ -6,7 +6,7 @@ import { Choice } from "battler/core/target";
 import { start_round, begin_phase, next_actor } from "battler/core/order";
 import { speed_up, speed_down } from "battler/content/effects";
 import { allegro, largo, crescendo_move } from "battler/content/moves";
-import { allegro_cut, crescendo_bonus_percent, crescendo_rounds, largo_rounds } from "battler/content/tuning";
+import { crescendo_bonus_percent, crescendo_rounds, largo_rounds } from "battler/content/tuning";
 import { duel, who, slot, has_effect } from "support";
 
 // The Bard: speed up and speed down, Allegro, Largo and Crescendo (docs/characters.md#bard).
@@ -59,16 +59,19 @@ fn a_slow_character_sped_up_acts_in_the_normal_phase() {
 }
 
 @test
-fn allegro_speeds_up_an_ally_and_shortens_its_cooldowns() {
+fn allegro_speeds_up_an_ally_and_raises_its_attack_for_its_next_turn() {
     var b = duel(["Bard", "Ally"], ["Foe"]);
     var ally = who(b, slot(0, 1));
     ally.tier = Tier.Slow;
-    ally.start_cooldown("Long", allegro_cut() + 2);
-    ally.start_cooldown("Short", allegro_cut());
+    ally.start_cooldown("Long", 3);
     assert(use_move(engine(), b, slot(0, 0), allegro(), at(slot(0, 1))), "used");
     assert(ally.current_tier() == Tier.Normal, "one tier faster");
-    assert(ally.cooldown_left("Long") == 2, "a running cooldown is shorter");
-    assert(ally.cooldown_left("Short") == 0, "one that runs out is ready");
+    assert(ally.current_attack() == stepped(100, 1), "attack up");
+    assert(ally.cooldown_left("Long") == 3, "cooldowns untouched");
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(ally.current_attack() == stepped(100, 1), "rounds don't wear it off");
+    announce(engine(), b, EventKind.TurnEnded(ally));
+    assert(ally.current_tier() == Tier.Slow && ally.current_attack() == 100, "both gone after its turn");
 }
 
 @test

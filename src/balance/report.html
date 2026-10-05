@@ -125,6 +125,7 @@
 // The totals, as the checker saved them: set by the data script beside this
 // page (this page's name with .data.js for .html), loaded before init() runs.
 let DATA = {};
+let STATS = {};
 let WRITTEN = null;
 
 const pct = (wins, games) => games ? 100 * wins / games : null;
@@ -147,11 +148,22 @@ const mixColumns = [
   { label: "Win %", value: r => pct(r.wins, r.games), text: r => fixed(pct(r.wins, r.games), 1), num: true },
   { label: "Games", value: r => r.games, num: true },
 ];
+// Characters: no Wins column (Win % and Games say it), and their base stats
+// from the data script, so the table sorts by them.
+const stat = (r, i) => STATS[r.name] ? STATS[r.name][i] : null;
+const characterColumns = [
+  ...ratingColumns.slice(0, 3),
+  { label: "Atk", value: r => stat(r, 0), num: true },
+  { label: "Def", value: r => stat(r, 1), num: true },
+  { label: "Atk×Def", value: r => stat(r, 0) == null ? null : stat(r, 0) * stat(r, 1), num: true },
+  ratingColumns[4],
+];
 const pairColumns = [{ label: "Pair", value: r => r.name }, ...mixColumns.slice(1)];
 function signed(x) { return x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1); }
 
 const TABLES = [
-  { id: "characters", title: "Characters", rows: d => d.characters, columns: ratingColumns, sort: 1 },
+  { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 1,
+    note: "Atk and Def are base stats, before effects." },
   { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
   { id: "agents", title: "AIs", rows: d => d.agents, columns: ratingColumns, sort: 1,
     note: "Rated only in games between two different AIs." },
@@ -308,6 +320,7 @@ function init() {
   script.src = src + "?" + Date.now();
   script.onload = () => {
     DATA = window.BALANCE_DATA || {};
+    STATS = window.BALANCE_STATS || {};
     if (window.BALANCE_WRITTEN) WRITTEN = new Date(window.BALANCE_WRITTEN * 1000);
     init();
   };

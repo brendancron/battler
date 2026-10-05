@@ -54,7 +54,7 @@ off against each other and against the team, not from evening every
 character out.
 
 The Warlock is the model: Writhing Depths and The Final Offering are area
-nukes, but it's frail (defense 50) and Slow, so it acts last and can easily
+nukes, but it's frail (defense 45) and Slow, so it acts last and can easily
 die before it gets to. Its team has to keep it alive until it fires.
 
 When a character is too strong, first look for the weakness it's missing and
@@ -72,29 +72,33 @@ for, not only on random teams ([balance.md](balance.md#character-pairs)).
 
 Warrior ([archetypes.md](archetypes.md)).
 
-**Passive: the lower its HP, the harder it hits.** A Barbarian left at 1 HP
-hits like a truck. It punishes teams that wear it down with chip damage, such
-as a Mage's area attacks or poison, instead of finishing it off.
+**Passive, Rage: the lower its HP, the harder it hits.** A Barbarian left at
+1 HP hits like a truck, and a healthy one hits softer than its attack stat
+suggests: it relies on being worn down to deal real damage. It punishes teams
+that wear it down with chip damage, such as a Mage's area attacks or poison,
+instead of finishing it off.
 
 Its attack is multiplied by
 
 ```
-y = 1 + a(1 − x/100)^b
+y = c + a(1 − x/100)^b
 ```
 
-where x is its current HP. `a` sets the bonus at 0 HP (the most it can reach
-is 1 + a) and `b` sets the shape: above 1 the bonus stays small until HP is
-low and then climbs sharply. At full HP, y is 1.
+where x is its current HP. `c` is the multiplier at full HP (below 1, so a
+healthy Barbarian is held back), `a` sets the bonus at 0 HP (the most it can
+reach is c + a) and `b` sets the shape: above 1 the bonus stays small until HP
+is low and then climbs sharply.
 
 It is an attack multiplier like attack up ([effects.md](effects.md)): it
 multiplies the Barbarian's attack, so it applies to any damage that uses its
 attack, and it multiplies together with attack ups and downs.
 
-Placeholder values until playtesting: **a = 2, b = 2**.
+Values (v0.0.2): **c = 0.77, a = 1.3, b = 1.75**, aimed at Cleave doing about
+30 damage at full HP, 45 at half and 80 near 0 to a 100-defence target.
 
 | HP | 100  | 75   | 50   | 25   | 1    |
 |----|------|------|------|------|------|
-| y  | 1.00 | 1.13 | 1.50 | 2.13 | 2.96 |
+| y  | 0.77 | 0.87 | 1.16 | 1.53 | 2.05 |
 
 **Moves**
 
@@ -107,7 +111,7 @@ Placeholder values until playtesting: **a = 2, b = 2**.
 Rejected so far:
 
 - **Whirlwind** (all foes): Warriors aren't meant to deal area damage.
-- **Rage** (attack up on itself): spending a turn to set up is too slow.
+- **A self attack-up move**: spending a turn to set up is too slow.
 
 ### Paladin
 
@@ -279,9 +283,15 @@ Potion.
 Warrior ([archetypes.md](archetypes.md)). Its moves are single-target hits that
 also put a debuff on the foe.
 
-**Passive: Inner Peace.** At the end of each of its turns, the Monk heals
-itself 8. A turn lost to Hex still counts. (The name and the 8 are
-placeholders.)
+Its identity: it shuts down one foe (attack down, defense down, Heal Block)
+and sets it up for the team's damage dealers, and it shakes off the same kind
+of disruption itself. It counters tanks and healers. Its weakness is that it
+deals little damage of its own and has no sustain, so it loses long games.
+
+**Passive: Inner Peace.** At the end of each of its turns, the Monk purges its
+oldest debuff (the one put on it first). A turn lost to Hex still counts.
+Passives and other immune effects aren't debuffs it can purge. (Before
+v0.0.2 it healed itself 8 instead.)
 
 **Moves** (names and numbers are placeholders)
 
@@ -336,9 +346,10 @@ tentacled being from beyond and channels its power. Its moves and passive
 should read as that being reaching through. Calling it takes time, which is
 why it's Slow.
 
-Stats (placeholders): attack 110, defense 50. It's frail on purpose: strong
-if it gets to attack, but it needs its team to keep it alive until then. Its
-defense was 75 (the Pyromancer's) until it won over 80% of balance games.
+Stats (placeholders): attack 110, defense 45. It's frail on purpose: it hits
+like a truck if it's left alive, but it relies on its team (or a foe team
+that can't reach it) to get there. Its defense was 75 (the Pyromancer's)
+until it won over 80% of balance games, then 50 until v0.0.2.
 
 It's a reskin of the Pyromancer: same stats, and Inferno renamed. Its basic
 attack, Firebolt, is now Void Bolt.
@@ -413,7 +424,7 @@ also goes up earlier in the round.
 
 Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
 
-**Passive: Predator.** The Assassin deals **25% more damage** (placeholder)
+**Passive: Predator.** The Assassin deals **50% more damage** (placeholder; 25% before v0.0.2)
 to a target **below 50%** of its max HP. It finishes off wounded foes.
 
 - Below means strictly below: a target at exactly half its max HP takes
@@ -451,13 +462,18 @@ The Bard controls tempo. Its songs move characters between speed tiers
 ([speed.md](speed.md)), changing the order of the round. The Bard itself is
 Fast, so it usually sings before the characters it moves have acted.
 
+Its niche is the **early snowball**: it sets up one huge move early (a
+Warlock's Writhing Depths, a Reaper's Reap) so its team gets a quick kill
+and rolls on from there. It should be strongest early and fall off in long
+games.
+
 **Passive:** to be designed.
 
 **Moves** (names, durations and cooldowns are placeholders)
 
 | Move    | Target   | Effect |
 |---------|----------|--------|
-| Allegro | one ally | Speed up for the ally's next turn ([effects.md](effects.md#speed-up-and-speed-down)): it moves one tier faster, then the speed up goes away. Also takes 1 off every cooldown the ally has running ([moves.md](moves.md#cooldowns)). Cooldown 3. |
+| Allegro | one ally | Speed up and attack up (× 1.5, [effects.md](effects.md)) for the ally's next turn ([effects.md](effects.md#speed-up-and-speed-down)): it moves one tier faster and hits harder, then both go away. Cooldown 3. |
 | Largo   | one foe  | Speed down for the foe's next turn: it moves one tier slower. Also attack down for 2 rounds ([effects.md](effects.md)). Cooldown 3. |
 | Crescendo | all allies, itself too | Attack and defense × 1.2 for 2 rounds on each. Cooldown 4. |
 
@@ -471,14 +487,16 @@ Fast, so it usually sings before the characters it moves have acted.
   every step ([speed.md](speed.md#phases)), so a Slow ally sped up during the
   Fast phase acts in this round's Normal phase, and a Normal foe slowed
   before it acts waits for the Slow phase.
-- **Allegro's cooldown cut happens at once,** when the song is sung, so a move
-  one turn from ready can be used on the ally's sped-up turn. Cooldowns
-  already at 0 stay at 0, and the basic attack has none. The Shaman's Totem
-  is cut only once its cooldown has started, after the totem is destroyed
-  ([summons.md](summons.md)).
+- **Allegro is one boosted action.** The attack up lasts exactly as long as
+  the speed up: the ally's next turn, then both wear off together. Rounds
+  don't wear it off, so an ally that already acted this round gets it on
+  next round's turn. A Slow Warlock sung to in the Fast phase fires Writhing
+  Depths in the Normal phase at × 1.5.
+- Until v0.0.2 Allegro took 1 off each of the ally's running cooldowns
+  instead of the attack up. That paid off most in long games, the opposite
+  of the Bard's niche; cooldown cutting is now the Construct's Overclock.
 - Allegro can't target the Bard. It's already Fast, so the speed up would do
-  nothing, and a Bard cutting its own cooldowns could sing Largo far more
-  often than its cooldown means to allow.
+  nothing.
 - **Crescendo is a song version of the Shaman's totem**
   ([summons.md](summons.md#the-shamans-totem)): a team-wide attack and defense
   bonus, smaller than the totem's × 1.25 and lasting a set time instead of
@@ -515,7 +533,7 @@ the Fairy included, heals 5. (The name and the 5 are placeholders.)
 | Move       | Target              | Effect |
 |------------|---------------------|--------|
 | Fairy Ring | one ally, or itself | Invincible until the end of the round ([effects.md](effects.md#invincible)): the ally takes no damage for the rest of the round. Cooldown 4. |
-| Pixie Dust | all allies, itself too | A 15 shield on each ([effects.md](effects.md#shield)). Cooldown 4. |
+| Pixie Dust | all allies, itself too | A 22 shield on each ([effects.md](effects.md#shield)). Cooldown 4. |
 | —          |                     | To be designed. |
 
 - Cast in the Fast phase, Fairy Ring covers the ally against everything the
@@ -523,9 +541,10 @@ the Fairy included, heals 5. (The name and the 5 are placeholders.)
 - It ends at the end of the round, after the end-of-round damage (poison,
   fatigue), so it covers that too.
 - Pixie Dust spreads a small shield over the whole team, where the Knight's
-  Bulwark puts 30 on one ally. Shields add up and decay 20 a round, so a 15
-  shield on its own is gone at the next round end; it's for soaking the
-  round's area hits. It reaches minions, like any team-wide move.
+  Bulwark puts 30 on one ally. Shields add up and decay 20 a round, so a 22
+  shield on its own is down to 2 at the next round end; it's for soaking the
+  round's hits. It reaches minions, like any team-wide move. (15 until
+  v0.0.2.)
 
 ### Necromancer
 
@@ -559,8 +578,9 @@ Stats (placeholders): attack 110, defense 60.
 
 Warrior ([archetypes.md](archetypes.md)). Normal ([speed.md](speed.md)).
 
-The Vampire is frail and lives on what it drains. Its defense is low, around
-the Rogues' (placeholder: attack 115, defense 50), so it takes a lot from
+The Vampire is frail and lives on what it drains. Its defense is low, a
+little above the Rogues' (placeholder: attack 115, defense 62; 50 until
+v0.0.2), so it takes a lot from
 each hit, and gets its staying power from healing it back with every hit it
 deals. It wins one-on-ones the way Warriors should, but through sustain
 rather than raw toughness.
@@ -658,12 +678,12 @@ wears off freezes the attacker. (The name is a placeholder.)
 
 | Move         | Target   | Effect |
 |--------------|----------|--------|
-| Avalanche    | all foes | A light direct hit on every foe standing, power 10 ([damage.md](damage.md)), and chill on each ([effects.md](effects.md#chill-and-freeze)). A foe already chilled is frozen. Cooldown 4. |
+| Avalanche    | all foes | A light direct hit on every foe standing, power 13 ([damage.md](damage.md)), and chill on each ([effects.md](effects.md#chill-and-freeze)). A foe already chilled is frozen. Cooldown 4. |
 | Glacial Roar | the user | Taunt for 2 rounds ([targeting.md](targeting.md#taunt)). Cooldown 3. |
 | Cryosleep    | one ally | Puts the ally in Cryosleep ([effects.md](effects.md#cryosleep)): it skips its next turn and takes no damage until then. Heals it 15. Cooldown 4. |
 
 - **Avalanche is light on purpose.** The Frost Giant is a Tank, so its area
-  hit is half of Blizzard's 20; the chill is what matters. Avalanche on one
+  hit is well under Blizzard's 20 (13; 10 until v0.0.2); the chill is what matters. Avalanche on one
   turn and Blizzard on the Cryomancer's next freezes the whole foe team.
 - **Glacial Roar feeds the aura.** Foes that have to pick the Giant get
   chilled for it. Like the Knight's taunt it doesn't raise defense, unlike the
@@ -685,8 +705,14 @@ wears off freezes the attacker. (The name is a placeholder.)
 
 ### Construct
 
-Tank ([archetypes.md](archetypes.md)). Normal ([speed.md](speed.md)). (The
+Tank ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)). (The
 name is a placeholder.)
+
+Its niche is the **Fast tank**: the only Tank that acts before the foes do,
+so its taunt and protection are up before their first hits land. (Normal
+until v0.0.2.) It's a **transient tank built to counter single-target
+burst**: Ironclad blunts the big hits its taunt draws, but it can't be
+healed, so it doesn't last. That's niche on purpose.
 Stats (placeholders): attack 85, defense 120.
 
 **Passive: Ironclad.** Two parts. (The name and the 25% are placeholders.)
@@ -720,11 +746,19 @@ Details:
 
 | Move        | Target   | Effect |
 |-------------|----------|--------|
-| Piston Slam | one foe  | A direct hit, power 20 ([damage.md](damage.md)). Cooldown 2. |
+| Piston Slam | one foe  | A direct hit, power 20 ([damage.md](damage.md)), and attack down for 2 rounds ([effects.md](effects.md)). Cooldown 2. |
 | Lockdown    | the user | Taunt for 2 rounds ([targeting.md](targeting.md#taunt)). Cooldown 3. |
-| —           |          | To be designed. |
+| Overclock   | the whole team | Takes 2 off every running cooldown of every ally standing, the Construct included ([moves.md](moves.md#cooldowns)). Cooldown 5. |
 
 - Piston Slam is modest, as a Tank's hit should be: below the Warriors' 30.
+  Its attack down is the protection: the Construct is Fast, so it usually
+  lands before the foe acts and blunts that foe's hit the same round.
+- Overclock's cut happens at once: a cooldown at 2 or less is ready
+  straight away, and the basic attack has none. Its own cooldown starts after
+  the cut, so it doesn't shorten itself; its other moves (Lockdown, Piston
+  Slam) do get the cut. The Shaman's Totem is cut only once its cooldown has
+  started, after the totem is destroyed ([summons.md](summons.md)). The 2 and
+  the cooldown are placeholders.
 - Lockdown pulls the foes' single-target hits onto the Construct, where the
   cap blunts the biggest of them. It can't heal, so a taunting Construct
   slowly runs down unless allies shield it. Like the Knight's and the Frost
@@ -884,7 +918,7 @@ moves marked with * need a new shape (one ally, all allies).
 
 | Character   | Moves                                                         |
 |-------------|---------------------------------------------------------------|
-| Barbarian   | Cleave (one foe), Rage (user: attack up), Whirlwind (all foes) |
+| Barbarian   | Cleave (one foe), attack up (user), Whirlwind (all foes) |
 | Ranger      | Aimed Shot (one foe), Volley (all foes), Hunter's Mark (one foe: takes more damage) |
 | Paladin     | Smite (one foe), Guard* (one ally: redirect hits to the Paladin), Lay on Hands* (one ally: heal) |
 | Cleric      | Heal* (one ally), Prayer* (all allies: small heal), Sacred Flame (one foe) |

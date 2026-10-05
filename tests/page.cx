@@ -1,4 +1,5 @@
-import { page_path, data_path, data_script } from "battler/balance/page";
+import { page_path, data_path, data_script, stats_json } from "battler/balance/page";
+import { Tier, character } from "battler/core/creature";
 
 @test
 fn the_page_and_its_data_sit_next_to_the_totals() {
@@ -8,6 +9,14 @@ fn the_page_and_its_data_sit_next_to_the_totals() {
 }
 
 @test
-fn the_data_script_sets_the_totals_and_the_time() {
-    assert(data_script("{\"games\": 4}", 1700000000) == "window.BALANCE_DATA = {\"games\": 4};\nwindow.BALANCE_WRITTEN = 1700000000;\n", "two assignments");
+fn the_data_script_sets_the_totals_the_stats_and_the_time() {
+    assert(data_script("{\"games\": 4}", "{}", 1700000000) == "window.BALANCE_DATA = {\"games\": 4};\nwindow.BALANCE_STATS = {};\nwindow.BALANCE_WRITTEN = 1700000000;\n", "three assignments");
+}
+
+@test
+fn the_stats_are_each_characters_attack_and_defense() {
+    var a = character("A", 120, 80, Tier.Normal);
+    var b = character("B", 60, 150, Tier.Slow);
+    assert(stats_json([a, b]) == "{\"A\": [120, 80], \"B\": [60, 150]}", "name to [attack, defense]");
+    assert(stats_json([]) == "{}", "none");
 }

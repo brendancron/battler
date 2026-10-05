@@ -60,7 +60,7 @@ HP: a 30 shield on a character at 100/100 makes its effective HP about 130.
 - Damage takes the shield first, direct or indirect (poison included);
   whatever is left over comes off HP.
 - A shield isn't HP. Anything that looks at HP sees only real HP, so a
-  Barbarian at 20 HP with a 50 shield still has Bloodlust at its 20-HP
+  Barbarian at 20 HP with a 50 shield still has Rage at its 20-HP
   strength ([characters.md](characters.md#barbarian)).
 - Shields stack by adding: a 20 shield and then a 30 shield is a 50 shield.
 - Shields decay: at the end of every round, each character's shield loses 20
@@ -203,8 +203,8 @@ A debuff: the character can only use its basic attack
 A debuff: the character can't be healed at all while it lasts. (The
 Construct can never be healed, by its passive
 ([characters.md](characters.md#construct)).) Every kind of
-healing is blocked: heals from moves, regen, Health Potions, Vigil, Inner Peace
-and Soul Siphon's drain. Shields aren't healing, so they still work.
+healing is blocked: heals from moves, regen, Health Potions, Vigil and Soul
+Siphon's drain. Shields aren't healing, so they still work.
 
 It lasts a set number of the character's own turns and counts down when each of
 its turns ends; the Monk's Crippling Blow gives 2.

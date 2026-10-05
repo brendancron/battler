@@ -12,10 +12,11 @@ import { parse_json, __pretty } from "std/encoding/Json";
 import { silent_screen } from "ui/display";
 import { Agent, ai_names, ai_named } from "agents/agent";
 import { Seat, Outcome, play_match } from "game/game";
+import { Character } from "core/creature";
 import { Fighter, roster } from "content/roster";
 import { balance_version } from "content/tuning";
 import { Game, game_line, parse_game, shares } from "balance/jobs";
-import { page_template, page_path, data_path, data_script } from "balance/page";
+import { page_template, page_path, data_path, data_script, stats_json } from "balance/page";
 import {
     Interval, new_interval, count_game, snapshot_every, games_log_path, timeline_path, game_record, snapshot_record, start_record,
     rss_from_status, folder_of
@@ -234,11 +235,18 @@ fn save(r: Run) {
 fn write_data(r: Run, json: string) {
     var path = data_path(r.file);
     run {
-        write_text(path + ".tmp", data_script(json, now().unix_seconds()));
+        write_text(path + ".tmp", data_script(json, stats(), now().unix_seconds()));
         move_path(path + ".tmp", path);
     } handle Throw {
         final ctl throw(e) { printerr("Can't write the report data " + path + ": " + str(e)); }
     }
+}
+
+/** The roster's base stats, for the report page. */
+fn stats(): string {
+    var bodies: List<Character> = [];
+    for (f in roster()) { bodies.push(f.body); }
+    return stats_json(bodies);
 }
 
 /** Copies the report page next to the totals file. It loads the totals from the data script. */

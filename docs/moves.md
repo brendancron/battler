@@ -76,6 +76,7 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Frost Giant | Cryosleep      | 4 |
 | Construct   | Piston Slam    | 2 |
 | Construct   | Lockdown       | 3 |
+| Construct   | Overclock      | 5 |
 | Stormbringer | Thunderstorm  | 4 |
 | Stormbringer | Chain Lightning | 3 |
 | Ninja       | Shuriken       | 2 |

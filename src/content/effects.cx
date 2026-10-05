@@ -1,7 +1,7 @@
 import { Character, Effect, Event, EventKind, Action, trigger_id, in_chain, max_hp } from "../core/creature";
 import { pow } from "../core/maths";
 import {
-    bloodlust_a, bloodlust_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, inner_peace_heal, totem_bonus_percent, totem_cooldown,
+    rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, totem_bonus_percent, totem_cooldown,
     predator_bonus_percent, predator_line_percent, shield_decay, crescendo_bonus_percent, faerie_light_heal, sanguine_percent, chill_rounds, ironclad_cap_percent,
     puppeteer_cooldown
 } from "tuning";
@@ -204,30 +204,30 @@ fn retaliate(damage: int): Effect {
 
 // Passives: buffs every character of a kind starts with. They can't be removed.
 
-// Barbarian, Bloodlust: attack × (1 + a(1 − hp/max)^b), a and b in tuning.cx. See docs/characters.md.
+// Barbarian, Rage: attack × (c + a(1 − hp/max)^b), c, a and b in tuning.cx. See docs/characters.md.
 
 /** The attack multiplier at the owner's current HP. */
-fn bloodlust_multiplier(owner: Character): float {
+fn rage_multiplier(owner: Character): float {
     var missing = 1.0 - owner.hp.to_float() / owner.base_max_hp.to_float();
-    return 1.0 + bloodlust_a() * pow(missing, bloodlust_b());
+    return rage_c() + rage_a() * pow(missing, rage_b());
 }
 
-fn bloodlust_scale(owner: Character, fx: Effect, attack: int): int {
-    return (attack.to_float() * bloodlust_multiplier(owner)).to_int();
+fn rage_scale(owner: Character, fx: Effect, attack: int): int {
+    return (attack.to_float() * rage_multiplier(owner)).to_int();
 }
 
-fn bloodlust_label(owner: Character, fx: Effect): string {
-    var hundredths = (bloodlust_multiplier(owner) * 100.0).to_int();
+fn rage_label(owner: Character, fx: Effect): string {
+    var hundredths = (rage_multiplier(owner) * 100.0).to_int();
     var cents = str(hundredths % 100);
     if (hundredths % 100 < 10) { cents = "0" + cents; }
-    return "Bloodlust ×" + str(hundredths / 100) + "." + cents;
+    return "Rage ×" + str(hundredths / 100) + "." + cents;
 }
 
-fn bloodlust(): Effect {
-    var e = base("Bloodlust", true);
+fn rage(): Effect {
+    var e = base("Rage", true);
     e.immune = true;
-    e.scale_attack = bloodlust_scale;
-    e.label = bloodlust_label;
+    e.scale_attack = rage_scale;
+    e.label = rage_label;
     return e;
 }
 
@@ -448,7 +448,7 @@ fn panacea_supply(): Effect {
     return e;
 }
 
-// Monk, Inner Peace: heals itself at the end of each of its turns.
+// Monk, Inner Peace: purges its oldest debuff at the end of each of its turns.
 
 fn inner_peace_should(owner: Character, fx: Effect, event: Event): bool {
     match event.kind {
@@ -459,13 +459,15 @@ fn inner_peace_should(owner: Character, fx: Effect, event: Event): bool {
 }
 
 fn inner_peace_react(owner: Character, fx: Effect, event: Event): List<Action> {
-    return [Action.Heal(owner, fx.power)];
+    for (e in owner.effects) {
+        if (!e.buff && !e.immune) { return [Action.RemoveEffect(owner, e.kind)]; }
+    }
+    return [];
 }
 
 fn inner_peace(): Effect {
     var e = base("Inner Peace", true);
     e.immune = true;
-    e.power = inner_peace_heal();
     e.should = inner_peace_should;
     e.react = inner_peace_react;
     return e;
@@ -674,6 +676,13 @@ fn speed_down(): Effect {
     var e = base("Speed down", false);
     e.tier_shift = -1;
     e = for_own_turns(e, 1);
+    e.label = next_turn_label;
+    return e;
+}
+
+/** Attack up for the owner's next turn only: the Bard's Allegro. */
+fn attack_up_next_turn(): Effect {
+    var e = for_own_turns(attack_up(), 1);
     e.label = next_turn_label;
     return e;
 }

@@ -4,8 +4,8 @@ import { engine, perform, announce } from "battler/core/engine";
 import { use_move, damage } from "battler/core/move";
 import { Choice } from "battler/core/target";
 import { invincible, faerie_light, ironclad, shield, barrier, retaliate, heal_block, attack_down, poison } from "battler/content/effects";
-import { fairy_ring, pixie_dust, piston_slam, lockdown, reap } from "battler/content/moves";
-import { pixie_dust_shield, faerie_light_heal, ironclad_cap_percent, piston_slam_power, lockdown_rounds, reap_power, reap_wound_divisor } from "battler/content/tuning";
+import { fairy_ring, pixie_dust, piston_slam, lockdown, overclock, reap } from "battler/content/moves";
+import { pixie_dust_shield, faerie_light_heal, ironclad_cap_percent, piston_slam_power, piston_slam_rounds, lockdown_rounds, overclock_cut, reap_power, reap_wound_divisor } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
 // The Fairy (Invincible, Faerie Light) and the Construct (Ironclad).
@@ -170,14 +170,35 @@ fn reap_takes_max_hp_from_the_capped_hit() {
 }
 
 @test
-fn piston_slam_hits_and_lockdown_taunts() {
+fn piston_slam_hits_and_lowers_attack_and_lockdown_taunts() {
     var b = duel(["Construct"], ["Foe"]);
     var expected = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), piston_slam_power());
     use_move(engine(), b, slot(0, 0), piston_slam(), at(slot(1, 0)));
     assert(who(b, slot(1, 0)).hp == 100 - expected, "a hit");
+    match who(b, slot(1, 0)).find_effect("Attack down") {
+        Option.Some(e) => { assert(e.rounds == piston_slam_rounds(), "attack down for its rounds"); }
+        Option.None => { assert(false, "attack down"); }
+    }
     use_move(engine(), b, slot(0, 0), lockdown(), Choice.NoTarget);
     match who(b, slot(0, 0)).find_effect("Taunt") {
         Option.Some(e) => { assert(e.rounds == lockdown_rounds(), "taunting for its rounds"); }
         Option.None => { assert(false, "taunting"); }
     }
+}
+
+@test
+fn overclock_shortens_every_running_cooldown_on_the_team() {
+    var b = duel(["Construct", "Ally", "Down"], ["Foe"]);
+    var construct = who(b, slot(0, 0));
+    var ally = who(b, slot(0, 1));
+    var foe = who(b, slot(1, 0));
+    construct.start_cooldown("Lockdown", overclock_cut() + 1);
+    ally.start_cooldown("Long", overclock_cut() + 2);
+    ally.start_cooldown("Short", overclock_cut());
+    foe.start_cooldown("Theirs", overclock_cut() + 1);
+    assert(use_move(engine(), b, slot(0, 0), overclock(), Choice.NoTarget), "used");
+    assert(construct.cooldown_left("Lockdown") == 1, "its own too");
+    assert(ally.cooldown_left("Long") == 2, "shorter");
+    assert(ally.cooldown_left("Short") == 0, "one that runs out is ready");
+    assert(foe.cooldown_left("Theirs") == overclock_cut() + 1, "not the foes'");
 }

@@ -3,7 +3,7 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { MoveDef, use_move, usable } from "battler/core/move";
 import { TargetShape, Target, Choice, has_targets } from "battler/core/target";
-import { attack_up, poison, bloodlust } from "battler/content/effects";
+import { attack_up, poison, rage } from "battler/content/effects";
 import { phases, start_round, begin_phase, next_actor } from "battler/core/order";
 import { best } from "battler/agents/greedy";
 import { random_pick } from "battler/agents/random";
@@ -64,13 +64,13 @@ fn resurrection_brings_a_corpse_back_at_a_share_of_max_hp() {
 fn resurrection_keeps_max_hp_cooldowns_and_passives_but_not_effects() {
     var b = duel(["A", "B"], ["C"]);
     var fallen = who(b, slot(0, 1));
-    fallen.effects.push(bloodlust());
+    fallen.effects.push(rage());
     perform(engine(), b, "test", [Action.AddEffect(fallen, attack_up()), Action.AddEffect(fallen, poison(5)), Action.Wound(fallen, 20)]);
     fallen.cooldowns.push(Cooldown { move: "Cleave", turns: 2 });
     knock_out(b, fallen);
     use_move(engine(), b, slot(0, 0), revive(), Choice.Slots([slot(0, 1)]));
     assert(fallen.max_health() == 80 && fallen.hp == 40, "50% of the reduced 80");
-    assert(has_effect(fallen, "Bloodlust"), "passive kept");
+    assert(has_effect(fallen, "Rage"), "passive kept");
     assert(!has_effect(fallen, "Attack up") && !has_effect(fallen, "Poison"), "buffs and debuffs gone");
     assert(fallen.cooldown_left("Cleave") == 2, "cooldown kept");
 }
