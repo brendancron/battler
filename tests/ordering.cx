@@ -171,3 +171,23 @@ fn the_planner_answers_the_same_for_the_same_teams() {
         Option.None => { assert(false, "no Planner"); }
     }
 }
+
+@test
+fn the_random_order_ai_answers_valid_orders_and_not_always_the_same() {
+    match orderer_named("Random") {
+        Option.Some(o) => {
+            var team = [assassin(), knight(), stormbringer(), cleric()];
+            var first = str(o.arrange(team, foes(), true));
+            var differs = false;
+            var n = 0;
+            while (n < 50) {
+                var order = o.arrange(team, foes(), true);
+                assert(valid_order(order, 4), "valid");
+                if (str(order) != first) { differs = true; }
+                n = n + 1;
+            }
+            assert(differs, "50 more tries, all the same order: not random");
+        }
+        Option.None => { assert(false, "no Random"); }
+    }
+}

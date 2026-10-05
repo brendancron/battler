@@ -44,13 +44,18 @@ Names are placeholders.
 | Generation | Name | Orders by |
 |---|---|---|
 | 0 | Keeper | the order the team arrived in (pick order, or the random team's order), which is how slots work today |
+| 0 | Random | any order, picked at random afresh every game |
 | 1 | Planner | setup rules: what each move sets up, and what cashes it in |
 | 1 | Scholar | what the game logs show about who should go before whom |
 
-Generation 0 keeps today's behaviour, so it's the benchmark. Planner and
+Generation 0 keeps today's behaviour, so it's the benchmark. Random is a
+second benchmark: no thought at all. In the balance checker, teams are random
+already, so the Keeper's order is a random one too, kept for the whole block;
+Random reshuffles every game, and the two should rate about even. In `cx run`
+they differ, as the Keeper keeps the pick order. Planner and
 Scholar are both generation 1, built side by side as two answers to the same
 question, and rated against each other and against Keeper with
-`--order Keeper,Planner,Scholar`. Whichever wins is what generation 2 builds on.
+`--order Keeper,Random,Planner,Scholar`. Whichever wins is what generation 2 builds on.
 
 Both score all 24 orders of their team and keep the best, so they differ only
 in how they score an order.

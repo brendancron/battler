@@ -105,7 +105,7 @@ Imports are relative to the importing file (`"../core/battle"`); tests use
   - A new AI gets its own file and an entry in `ai_names`/`ai_named`.
   - Order AIs (`docs/ordering.md`), which arrange a team into slots before a
     battle: `orderer.cx` (the `Orderer` trait, `orderer_named`, `arranged`),
-    `keeper.cx`, `planner.cx`. A new one gets its own file and an entry in
+    `keeper.cx`, `shuffler.cx` (Random), `planner.cx`. A new one gets its own file and an entry in
     `orderer_names`/`orderer_named`.
 - `src/ui/`: `display.cx` and `term.cx` (the battle screen), `prompt.cx`
   (numbered console questions).

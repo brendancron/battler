@@ -1,0 +1,22 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random, random_int } from "std/random/Random";
+import { Fighter } from "../content/roster";
+import { Orderer, all_orders } from "orderer";
+
+/**
+ * Order AI generation 0, alongside the Keeper: any order, picked at random
+ * afresh every game (docs/ordering.md). In the balance checker the Keeper's
+ * order is a random team's order too, but kept for a whole block; this one
+ * reshuffles each game.
+ */
+type RandomOrderer;
+
+impl Orderer for RandomOrderer {
+    fn arrange(self, mine: List<Fighter>, theirs: List<Fighter>, home: bool): <async, Console, Stdin, Random, Throw<IoError>> List<int> {
+        var orders = all_orders(mine.len());
+        return orders[random_int(0, orders.len())];
+    }
+}
