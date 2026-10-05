@@ -28,7 +28,9 @@ Away gets the first pick to make up for home's priority in the Fast phase
 
 Each team's characters take slots in the order they were drafted: its first
 pick is slot 0. Slot order decides who goes first within a tier
-([speed.md](speed.md)).
+([speed.md](speed.md)). This is changing: after the draft, the player
+will arrange their own slots and an order AI the foe's
+([ordering.md](ordering.md#in-a-game)).
 
 ## The foe's picks
 

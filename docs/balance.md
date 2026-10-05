@@ -55,6 +55,11 @@ at the same time. AIs are only rated in games between two different AIs.
 Allowing only the strongest AI gives the cleanest character numbers; allowing
 several also rates the AIs against each other.
 
+Order AIs, which arrange each team into slots before the battle, are a
+separate kind of AI ([ordering.md](ordering.md#in-the-balance-checker)).
+They're drawn from their own list, `--order LIST`, and a block with two
+different order AIs doubles to 8 games, so each team is ordered by each one.
+
 ## Running it
 
 ```

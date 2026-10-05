@@ -12,6 +12,7 @@ from, and the question is removed from here.
   check Resurrection without nerfing it directly: who should get one, and
   how (a passive, a move, an effect of some hits)?
 
+
 ## Later
 
 Set aside on purpose; can be added without changing what exists.
@@ -42,8 +43,6 @@ Set aside on purpose; can be added without changing what exists.
   Offering.
 - **Shaman passive** ([characters.md](characters.md)). It has Healing Rain,
   Spirit Link and Totem.
-- **Arranging slots after the draft** ([draft.md](draft.md#slots)). For now a
-  team's slots follow its pick order.
 - **Choosing home or away** ([draft.md](draft.md#home-and-away)). For now a coin
   flip decides.
 - **Balance checker progress back on stdout** (src/balance.cx). Its progress

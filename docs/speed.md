@@ -22,6 +22,7 @@ One team is **home** and the other is **away** for the whole battle.
 3. When one team has no characters left in the tier, the other team's
    remaining characters in it act back to back.
 4. Within one team and one tier, characters go in slot order: slot 0 first.
+   Each team's order AI chooses the slots before the battle ([ordering.md](ordering.md)).
 5. Each character acts once a round.
 
 ## Choosing actions
