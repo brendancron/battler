@@ -22,6 +22,7 @@ Set aside on purpose; can be added without changing what exists.
   reaches its team) is undecided.
 - **Effects that opt out of removal** ([effects.md](effects.md)). Which effects
   besides passives can't be cleansed, dispelled or stolen, and how they say so.
+  The Alchemist's Energized (v0.0.7) is the first: immune to all three.
 - **Default trigger order** ([events.md](events.md)). After the triggers on the
   character an event is about, what order the rest fire in. It is a strategy,
   so it can be settled when it matters.

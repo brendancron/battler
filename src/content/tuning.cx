@@ -16,7 +16,7 @@
  * with every balance change, here or in roster.cx: the balance checker keeps
  * each version's games apart, in balance-data/<version>/.
  */
-fn balance_version(): string { return "v0.0.6"; }
+fn balance_version(): string { return "v0.0.7"; }
 
 // Barbarian
 
@@ -47,6 +47,10 @@ fn aimed_shot_cooldown(): int { return 2; }
 /** Rounds of defense down. */
 fn hunters_mark_rounds(): int { return 2; }
 fn hunters_mark_cooldown(): int { return 3; }
+fn venom_arrow_power(): int { return 18; }
+/** Poison Venom Arrow puts on the foe. */
+fn venom_arrow_poison(): int { return 4; }
+fn venom_arrow_cooldown(): int { return 2; }
 
 // Cleric
 
@@ -66,7 +70,7 @@ fn vigil_heal(): int { return 8; }
 fn brimstone_power(): int { return 25; }
 /** Every ally heals this percent of the total damage dealt. */
 fn brimstone_drain_percent(): int { return 17; }
-fn brimstone_cooldown(): int { return 4; }
+fn brimstone_cooldown(): int { return 5; }
 fn hex_cooldown(): int { return 4; }
 
 // Alchemist
@@ -76,7 +80,11 @@ fn panacea_mist_heal(): int { return 15; }
 fn panacea_mist_cooldown(): int { return 3; }
 /** Poison on each foe. */
 fn acid_flask_poison(): int { return 6; }
-fn acid_flask_cooldown(): int { return 3; }
+fn acid_flask_cooldown(): int { return 4; }
+/** Energizer Potion: each stack of Energized multiplies attack and defense by 100 + this, over 100. */
+fn energizer_bonus_percent(): int { return 10; }
+fn energizer_cooldown(): int { return 3; }
+/** Greater Health Potion (the Alchemist's until v0.0.7). */
 fn potion_heal(): int { return 45; }
 /** The potion fires below this percent of max HP. */
 fn potion_line_percent(): int { return 65; }
@@ -130,7 +138,7 @@ fn bulwark_cooldown(): int { return 3; }
 
 /** Healing Rain heals each ally this much at once (placeholder), then regen per round, for how many rounds. */
 fn healing_rain_heal(): int { return 25; }
-fn healing_rain_regen(): int { return 20; }
+fn healing_rain_regen(): int { return 25; }
 fn healing_rain_rounds(): int { return 5; }
 fn healing_rain_cooldown(): int { return 5; }
 /** Spirit Link: the share of the Shaman's damage that goes to the linked foe, and of the foe's healing that goes to the Shaman. */
@@ -228,7 +236,7 @@ fn ironclad_cap_percent(): int { return 25; }
 
 // Stormbringer
 
-fn thunderstorm_power(): int { return 15; }
+fn thunderstorm_power(): int { return 18; }
 fn thunderstorm_cooldown(): int { return 4; }
 /** Chain Lightning's power on each foe, in the order they're picked. */
 fn chain_lightning_powers(): List<int> { return [20, 15, 10, 5]; }

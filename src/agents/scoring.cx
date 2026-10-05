@@ -3,6 +3,7 @@ import { Battle, Slot } from "../core/battle";
 import { MoveDef, usable } from "../core/move";
 import { TargetShape, Choice, bind, has_targets } from "../core/target";
 import { potion_line_percent, energize_bonus_percent } from "../content/tuning";
+import { energized_stat } from "../content/effects";
 
 /**
  * Scoring shared by the AIs (docs/balance.md lists them). Every move is tried
@@ -262,6 +263,7 @@ fn effect_worth(user: Character, target: Character, fx: Effect): int {
         if (!mine) { return -10; }
         if (fx.kind == "Energize") { return energize_worth(user, target); }
         if (fx.kind == "Greater Health Potion") { return health_potion_worth(target, fx); }
+        if (fx.kind == "Energized") { return energized_worth(target, fx); }
         // A barrier is worth about one blocked hit, which may be a while coming; a second one even later.
         if (fx.blocks_hits) {
             if (has(target, fx.kind)) { return 6; }
@@ -299,6 +301,23 @@ fn energize_worth(user: Character, target: Character): int {
     var gain = target.attack * energize_bonus_percent() / 300;
     if (soon) { return gain; }
     return gain / 2;
+}
+
+/**
+ * Energized is worth what its stacks add to the ally's attack and defense, a
+ * point for each: it lasts the rest of the battle, so the hard hitters and
+ * the sturdy gain the most, and a stack on top of others adds a little more
+ * than the first, as they multiply.
+ */
+fn energized_worth(target: Character, fx: Effect): int {
+    var stacks = 0;
+    match target.find_effect(fx.kind) {
+        Option.Some(e) => { stacks = e.power; }
+        Option.None => {}
+    }
+    var attack = energized_stat(target.attack, stacks + fx.power) - energized_stat(target.attack, stacks);
+    var defense = energized_stat(target.defense, stacks + fx.power) - energized_stat(target.defense, stacks);
+    return attack + defense;
 }
 
 /** The damage n poison deals before it wears off: n + (n - 1) + ... + 1. */

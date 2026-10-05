@@ -2,7 +2,7 @@ import { Character, Effect, Event, EventKind, Action, trigger_id, in_chain, max_
 import { pow } from "../core/maths";
 import { damage } from "../core/move";
 import {
-    rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, totem_bonus_percent, totem_cooldown,
+    rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, energizer_bonus_percent, totem_bonus_percent, totem_cooldown,
     predator_bonus_percent, predator_line_percent, shield_decay, crescendo_bonus_percent, sanguine_percent, chill_rounds, ironclad_cap_percent,
     puppeteer_cooldown, riposte_power, spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds
 } from "tuning";
@@ -545,6 +545,44 @@ fn energize(): Effect {
     e.first_hit_only = true;
     e.should = energize_should;
     e.react = energize_react;
+    return e;
+}
+
+// Alchemist, Energizer Potion: Energized, a buff that stays for the rest of the battle and can't be
+// removed. Its `power` is its stacks, and each multiplies attack and defense by
+// 100 + energizer_bonus_percent, over 100 (docs/characters.md#alchemist).
+
+/** The stat with the given number of stacks of Energized on it. */
+fn energized_stat(stat: int, stacks: int): int {
+    var out = stat;
+    var i = 0;
+    while (i < stacks) {
+        out = out * (100 + energizer_bonus_percent()) / 100;
+        i = i + 1;
+    }
+    return out;
+}
+
+fn energized_scale(owner: Character, fx: Effect, stat: int): int { return energized_stat(stat, fx.power); }
+
+fn add_stacks(existing: Effect, incoming: Effect) { existing.power = existing.power + incoming.power; }
+
+fn energized_label(owner: Character, fx: Effect): string {
+    var hundredths = energized_stat(100, fx.power);
+    var cents = str(hundredths % 100);
+    if (hundredths % 100 < 10) { cents = "0" + cents; }
+    return "Energized ×" + str(hundredths / 100) + "." + cents;
+}
+
+/** One stack of Energized; another adds a stack. */
+fn energized(): Effect {
+    var e = base("Energized", true);
+    e.immune = true;
+    e.power = 1;
+    e.merge = add_stacks;
+    e.scale_attack = energized_scale;
+    e.scale_defense = energized_scale;
+    e.label = energized_label;
     return e;
 }
 

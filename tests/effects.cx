@@ -3,11 +3,11 @@ import { Battle } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import {
     attack_up, attack_down, defense_down, poison, regen, timed, taunt, rage, rage_multiplier,
-    last_rites, keen_eye, vigil, hex, greater_health_potion, panacea, panacea_supply, energize, inner_peace, soul_harvest, shield,
+    last_rites, keen_eye, vigil, hex, greater_health_potion, panacea, panacea_supply, energize, inner_peace, soul_harvest, shield, energized, energized_stat,
     predator, predator_multiplier, barrier, retaliate
 } from "battler/content/effects";
 import { pow } from "battler/core/maths";
-import { rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, shield_decay, predator_bonus_percent, predator_line_percent } from "battler/content/tuning";
+import { rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, shield_decay, predator_bonus_percent, predator_line_percent, energizer_bonus_percent } from "battler/content/tuning";
 import { duel, who, slot, transcript, logged, has_effect } from "support";
 
 fn add(b: Battle, c: Character, fx: List<Action>) { perform(engine(), b, "test", fx); }
@@ -384,6 +384,49 @@ fn panacea_blocks_one_debuff_per_charge() {
     assert(has_effect(a, "Attack up"), "buffs pass");
     add(b, a, [Action.AddEffect(a, hex())]);
     assert(has_effect(a, "Hex"), "third lands");
+}
+
+// Energized
+
+@test
+fn energized_stacks_multiply_attack_and_defense() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var once = 100 * (100 + energizer_bonus_percent()) / 100;
+    add(b, a, [Action.AddEffect(a, energized())]);
+    assert(a.current_attack() == once && a.current_defense() == once, "one stack");
+    add(b, a, [Action.AddEffect(a, energized())]);
+    var twice = once * (100 + energizer_bonus_percent()) / 100;
+    assert(a.current_attack() == twice && a.current_defense() == twice, "a second stack multiplies again");
+    assert(a.effects.len() == 1, "one entry");
+    assert(energized_stat(100, 2) == twice, "energized_stat agrees");
+}
+
+@test
+fn energized_stays_through_round_ends() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, energized())]);
+    var i = 0;
+    while (i < 20) { end_round(b); i = i + 1; }
+    assert(a.current_attack() == energized_stat(100, 1), "for the rest of the battle");
+}
+
+@test
+fn energized_cant_be_cleansed_dispelled_or_stolen() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var thief = who(b, slot(1, 0));
+    add(b, a, [Action.AddEffect(a, energized()), Action.Cleanse(a), Action.Dispel(a), Action.Steal(a, thief)]);
+    assert(has_effect(a, "Energized") && !has_effect(thief, "Energized"), "still on A");
+}
+
+@test
+fn a_panacea_lets_energized_through() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, panacea()), Action.AddEffect(a, energized())]);
+    assert(has_effect(a, "Energized") && has_effect(a, "Panacea"), "a buff, so the Panacea is kept");
 }
 
 // Barrier

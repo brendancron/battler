@@ -35,17 +35,18 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Barbarian   | Cleave         | 2 |
 | Ranger      | Aimed Shot     | 2 |
 | Ranger      | Hunter's Mark  | 3 |
+| Ranger      | Venom Arrow    | 2 |
 | Paladin     | Smite          | 2 |
 | Paladin     | Guard          | 3 |
 | Paladin     | Lay on Hands   | 3 |
 | Cleric      | Prayer         | 4 |
 | Cleric      | Purify         | 3 |
 | Cleric      | Resurrection   | 7 |
-| Witch       | Brimstone      | 4 |
+| Witch       | Brimstone      | 5 |
 | Witch       | Hex            | 4 |
 | Alchemist   | Panacea Mist   | 3 |
-| Alchemist   | Greater Health Potion | 3 |
-| Alchemist   | Acid Flask     | 3 |
+| Alchemist   | Energizer Potion | 3 |
+| Alchemist   | Acid Flask     | 4 |
 | Monk        | Disarming Palm | 2 |
 | Monk        | Crippling Blow | 2 |
 | Monk        | Flurry of Blows| 3 |

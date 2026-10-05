@@ -3,13 +3,13 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { Choice } from "battler/core/target";
 import { use_move, damage, hit } from "battler/core/move";
-import { energize, taunt, keen_eye, regen, heal_block, predator, predator_multiplier, shield, barrier, poison, panacea } from "battler/content/effects";
+import { energize, energized_stat, taunt, keen_eye, regen, heal_block, predator, predator_multiplier, shield, barrier, poison, panacea } from "battler/content/effects";
 import {
-    cleave, aimed_shot, hunters_mark, smite, guard, lay_on_hands, prayer, purify, sanctuary, brimstone, hex_move,
-    acid_flask, greater_health_potion_move, energize_move, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows, reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, backstab, execution, resurrection
+    cleave, aimed_shot, hunters_mark, venom_arrow, smite, guard, lay_on_hands, prayer, purify, sanctuary, brimstone, hex_move,
+    acid_flask, greater_health_potion_move, energize_move, energizer_potion, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows, reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, backstab, execution, resurrection
 } from "battler/content/moves";
 import {
-    cleave_power, aimed_shot_power, smite_power, guard_rounds, lay_on_hands_heal, prayer_heal, purify_heal, sanctuary_heal,
+    cleave_power, aimed_shot_power, venom_arrow_power, venom_arrow_poison, smite_power, guard_rounds, lay_on_hands_heal, prayer_heal, purify_heal, sanctuary_heal,
     brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, panacea_mist_heal, disarming_palm_power,
     crippling_blow_power, crippling_blow_turns, flurry_power, flurry_picks, reap_power, reap_wound_divisor,
     soul_siphon_power, soul_siphon_drain_percent, writhing_depths_power, shield_bash_power, bulwark_shield,
@@ -27,6 +27,8 @@ fn use(b: Battle, user: Slot, move: string, choice: Choice): bool {
     var m = cleave();
     if (move == "aimed_shot") { m = aimed_shot(); }
     if (move == "hunters_mark") { m = hunters_mark(); }
+    if (move == "venom_arrow") { m = venom_arrow(); }
+    if (move == "energizer_potion") { m = energizer_potion(); }
     if (move == "smite") { m = smite(); }
     if (move == "guard") { m = guard(); }
     if (move == "lay_on_hands") { m = lay_on_hands(); }
@@ -297,7 +299,47 @@ fn brimstone_hits_every_foe_whatever_the_taunts() {
     assert(hp < 100 && who(b, slot(1, 1)).hp == hp && who(b, slot(1, 2)).hp == hp, "the same hit on each");
 }
 
+@test
+fn venom_arrow_hits_and_poisons_one_foe() {
+    var b = duel(["A"], ["B", "C"]);
+    sturdy(who(b, slot(1, 0)));
+    var expected = hit_for(b, slot(0, 0), slot(1, 0), venom_arrow_power());
+    use(b, slot(0, 0), "venom_arrow", at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 1000 - expected, "the hit");
+    match who(b, slot(1, 0)).find_effect("Poison") {
+        Option.Some(p) => { assert(p.power == venom_arrow_poison(), "the poison"); }
+        Option.None => { assert(false, "poisoned"); }
+    }
+    assert(!has_effect(who(b, slot(1, 1)), "Poison"), "only that foe");
+}
+
+@test
+fn venom_arrow_adds_to_poison_already_there() {
+    var b = duel(["A"], ["B"]);
+    sturdy(who(b, slot(1, 0)));
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), poison(5))]);
+    use(b, slot(0, 0), "venom_arrow", at(slot(1, 0)));
+    match who(b, slot(1, 0)).find_effect("Poison") {
+        Option.Some(p) => { assert(p.power == 5 + venom_arrow_poison(), "stacked"); }
+        Option.None => { assert(false, "poisoned"); }
+    }
+}
+
 // Alchemist
+
+@test
+fn energizer_potion_adds_a_stack_to_one_ally_or_the_user() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "energizer_potion", at(slot(0, 1)));
+    who(b, slot(0, 0)).cooldowns = [];
+    use(b, slot(0, 0), "energizer_potion", at(slot(0, 1)));
+    who(b, slot(0, 0)).cooldowns = [];
+    assert(who(b, slot(0, 0)).current_attack() == 100, "not the user");
+    assert(who(b, slot(0, 1)).current_attack() == energized_stat(100, 2), "two stacks on B");
+    use(b, slot(0, 0), "energizer_potion", at(slot(0, 0)));
+    assert(who(b, slot(0, 0)).current_defense() == energized_stat(100, 1), "or the Alchemist itself");
+    assert(!use(b, slot(0, 0), "energizer_potion", at(slot(1, 0))), "not a foe");
+}
 
 @test
 fn greater_health_potion_goes_to_one_ally_and_stacks() {

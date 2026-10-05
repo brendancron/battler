@@ -220,7 +220,10 @@ Moves can act on the effects themselves:
   Swashbuckler's Plunder, [characters.md](characters.md#swashbuckler)).
 
 Some effects won't make sense to cleanse, dispel or steal, so effects will need
-a way to opt out of some or all of these.
+a way to opt out of some or all of these. Passives opt out of all three, and so
+will the Alchemist's Energized (since v0.0.7,
+[characters.md](characters.md#alchemist)): a buff that stays for the rest of
+the battle.
 
 ## Auras
 

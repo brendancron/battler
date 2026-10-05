@@ -164,7 +164,13 @@ placeholder.)
 |---------------|---------|--------|
 | Aimed Shot    | one foe | A direct hit, power 30 ([damage.md](damage.md)). |
 | Hunter's Mark | one foe | Defense down for 2 rounds ([effects.md](effects.md)), so the foe takes 50% more damage from everyone. |
-| —             |         | To be designed. |
+| Venom Arrow   | one foe | A direct hit, power 18, and 4 poison ([effects.md](effects.md#poison)): 10 more damage over four rounds. Cooldown 2. |
+
+Venom Arrow's name, power 18, 4 poison and cooldown 2 are placeholders
+(new in v0.0.7). It gives the Ranger a slow-burning hit
+alongside Aimed Shot's burst, and it feeds the poison that the Alchemist's
+Acid Flask also lays: poison adds up, so the two together stack deep on one
+foe.
 
 Rejected so far:
 
@@ -205,7 +211,7 @@ Mage ([archetypes.md](archetypes.md)).
 
 | Move      | Target   | Effect |
 |-----------|----------|--------|
-| Brimstone | all foes | A direct hit on every foe standing, power 25 ([damage.md](damage.md)). Then every ally, the Witch included, heals 17% of the total damage dealt. |
+| Brimstone | all foes | A direct hit on every foe standing, power 25 ([damage.md](damage.md)). Then every ally, the Witch included, heals 17% of the total damage dealt. Cooldown 5 (4 until v0.0.7). |
 | Hex       | one foe  | The foe skips its next turn, then the debuff goes away. Shown as turning the foe into a frog. |
 | —         |          | To be designed. |
 
@@ -232,12 +238,13 @@ Hex details:
 
 Support ([archetypes.md](archetypes.md)).
 
-Each move brews something and throws it. A potion goes to one ally (or the
-Alchemist itself): it's a buff ([effects.md](effects.md)) that waits for its
-moment, does its job once, and is used up. The Alchemist's strength is
-timing: its potions act mid-round, the moment they're needed, where the Cleric
-heals on its turn and the Shaman's regen pays out at round end. Its acid goes
-on the foes.
+Each move brews something and throws it. Its potions go to its allies (or
+the Alchemist itself) and its acid goes on the foes. Since v0.0.7 its
+strength is scaling: Energizer Potion builds up an ally a little at a time
+for the rest of the battle, so the longer the fight goes, the more the
+Alchemist has added. It has almost no healing of its own (Panacea
+Mist's 15 per ally); that's the weakness, and healing can be revisited later
+if needed.
 
 **Passive: Panacea Supply.** At the start of the battle, every teammate (the
 Alchemist included) gets a Panacea, which blocks the next debuff that would
@@ -246,25 +253,31 @@ more. (Until v0.0.3 it topped up every round, to one each.)
 
 **Moves**
 
-| Move                  | Target   | Potion |
-|-----------------------|----------|--------|
-| Panacea Mist          | all allies, itself too | Heals each ally 15 and gives it a Panacea, on top of any it holds. Cooldown 3. |
-| Greater Health Potion | one ally | When damage takes the ally below 65% of its max HP, heals it 45 at once. Healing past max HP is lost. Cooldown 3. |
-| Acid Flask            | all foes | 6 poison on every foe standing ([effects.md](effects.md#poison)): 21 damage each over six rounds. Cooldown 3. |
+| Move             | Target   | Potion |
+|------------------|----------|--------|
+| Panacea Mist     | all allies, itself too | Heals each ally 15 and gives it a Panacea, on top of any it holds. Cooldown 3. |
+| Energizer Potion | one ally, or itself | A stack of Energized: each stack multiplies the ally's attack and defense by 1.1 for the rest of the battle. Cooldown 3. |
+| Acid Flask       | all foes | 6 poison on every foe standing ([effects.md](effects.md#poison)): 21 damage each over six rounds. Cooldown 4 (3 until v0.0.7). |
 
-Its basic attack is Bottle Bash (power 8). The 65%, 45, 15, 6 poison and
-cooldowns are placeholders. Acid Flask is
-the exception to single-target moves: it's the Alchemist's way to pressure
-the whole foe team, slowly.
+Its basic attack is Bottle Bash (power 8). The 15, 6 poison and cooldowns
+are placeholders, and so is Energizer's 1.1. Acid Flask is the exception to
+single-target moves: it's the Alchemist's way to pressure the whole foe team,
+slowly.
 
-- **Greater Health Potion fires early on purpose.** It triggers below 65%,
-  not lower, so it's there before the ally is in real danger, even though
-  some of the 45 is lost to max HP: an ally hit from 70 to 60 of 100 heals
-  only 40. It's measured against the ally's current max HP, so after a Reap
-  to 90 max it fires below 58.5 (under 59).
-- It fires the moment the damage lands, before anyone else acts, so the ally
-  is topped up before the next hit. If the ally is already below 65% when it
-  gets the potion, it fires straight away.
+- **Energized stacks multiply.** Two stacks is × 1.21, three × 1.331, on both
+  attack and defense. It works with other multipliers like any other.
+- **Energized is a buff, immune to removal** ([effects.md](effects.md#removing-and-moving-effects)):
+  it can't be cleansed, dispelled or stolen, so a Paladin's Smite or a
+  Swashbuckler's Plunder can't touch it. Being a buff, a Panacea has nothing
+  to block.
+- **It's one effect with a stack count**, like poison's amount: a second
+  Energizer Potion adds a stack to the ally's Energized.
+- **Potions stack, with no limit.** The Mist adds a Panacea to whatever each
+  ally holds, so a team can hold one, two or many and go into a debuff-heavy
+  fight (a Monk, a Witch's Hex, a Jester's Silence) blocking several each.
+  Two Panaceas block the next two debuffs.
+- Panacea never acts straight away: it doesn't remove debuffs the holder
+  already has, only blocks the next one put on it.
 
 History: the first kit had Health Potion (all allies, heal 25 when more than
 20 below max HP) and Panacea (all allies, block the next debuff), with
@@ -273,19 +286,15 @@ ally at +75%, and the defense went from 60 to 80 after the Alchemist won only
 28% of balance games. Health Potion still lost to the Shaman's Healing Rain
 (54 per ally over 3 rounds) and the Cleric's bigger heals, and the Alchemist
 won only 34% of 2,000 games, so it became the single-target Greater Health
-Potion.
+Potion. Until v0.0.3 the third move was Energize (the ally's next attack
++75%), and the basic attack was Acid Splash; Energize gave way to Panacea
+Mist.
 
-- **Potions stack, with no limit.** The Mist adds a Panacea to whatever each
-  ally holds, so a team can hold one, two or many and go into a debuff-heavy
-  fight (a Monk, a Witch's Hex, a Jester's Silence) blocking several each.
-- Until v0.0.3 the third move was Energize (the ally's next attack +75%), and
-  the basic attack was Acid Splash. Energize gave way to Panacea Mist, which
-  fits a support built on timing and debuff protection better.
-- Panacea never acts straight away: it doesn't remove debuffs the holder
-  already has, only blocks the next one put on it.
-- Potions stack as charges. Tossing a potion an ally already holds adds a
-  charge, and each time the potion does its job it uses one. Two Greater
-  Health Potions heal twice, and two Panaceas block the next two debuffs.
+Until v0.0.7 the Alchemist's strength was timing, and the second move was
+Greater Health Potion (one ally, cooldown 3): when damage took the ally below
+65% of its max HP, it healed 45 at once, mid-round, before anyone else acted.
+It gave way to Energizer Potion, because the Alchemist had no scaling to
+compete with the other supports.
 
 ### Monk
 
@@ -408,7 +417,7 @@ it alive until then.
 
 | Move           | Target        | Effect |
 |----------------|---------------|--------|
-| Healing Rain   | all allies    | Heals each 25 at once (placeholder), then regen 20 for 5 rounds on each ([effects.md](effects.md)): 125 HP each in all. Shaman's big turn-1 move. (Until v0.0.5 it was regen only, for 3 rounds: 18 a round, then 24 in v0.0.3 and 30 in v0.0.4.) |
+| Healing Rain   | all allies    | Heals each 25 at once (placeholder), then regen 25 for 5 rounds on each ([effects.md](effects.md)): 150 HP each in all. Shaman's big turn-1 move. (Regen 20 in v0.0.5 and v0.0.6. Until v0.0.5 it was regen only, for 3 rounds: 18 a round, then 24 in v0.0.3 and 30 in v0.0.4.) |
 | Spirit Link    | one foe       | Links the Shaman to the foe for 2 rounds: 50% of the damage the Shaman takes goes to the foe instead, and 75% of the healing the foe takes goes to the Shaman. Cooldown 3. |
 | Totem          | —             | Summons a totem with its own small HP pool ([summons.md](summons.md)). While it stands, the whole team has +35% attack and +35% defense (25% until v0.0.4). |
 
@@ -848,7 +857,7 @@ anyone can act.
 
 | Move            | Target                | Effect |
 |-----------------|-----------------------|--------|
-| Thunderstorm    | all foes              | A direct hit on every foe standing, power 15 ([damage.md](damage.md)). Cooldown 4. |
+| Thunderstorm    | all foes              | A direct hit on every foe standing, power 18 ([damage.md](damage.md)); 15 until v0.0.7. Cooldown 4. |
 | Chain Lightning | up to four foes, in order | The player picks foes one after another, and the bolt hits them in that order: power 20, then 15, then 10, then 5. Cooldown 3. |
 
 - **Thunderstorm is light because it's Fast.** The Stormbringer's area hit
