@@ -16,7 +16,7 @@
  * with every balance change, here or in roster.cx: the balance checker keeps
  * each version's games apart, in balance-data/<version>/.
  */
-fn balance_version(): string { return "v0.0.5"; }
+fn balance_version(): string { return "v0.0.6"; }
 
 // Barbarian
 
@@ -52,7 +52,7 @@ fn hunters_mark_cooldown(): int { return 3; }
 
 fn prayer_heal(): int { return 20; }
 fn prayer_cooldown(): int { return 4; }
-fn purify_heal(): int { return 40; }
+fn purify_heal(): int { return 35; }
 fn purify_cooldown(): int { return 3; }
 fn sanctuary_heal(): int { return 20; }
 fn sanctuary_cooldown(): int { return 3; }
@@ -65,7 +65,7 @@ fn vigil_heal(): int { return 8; }
 
 fn brimstone_power(): int { return 25; }
 /** Every ally heals this percent of the total damage dealt. */
-fn brimstone_drain_percent(): int { return 20; }
+fn brimstone_drain_percent(): int { return 17; }
 fn brimstone_cooldown(): int { return 4; }
 fn hex_cooldown(): int { return 4; }
 
@@ -203,7 +203,7 @@ fn frostbite_cooldown(): int { return 2; }
 
 // Frost Giant
 
-fn avalanche_power(): int { return 13; }
+fn avalanche_power(): int { return 19; }
 fn avalanche_cooldown(): int { return 4; }
 /** Rounds of taunt. */
 fn glacial_roar_rounds(): int { return 2; }
@@ -242,10 +242,10 @@ fn shuriken_cooldown(): int { return 2; }
 // Swashbuckler
 
 fn pistol_shot_power(): int { return 30; }
-fn pistol_shot_cooldown(): int { return 2; }
+fn pistol_shot_cooldown(): int { return 3; }
 fn plunder_power(): int { return 20; }
-fn plunder_cooldown(): int { return 3; }
-fn en_garde_cooldown(): int { return 4; }
+fn plunder_cooldown(): int { return 4; }
+fn en_garde_cooldown(): int { return 5; }
 /** Parry: the power of the riposte when it blocks a hit. */
 fn riposte_power(): int { return 12; }
 

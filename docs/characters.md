@@ -71,6 +71,7 @@ for, not only on random teams ([balance.md](balance.md#character-pairs)).
 ### Barbarian
 
 Warrior ([archetypes.md](archetypes.md)).
+Stats (placeholders): attack 125, defense 72 (attack 130 until v0.0.6).
 
 **Passive, Rage: the lower its HP, the harder it hits.** A Barbarian left at
 1 HP hits like a truck, and a healthy one hits softer than its attack stat
@@ -173,7 +174,7 @@ Rejected so far:
 
 Support ([archetypes.md](archetypes.md)).
 
-Stats (placeholders): attack 70, defense 75 (81 until v0.0.4).
+Stats (placeholders): attack 67, defense 72 (70 and 75 until v0.0.6; defense 81 until v0.0.4).
 
 **Passive: Vigil.** At the end of each round, heals the ally with the lowest
 HP for 8. The Cleric counts as an ally, and a tie goes to the lowest slot.
@@ -184,11 +185,11 @@ HP for 8. The Cleric counts as an ally, and a tie goes to the lowest slot.
 | Move    | Target                  | Effect |
 |---------|-------------------------|--------|
 | Prayer  | all allies, itself too  | Heals 20 each. |
-| Purify  | one ally, or itself     | Cleanses the ally of debuffs ([effects.md](effects.md)), then heals it 40. Cleansing first means a Heal Block is gone before the heal lands. |
+| Purify  | one ally, or itself     | Cleanses the ally of debuffs ([effects.md](effects.md)), then heals it 35. Cleansing first means a Heal Block is gone before the heal lands. |
 | Resurrection | a fallen ally        | Resurrects it at 40% of its max HP ([fainting.md](fainting.md)). Cooldown 7. |
 
 Purify is meant to heal more than the Paladin's Lay on Hands: the Cleric is the
-healer, and the Paladin isn't picked for its heal. 40 is a placeholder.
+healer, and the Paladin isn't picked for its heal. 35 is a placeholder (40 until v0.0.6).
 
 Resurrection was the Shaman's Ancestral Call until v0.0.3; bringing allies
 back suits the healer. It replaced Sanctuary (heal 20 and a barrier against
@@ -204,7 +205,7 @@ Mage ([archetypes.md](archetypes.md)).
 
 | Move      | Target   | Effect |
 |-----------|----------|--------|
-| Brimstone | all foes | A direct hit on every foe standing, power 25 ([damage.md](damage.md)). Then every ally, the Witch included, heals 20% of the total damage dealt. |
+| Brimstone | all foes | A direct hit on every foe standing, power 25 ([damage.md](damage.md)). Then every ally, the Witch included, heals 17% of the total damage dealt. |
 | Hex       | one foe  | The foe skips its next turn, then the debuff goes away. Shown as turning the foe into a frog. |
 | —         |          | To be designed. |
 
@@ -213,10 +214,10 @@ Brimstone details:
 - "Damage dealt" is the HP the foes actually lost, as for the Grim Reaper's
   Soul Siphon: damage a shield soaks doesn't count, and neither does damage
   past a foe's last HP.
-- Each ally heals the full 20% (it isn't split between them), so the heal is
+- Each ally heals the full 17% (it isn't split between them), so the heal is
   worth most early, when there are many foes to hit and many allies to heal.
   Heal Block stops it as it stops any heal.
-- 20% is a placeholder.
+- 17% is a placeholder (20% until v0.0.6).
 
 Hex details:
 
@@ -452,6 +453,7 @@ also goes up earlier in the round.
 ### Assassin
 
 Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
+Stats (placeholders): attack 83, defense 52 (attack 88 until v0.0.6).
 
 **Passive: Predator.** The Assassin deals **50% more damage** (placeholder; 25% before v0.0.2)
 to a target **below 50%** of its max HP. It finishes off wounded foes.
@@ -717,7 +719,7 @@ The Cryomancer brings chill and freeze ([effects.md](effects.md#chill-and-freeze
 ### Frost Giant
 
 Tank ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md)).
-Stats (placeholders): attack 85, defense 150.
+Stats (placeholders): attack 93, defense 150 (attack 85 until v0.0.6).
 
 **Passive: Cold Aura.** A foe that hits the Frost Giant directly is chilled
 ([effects.md](effects.md#chill-and-freeze)). Hitting it twice before the chill
@@ -741,12 +743,12 @@ wears off freezes the attacker. (The name is a placeholder.)
 
 | Move         | Target   | Effect |
 |--------------|----------|--------|
-| Avalanche    | all foes | A light direct hit on every foe standing, power 13 ([damage.md](damage.md)), and chill on each ([effects.md](effects.md#chill-and-freeze)). A foe already chilled is frozen. Cooldown 4. |
+| Avalanche    | all foes | A light direct hit on every foe standing, power 19 ([damage.md](damage.md)), and chill on each ([effects.md](effects.md#chill-and-freeze)). A foe already chilled is frozen. Cooldown 4. |
 | Glacial Roar | the user | Taunt for 2 rounds ([targeting.md](targeting.md#taunt)). Cooldown 3. |
 | Cryosleep    | one ally | Puts the ally in Cryosleep ([effects.md](effects.md#cryosleep)): it skips its next turn and takes no damage until then. Heals it 15. Cooldown 4. |
 
 - **Avalanche is light on purpose.** The Frost Giant is a Tank, so its area
-  hit is well under Blizzard's 20 (13; 10 until v0.0.2); the chill is what matters. Avalanche on one
+  hit is just under Blizzard's 20 (19; 13 until v0.0.6, 10 until v0.0.2); the chill is what matters. Avalanche on one
   turn and Blizzard on the Cryomancer's next freezes the whole foe team.
 - **Glacial Roar feeds the aura.** Foes that have to pick the Giant get
   chilled for it. Like the Knight's taunt it doesn't raise defense, unlike the
@@ -901,7 +903,7 @@ Ninja's safety behind its shroud is worth something. More moves later.
 ### Swashbuckler
 
 Warrior ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
-Stats (placeholders): attack 95, defense 68 (attack 110 until v0.0.4).
+Stats (placeholders): attack 87, defense 68 (attack 110 until v0.0.4, 95 until v0.0.6).
 
 The only **Fast Warrior**: it wins the war of attrition rather than picking
 foes off. Parry and riposte punish the foe for hitting it, Plunder strips
@@ -919,9 +921,9 @@ won most of its games.
 
 | Move    | Target  | Effect |
 |---------|---------|--------|
-| Pistol Shot | any foe | A direct hit, power 30 ([damage.md](damage.md)), on any foe standing: taunts and other targeting tiers don't apply. Cooldown 2. |
-| Plunder | one foe | Steals every buff the foe has and puts them on the Swashbuckler, then a direct hit, power 20 ([damage.md](damage.md)). Cooldown 3. |
-| En Garde | the user | Parry: the next direct hit a foe lands on the Swashbuckler is blocked, and it ripostes, a direct hit of power 12 back on the attacker. It lasts until it's used, however many rounds that takes. Cooldown 4. |
+| Pistol Shot | any foe | A direct hit, power 30 ([damage.md](damage.md)), on any foe standing: taunts and other targeting tiers don't apply. Cooldown 3 (2 until v0.0.6). |
+| Plunder | one foe | Steals every buff the foe has and puts them on the Swashbuckler, then a direct hit, power 20 ([damage.md](damage.md)). Cooldown 4 (3 until v0.0.6). |
+| En Garde | the user | Parry: the next direct hit a foe lands on the Swashbuckler is blocked, and it ripostes, a direct hit of power 12 back on the attacker. It lasts until it's used, however many rounds that takes. Cooldown 5 (4 until v0.0.6). |
 
 - **Pistol Shot reaches the backline.** It ignores targeting tiers like an
   area move does, but hits one foe of the Swashbuckler's choosing: a Fairy,
@@ -934,6 +936,8 @@ won most of its games.
 - Until v0.0.3 the Swashbuckler had only Plunder and its basic attack.
 - v0.0.4 toned it down after it won 84% of v0.0.3's games: attack 110 to
   95, riposte power 20 to 12, En Garde's cooldown 3 to 4.
+- v0.0.6 toned it down again after it won 63% of v0.0.5's games: attack 95
+  to 87, and every cooldown up by one (Pistol Shot 3, Plunder 4, En Garde 5).
 - **Every buff, for now.** Stealing just one (the player's pick, or the
   newest) was considered; it can be revisited after balance testing.
 - **Steal first, then hit,** as Smite dispels first: a shield, barrier or
@@ -959,7 +963,7 @@ won most of its games.
 Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
 
 Weak on its own on purpose: Puppeteer is the strongest thing it does, so its
-stats are low (placeholder: attack 90, defense 50) and its hit is light.
+stats are low (placeholder: attack 94, defense 50; attack 90 until v0.0.6) and its hit is light.
 
 **Passive:** to be designed.
 
