@@ -57,6 +57,7 @@ fn names_json(xs: List<string>): string {
 /** One game as a line of the game log. `time` is in Unix seconds. */
 fn game_record(g: Game, time: int): string {
     return "{\"time\":" + str(time) + ",\"home_ai\":" + quoted(g.home_ai) + ",\"away_ai\":" + quoted(g.away_ai)
+        + ",\"home_order\":" + quoted(g.home_order) + ",\"away_order\":" + quoted(g.away_order)
         + ",\"home\":" + names_json(g.home) + ",\"away\":" + names_json(g.away)
         + ",\"winner\":" + str(g.winner) + ",\"rounds\":" + str(g.rounds) + ",\"secs\":" + fixed(g.took, 3) + "}";
 }

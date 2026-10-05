@@ -57,21 +57,42 @@ in how they score an order.
 
 ### Planner: setup rules
 
-An order scores points for each pair of teammates where one sets up and the
-other cashes in, with the setter in the lower slot. Only pairs that act in
-the same phase count: across tiers, slots don't change who goes first
-([speed.md](speed.md)). What counts as a setup and a cash-in is read from
-the moves, not from character names, for example:
+An order scores points for each pair of teammates where one sets up the
+other, with the setter in the lower slot. Only pairs in the same tier count:
+across tiers, slots don't change who goes first ([speed.md](speed.md)).
 
-| Sets up | Cashed in by |
-|---|---|
-| Area damage (Thunderstorm, Brimstone, Writhing Depths) | moves that do more to wounded foes (Predator, Execution) |
-| Chill (Avalanche, Cold Aura) | moves that freeze a chilled foe (Blizzard) |
-| Shields, buffs and cleanses on allies | the allies' big attacks |
-| Taunts | frail damage dealers, which act once the taunt is up |
+What sets up what isn't written down anywhere, by name or by move. The
+Planner finds it out by trying the moves in a **sandbox**: a copy of the
+battle with fresh characters, its team home against the real foe team, each
+foe given 1000 max HP so no probe knocks one out. A move is measured by what
+it does to the foes: the HP they lose, plus 25 for each foe it makes skip its
+turn. Two rules come out of it:
 
-The rules and their weights are placeholders, to be tuned by how Planner does
-against Keeper.
+| Rule | Sets up | Cashed in by | Worth |
+|---|---|---|---|
+| **Combo** | a move of A, used first on the first foe (or on B, for a move on an ally) | a move of B that then does at least 10% (and 3) more than B's best on its own | 2 |
+| **Finish** | A has a move that takes HP off two foes or more | B has a move that does at least 20% more to a foe at 40% HP than at full | 2 |
+
+The combo rule finds a second chill freezing a chilled foe (the Frost Giant
+before the Cryomancer, when they share a tier), a buff before the ally it
+boosts (the Bard), and a debuff that makes a foe take more (the Monk, the
+Ranger's Hunter's Mark). The finish rule is there because one area hit
+rarely takes a foe below the Predator's line on its own: the Stormbringer
+before the Assassin.
+
+The Planner scores all 24 orders and keeps the best; on a tie the order the
+team came in wins, so a team with nothing to set up is left as it is.
+Probing takes a few hundred milliseconds a team, so the Planner remembers its
+last 8 answers (by both teams and the side), which covers a balance block.
+
+Not seen yet: the Execution's chain (it moves on after a knockout, and
+sandbox foes don't get knocked out), and anything that's worth acting early
+rather than before a teammate (a taunt or a shield going up before the foes
+hit). Those are ideas for a later generation.
+
+Every number here (the worths, 25 per skipped turn, 10%, 3, 20%, 40%) is a
+placeholder, in `src/agents/planner.cx`, to be tuned by how the Planner does
+against the Keeper.
 
 ### Scholar: learned from the logs
 
@@ -106,14 +127,19 @@ the foe's order until the battle starts.
 Order AIs have their own list, `--order LIST`, beside `--ai LIST`, and their
 own ratings ([balance.md](balance.md#keeping-the-numbers-fair)):
 
-1. A block draws two order AIs, P and Q, as well as the two teams and the two
-   move AIs.
+1. With more than one order AI in the list, a block draws two different ones,
+   P and Q, as well as the two teams and the two move AIs.
 2. It plays the usual 4 games with team X ordered by P and team Y by Q, then
    the same 4 with X ordered by Q and Y by P: **8 games**.
-3. If P and Q are the same order AI, the second half would repeat the first,
-   so the block is the usual 4 games.
+3. With one order AI in the list (the default, `Keeper`), both teams use it
+   and the block is the usual 4 games.
 
 Each team is ordered by each order AI equally often, so team strength cancels
 out, and order AIs are rated, like move AIs, only in games between two
 different ones. Each game asks the order AIs afresh, so an order AI with
 some randomness in it is sampled in every game.
+
+Each game in the log (`balance.games.jsonl`) names its order AIs
+(`home_order`, `away_order`) and lists each team in slot order, as arranged.
+A worker's game line carries them too. A game with a Planner team shows as
+`Guardian/Planner` in the progress lines.

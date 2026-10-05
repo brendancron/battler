@@ -7,7 +7,7 @@ import {
 } from "battler/balance/logs";
 
 fn sample(winner: int): Game {
-    return Game { home_ai: "Greedy", away_ai: "Tactician", home: ["Grim Reaper", "Monk"], away: ["Witch", "Ranger"], winner: winner, rounds: 12, took: 0.25 };
+    return Game { home_ai: "Greedy", away_ai: "Tactician", home_order: "Keeper", away_order: "Planner", home: ["Grim Reaper", "Monk"], away: ["Witch", "Ranger"], winner: winner, rounds: 12, took: 0.25 };
 }
 
 fn field(d: Data, key: string): Data {

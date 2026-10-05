@@ -106,6 +106,7 @@ fn a_ledger_survives_a_round_trip_through_json() {
     l.draws = 1;
     record(l.characters, ["Monk", "Knight"], ["Witch", "Shaman"]);
     record(l.agents, ["Greedy"], ["Random"]);
+    record(l.orders, ["Planner"], ["Keeper"]);
     credit(l.mixes, "Tank, Warrior", true, 0.4);
     credit(l.pairs, "Fairy + Warlock", false, 0.25);
     credit(l.by_ai, ai_name("Fairy", "Guardian"), true, 0.5);
@@ -116,6 +117,7 @@ fn a_ledger_survives_a_round_trip_through_json() {
     assert(back.games == 8 && back.draws == 1, "totals");
     assert(near(rating(back.characters, "Monk").elo, rating(l.characters, "Monk").elo, 0.0001), "elo kept exactly");
     assert(rating(back.characters, "Witch").games == 1 && rating(back.agents, "Greedy").wins == 1, "counts");
+    assert(rating(back.orders, "Planner").wins == 1 && rating(back.orders, "Keeper").games == 1, "order AIs");
     assert(near(score(mix(back.mixes, "Tank, Warrior")), 60.0, 0.001), "mix score");
     assert(mix(back.by_ai, "Fairy · Guardian").wins == 1, "characters by AI");
     assert(mix(back.lengths, "Fairy @ 7").games == 1, "game lengths");

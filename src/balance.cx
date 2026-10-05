@@ -11,6 +11,7 @@ import { exists, read_text, write_text, move_path, open_file, Mode, make_dirs, l
 import { parse_json, __pretty } from "std/encoding/Json";
 import { silent_screen } from "ui/display";
 import { Agent, ai_names, ai_named } from "agents/agent";
+import { Orderer, orderer_names, orderer_named, arranged } from "agents/orderer";
 import { Seat, Outcome, play_match } from "game/game";
 import { Character } from "core/creature";
 import { Fighter, roster } from "content/roster";
@@ -31,12 +32,14 @@ import { versions_root, version_file, compare_template, compare_page, versions_p
 // teams and keeps running Elo ratings and win rates for characters,
 // archetypes, team mixes, home and away, and the AIs themselves.
 //
-//     cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--file PATH] [--jobs N] [quiet]
+//     cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--order Keeper,Planner] [--file PATH] [--jobs N] [quiet]
 //
-//   --games N    how many games to play this run (default 100), in blocks of 4;
+//   --games N    how many games to play this run (default 100), in whole blocks
+//                (4 games, or 8 with more than one order AI);
 //                0 just prints the report from the file; `forever` plays
 //                until cancelled (Ctrl+C), in batches (`play_forever`)
 //   --ai LIST    which AIs may be drawn for a block (default Greedy)
+//   --order LIST which order AIs may be drawn for a block (default Keeper)
 //   --version V  the balance version whose totals to add to or report
 //                (default balance_version() in tuning.cx)
 //   --file PATH  where the running totals live (default
@@ -52,7 +55,10 @@ import { versions_root, version_file, compare_template, compare_page, versions_p
 //
 // A block is two random teams and two AIs drawn from --ai. Each AI plays each
 // team from each side, so AI skill, team strength and home priority all cancel
-// out: the same 4 games rate the characters and the AIs together.
+// out: the same 4 games rate the characters and the AIs together. With more
+// than one order AI in --order, a block also draws two different ones and
+// plays its 4 games twice, each team arranged by each order AI
+// (docs/ordering.md#in-the-balance-checker).
 //
 // The games are played by worker processes, each this same program run with
 // --worker, while this process only records them. --jobs N runs N lanes at
@@ -65,10 +71,14 @@ import { versions_root, version_file, compare_template, compare_page, versions_p
 /** An AI that can be drawn for a block. */
 type Entrant { name: string, agent: Agent }
 
+/** An order AI that can be drawn for a block. */
+type Arranger { name: string, orderer: Orderer }
+
 /** This run: the totals so far, the AIs allowed, and progress. */
 type Run {
     ledger: Ledger,
     allowed: List<Entrant>,
+    orders: List<Arranger>,
     file: string,
     planned: int,
     done: int,
@@ -131,14 +141,11 @@ fn number(name: string, fallback: int): int {
 /** What `games_wanted` answers for `--games forever`. */
 fn forever(): int { return 0 - 2; }
 
-/** The games asked for, in whole blocks; `forever()` for --games forever, or -1 if it isn't a number. */
-fn games_wanted(): int {
+/** The games asked for, in whole blocks of `block`, rounding up; `forever()` for --games forever, or -1 if it isn't a number. */
+fn games_wanted(block: int): int {
     if (option("games", "100") == "forever") { return forever(); }
     match option("games", "100").to_int() {
-        Option.Some(n) => {
-            // Whole blocks of 4, rounding up.
-            return (n + 3) / 4 * 4;
-        }
+        Option.Some(n) => { return (n + block - 1) / block * block; }
         Option.None => { return -1; }
     }
     return 0;
@@ -164,6 +171,34 @@ fn allowed_ais(known: List<Entrant>): Option<List<Entrant>> {
         }
     }
     return Option.Some(out);
+}
+
+/** The order AIs named in --order, or None and a message if one isn't known. */
+fn allowed_orders(): Option<List<Arranger>> {
+    var out: List<Arranger> = [];
+    for (wanted in option("order", "Keeper").split(',')) {
+        var name = wanted.trim();
+        var found = false;
+        for (known in orderer_names()) {
+            if (known.to_lower() == name.to_lower()) {
+                match orderer_named(known) {
+                    Option.Some(o) => { out.push(Arranger { name: known, orderer: o }); found = true; }
+                    Option.None => {}
+                }
+            }
+        }
+        if (!found) {
+            printerr("Unknown order AI '" + name + "'. Known: " + joined(orderer_names()) + ".");
+            return Option.None;
+        }
+    }
+    return Option.Some(out);
+}
+
+/** Games in a block: 4, or 8 when there are order AIs to rate against each other. */
+fn block_games(orders: List<Arranger>): int {
+    if (orders.len() > 1) { return 8; }
+    return 4;
 }
 
 // --- The running totals file
@@ -330,6 +365,10 @@ fn compare(a: string, b: string) {
                         print("");
                         for (line in compare_table("AGENTS", a, la.agents, b, lb.agents)) { print(line); }
                     }
+                    if (la.orders.ratings.len() > 0 && lb.orders.ratings.len() > 0) {
+                        print("");
+                        for (line in compare_table("ORDER AIS", a, la.orders, b, lb.orders)) { print(line); }
+                    }
                     write_compare_page();
                     print("");
                     print("Compare page: " + compare_page() + "?a=" + a + "&b=" + b + " (open it in a browser; it has mixes and pairs too).");
@@ -467,7 +506,13 @@ fn log_game(r: Run, g: Game) {
     if (g.winner == 0) { result = "home won in " + str(g.rounds) + " rounds"; }
     if (g.winner == 1) { result = "away won in " + str(g.rounds) + " rounds"; }
     var count = "[" + pad_left(str(r.done), str(r.planned).len(), " ") + "/" + str(r.planned) + "]";
-    progress(count + " " + g.home_ai + ": " + joined(g.home) + "  vs  " + g.away_ai + ": " + joined(g.away) + "  ->  " + result + " (" + fixed(g.took, 1) + "s)");
+    progress(count + " " + who_played(g.home_ai, g.home_order) + ": " + joined(g.home) + "  vs  " + who_played(g.away_ai, g.away_order) + ": " + joined(g.away) + "  ->  " + result + " (" + fixed(g.took, 1) + "s)");
+}
+
+/** The move AI, and the order AI after a slash unless it's the Keeper (the order the team came in). */
+fn who_played(ai: string, order: string): string {
+    if (order == "Keeper" || order == "") { return ai; }
+    return ai + "/" + order;
 }
 
 fn top_and_bottom(pool: Pool): string {
@@ -495,31 +540,61 @@ fn log_standings(r: Run) {
     if (r.done % 20 != 0 && r.done != r.planned) { return; }
     var line = "  -- " + str(r.done) + " of " + str(r.planned) + " games, " + seconds(instant() - r.started) + ". " + top_and_bottom(r.ledger.characters) + ".";
     if (r.ledger.agents.ratings.len() > 0) { line = line + "  AIs: " + top_and_bottom(r.ledger.agents) + "."; }
+    if (r.ledger.orders.ratings.len() > 0) { line = line + "  Order AIs: " + top_and_bottom(r.ledger.orders) + "."; }
     progress(line);
 }
 
 // --- Playing
 
-/** Plays one game. */
-fn play_game(home: Entrant, away: Entrant, home_team: List<Fighter>, away_team: List<Fighter>): Game {
+/**
+ * Plays one game. Each team is first arranged into slots by its order AI,
+ * blind to the other's order; the game is logged with the teams in slot
+ * order.
+ */
+fn play_game(home: Entrant, away: Entrant, home_team: List<Fighter>, away_team: List<Fighter>, home_order: Arranger, away_order: Arranger): Game {
     var began = instant();
-    var o = play_match(Seat { agent: home.agent, name: home.name }, Seat { agent: away.agent, name: away.name }, home_team, away_team, silent_screen());
+    var home_slots = arranged(home_team, home_order.orderer.arrange(home_team, away_team, true));
+    var away_slots = arranged(away_team, away_order.orderer.arrange(away_team, home_team, false));
+    var o = play_match(Seat { agent: home.agent, name: home.name }, Seat { agent: away.agent, name: away.name }, home_slots, away_slots, silent_screen());
     return Game {
-        home_ai: home.name, away_ai: away.name, home: names(home_team), away: names(away_team),
+        home_ai: home.name, away_ai: away.name, home_order: home_order.name, away_order: away_order.name,
+        home: names(home_slots), away: names(away_slots),
         winner: o.winner, rounds: o.rounds, took: (instant() - began).as_seconds()
     };
 }
 
-/** Two random teams and two drawn AIs: each AI plays each team from each side. */
-fn block(allowed: List<Entrant>): List<Game> {
+/**
+ * Two random teams and two drawn AIs: each AI plays each team from each side.
+ * With more than one order AI, two different ones are drawn too, and the 4
+ * games are played again with the teams' order AIs swapped.
+ */
+fn block(allowed: List<Entrant>, orders: List<Arranger>): List<Game> {
     var split = random_split();
     var a = allowed[random_int(0, allowed.len())];
     var b = allowed[random_int(0, allowed.len())];
+    var p = orders[0];
+    var q = orders[0];
+    if (orders.len() > 1) {
+        var first = random_int(0, orders.len());
+        var second = random_int(0, orders.len() - 1);
+        if (second >= first) { second = second + 1; }
+        p = orders[first];
+        q = orders[second];
+    }
+    var games = half_block(a, b, split, p, q);
+    if (orders.len() > 1) {
+        for (g in half_block(a, b, split, q, p)) { games.push(g); }
+    }
+    return games;
+}
+
+/** The 4 games of a block with team X (the split's first four) arranged by `x_order` and team Y by `y_order`. */
+fn half_block(a: Entrant, b: Entrant, split: List<int>, x_order: Arranger, y_order: Arranger): List<Game> {
     return [
-        play_game(a, b, team(split, 0), team(split, 4)),
-        play_game(b, a, team(split, 4), team(split, 0)),
-        play_game(a, b, team(split, 4), team(split, 0)),
-        play_game(b, a, team(split, 0), team(split, 4))
+        play_game(a, b, team(split, 0), team(split, 4), x_order, y_order),
+        play_game(b, a, team(split, 4), team(split, 0), y_order, x_order),
+        play_game(a, b, team(split, 4), team(split, 0), y_order, x_order),
+        play_game(b, a, team(split, 0), team(split, 4), x_order, y_order)
     ];
 }
 
@@ -549,9 +624,12 @@ fn tally(r: Run, g: Game) {
             record(l.archetypes, away_kinds, home_kinds);
             record(l.sides, ["Away"], ["Home"]);
         }
-        // AIs are only rated against a different AI.
+        // AIs are only rated against a different AI, and order AIs likewise.
         if (g.home_ai != g.away_ai) {
             if (home_won) { record(l.agents, [g.home_ai], [g.away_ai]); } else { record(l.agents, [g.away_ai], [g.home_ai]); }
+        }
+        if (g.home_order != g.away_order) {
+            if (home_won) { record(l.orders, [g.home_order], [g.away_order]); } else { record(l.orders, [g.away_order], [g.home_order]); }
         }
         credit(l.mixes, mix_name(home_kinds), home_won, home_expected);
         credit(l.mixes, mix_name(away_kinds), !home_won, 1.0 - home_expected);
@@ -577,14 +655,14 @@ fn tally(r: Run, g: Game) {
 // --- Workers (--jobs)
 
 /** A worker: plays its games and prints each one as a line, flushed so the main process sees it straight away. */
-fn work(allowed: List<Entrant>, games: int) {
+fn work(allowed: List<Entrant>, orders: List<Arranger>, games: int) {
     var played = 0;
     while (played < games) {
-        for (g in block(allowed)) {
+        for (g in block(allowed, orders)) {
             print(game_line(g));
             flush();
+            played = played + 1;
         }
-        played = played + 4;
     }
 }
 
@@ -624,7 +702,7 @@ fn lane(r: Run, total: int, n: int) {
         var games = left;
         if (games > worker_games()) { games = worker_games(); }
         var child = spawn(Command.new("cx").arg("run").arg("src/balance.cx").arg("--").arg("--worker")
-            .arg("--games").arg(str(games)).arg("--ai").arg(option("ai", "Greedy")).stdout(Stdio.Piped));
+            .arg("--games").arg(str(games)).arg("--ai").arg(option("ai", "Greedy")).arg("--order").arg(option("order", "Keeper")).stdout(Stdio.Piped));
         r.workers = r.workers + 1;
         follow(r, child, n);
         left = left - games;
@@ -639,7 +717,7 @@ fn play_in_jobs(r: Run, jobs: int) {
     run {
         var tasks = [];
         var n = 1;
-        for (share in shares(r.planned, jobs)) {
+        for (share in shares(r.planned, jobs, block_games(r.orders))) {
             var lane_games = share;
             var lane_number = n;
             tasks.push(() => lane(r, lane_games, lane_number));
@@ -686,6 +764,10 @@ fn report(r: Run) {
         print("");
         for (line in pool_table("AGENTS", l.agents)) { print(line); }
     }
+    if (l.orders.ratings.len() > 0) {
+        print("");
+        for (line in pool_table("ORDER AIS", l.orders)) { print(line); }
+    }
     print("");
     print("Draws (both teams fell at once, or the 100-round limit): " + str(l.draws) + ".");
     print("Report page: " + page_path(r.file) + " (open it in a browser).");
@@ -697,7 +779,12 @@ fn start(known: List<Entrant>) {
         compare(option("compare", ""), after("compare"));
         return;
     }
-    var planned = games_wanted();
+    var orders: List<Arranger> = [];
+    match allowed_orders() {
+        Option.Some(o) => { orders = o; }
+        Option.None => { return; }
+    }
+    var planned = games_wanted(block_games(orders));
     var endless = planned == forever();
     if (planned < 0 && !endless) {
         printerr("--games needs a number of games, e.g. --games 100 (0 for just the report, forever to play until cancelled).");
@@ -715,7 +802,7 @@ fn start(known: List<Entrant>) {
     match allowed_ais(known) {
         Option.Some(allowed) => {
             if (flag("--worker")) {
-                work(allowed, planned);
+                work(allowed, orders, planned);
                 return;
             }
             make_folder(file);
@@ -726,15 +813,18 @@ fn start(known: List<Entrant>) {
                         printerr("No games in " + file + " yet: run some with --games N first.");
                         return;
                     }
-                    var r = Run { ledger: ledger, allowed: allowed, file: file, planned: planned, done: 0, started: instant(), quiet: flag("quiet"), saving: false, stale: false,
+                    var r = Run { ledger: ledger, allowed: allowed, orders: orders, file: file, planned: planned, done: 0, started: instant(), quiet: flag("quiet"), saving: false, stale: false,
                         pending: [], interval: new_interval(), interval_started: instant(), save_ms: 0, workers: 0 };
                     var who = "";
                     for (e in allowed) {
                         if (who != "") { who = who + ", "; }
                         who = who + e.name;
                     }
+                    var arrangers: List<string> = [];
+                    for (o in orders) { arrangers.push(o.name); }
+                    who = who + " (order: " + joined(arrangers) + ")";
                     var how = "";
-                    if (jobs > 1) { how = " in " + str(shares(planned, jobs).len()) + " jobs"; }
+                    if (jobs > 1) { how = " in " + str(shares(planned, jobs, block_games(orders)).len()) + " jobs"; }
                     if (planned > 0) {
                         progress("Playing " + str(planned) + " games" + how + " with " + who + ", adding to " + str(ledger.games) + " already in " + file + "...");
                         write_page(r);

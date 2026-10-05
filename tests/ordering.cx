@@ -1,0 +1,173 @@
+import { orderer_names, orderer_named, kept, valid_order, arranged, all_orders } from "battler/agents/orderer";
+import { Setups, Probe, plan_of, order_score, best_order, sets_up, best_alone, finisher, hits_several } from "battler/agents/planner";
+import { engine } from "battler/core/engine";
+import { tier_rank } from "battler/core/creature";
+import { Fighter, assassin, stormbringer, knight, cleric, frost_giant, cryomancer, barbarian, ranger, monk, shaman } from "battler/content/roster";
+
+// Order AIs (docs/ordering.md).
+
+fn names(team: List<Fighter>): string {
+    var out = "";
+    for (f in team) { out = out + f.body.name + ","; }
+    return out;
+}
+
+fn foes(): List<Fighter> { return [barbarian(), ranger(), shaman(), monk()]; }
+
+fn position(team: List<Fighter>, name: string): int {
+    var i = 0;
+    while (i < team.len()) {
+        if (team[i].body.name == name) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+/** A team's Setups with nothing set up, everyone in one tier. */
+fn nothing(n: int): Setups {
+    var combo: List<List<bool>> = [];
+    var flags: List<bool> = [];
+    var tiers: List<int> = [];
+    var i = 0;
+    while (i < n) {
+        var row: List<bool> = [];
+        var j = 0;
+        while (j < n) { row.push(false); j = j + 1; }
+        combo.push(row);
+        flags.push(false);
+        tiers.push(0);
+        i = i + 1;
+    }
+    var spreads: List<bool> = [];
+    for (f in flags) { spreads.push(f); }
+    return Setups { combo: combo, spreads: spreads, finishes: flags, tiers: tiers };
+}
+
+@test
+fn every_listed_order_ai_can_be_built() {
+    for (name in orderer_names()) {
+        match orderer_named(name) {
+            Option.Some(_) => {}
+            Option.None => { assert(false, name); }
+        }
+    }
+    assert(orderer_named("nobody") == Option.None, "unknown name");
+}
+
+@test
+fn there_are_24_orders_of_four_the_kept_one_first() {
+    var all = all_orders(4);
+    assert(all.len() == 24, "4!");
+    assert(str(all[0]) == str(kept(4)), "kept first");
+    var i = 0;
+    while (i < all.len()) {
+        assert(valid_order(all[i], 4), "valid");
+        var j = i + 1;
+        while (j < all.len()) {
+            assert(str(all[i]) != str(all[j]), "distinct");
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+@test
+fn an_order_puts_each_character_in_its_slot() {
+    var team = [assassin(), knight(), stormbringer(), cleric()];
+    assert(names(arranged(team, [2, 0, 3, 1])) == "Stormbringer,Assassin,Cleric,Knight,", "slot s gets team[order[s]]");
+    assert(names(arranged(team, [0, 0, 1, 2])) == names(team), "an invalid order keeps the team as it is");
+    assert(names(arranged(team, [0, 1])) == names(team), "so does one of the wrong length");
+}
+
+@test
+fn the_keeper_keeps_the_order_the_team_came_in() {
+    match orderer_named("Keeper") {
+        Option.Some(o) => {
+            assert(str(o.arrange([assassin(), knight(), stormbringer(), cleric()], foes(), true)) == str(kept(4)), "kept");
+        }
+        Option.None => { assert(false, "no Keeper"); }
+    }
+}
+
+@test
+fn a_setup_counts_only_before_what_it_sets_up_and_in_the_same_tier() {
+    var p = nothing(3);
+    p.combo[0][1] = true;
+    assert(order_score(p, [0, 1, 2]) > 0, "setter first");
+    assert(order_score(p, [1, 0, 2]) == 0, "setter second");
+    p.tiers[1] = 1;
+    assert(order_score(p, [0, 1, 2]) == 0, "different tiers: slots don't decide who goes first");
+}
+
+@test
+fn an_area_hit_counts_before_a_finisher() {
+    var p = nothing(3);
+    p.spreads[2] = true;
+    p.finishes[0] = true;
+    assert(order_score(p, [2, 0, 1]) > 0 && order_score(p, [0, 2, 1]) == 0, "spreader first");
+}
+
+@test
+fn with_nothing_to_set_up_the_kept_order_stays() {
+    assert(str(best_order(nothing(4), [assassin(), knight(), stormbringer(), cleric()])) == str(kept(4)), "a tie keeps the order");
+}
+
+@test
+fn the_best_order_puts_every_setter_first() {
+    var p = nothing(4);
+    p.combo[3][1] = true;
+    p.combo[2][0] = true;
+    var o = best_order(p, [assassin(), knight(), stormbringer(), cleric()]);
+    assert(order_score(p, o) == order_score(p, [3, 1, 2, 0]), "both combos the right way round");
+}
+
+// The sandbox probes
+
+@test
+fn an_area_hitter_spreads_and_predator_finishes() {
+    var team = [assassin(), knight(), stormbringer(), cleric()];
+    var pr = Probe { mine: team, theirs: foes(), rules: engine() };
+    assert(hits_several(pr, 2), "Thunderstorm hits every foe");
+    assert(!hits_several(pr, 1), "the Knight hits one at a time");
+    assert(finisher(pr, 0), "Predator hits a wounded foe harder");
+    assert(!finisher(pr, 2), "the Stormbringer doesn't");
+}
+
+@test
+fn a_chill_sets_up_another_chill_which_freezes() {
+    var team = [frost_giant(), cryomancer(), knight(), cleric()];
+    var pr = Probe { mine: team, theirs: foes(), rules: engine() };
+    assert(sets_up(pr, 0, 1, best_alone(pr, 1)), "Avalanche's chill, then Blizzard's, freezes");
+    var p = plan_of(team, foes());
+    if (tier_rank(team[0].body.tier) != tier_rank(team[1].body.tier)) {
+        assert(!p.combo[0][1], "in different tiers it doesn't count");
+    }
+}
+
+@test
+fn the_planner_puts_an_area_hitter_before_a_finisher_in_its_tier() {
+    match orderer_named("Planner") {
+        Option.Some(o) => {
+            for (team in [[assassin(), knight(), stormbringer(), cleric()], [stormbringer(), knight(), assassin(), cleric()]]) {
+                if (tier_rank(team[position(team, "Stormbringer")].body.tier) == tier_rank(team[position(team, "Assassin")].body.tier)) {
+                    var slots = arranged(team, o.arrange(team, foes(), true));
+                    assert(position(slots, "Stormbringer") < position(slots, "Assassin"), names(slots));
+                }
+            }
+        }
+        Option.None => { assert(false, "no Planner"); }
+    }
+}
+
+@test
+fn the_planner_answers_the_same_for_the_same_teams() {
+    match orderer_named("Planner") {
+        Option.Some(o) => {
+            var team = [assassin(), knight(), stormbringer(), cleric()];
+            var first = o.arrange(team, foes(), true);
+            assert(str(o.arrange(team, foes(), true)) == str(first), "remembered");
+            assert(valid_order(o.arrange(team, foes(), false), 4), "away too");
+        }
+        Option.None => { assert(false, "no Planner"); }
+    }
+}

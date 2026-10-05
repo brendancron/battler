@@ -63,14 +63,15 @@ different order AIs doubles to 8 games, so each team is ordered by each one.
 ## Running it
 
 ```
-cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--version V] [--file PATH] [--jobs N] [quiet]
+cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--order Keeper,Planner] [--version V] [--file PATH] [--jobs N] [quiet]
 cx run src/balance.cx -- --compare A B
 ```
 
 | Option | Default | Meaning |
 |--------|---------|---------|
-| `--games N` | 100 | games to play this run, rounded up to whole blocks of 4; `0` just prints the report from the file; `forever` plays until cancelled (see [Running overnight](#running-overnight)) |
+| `--games N` | 100 | games to play this run, rounded up to whole blocks (4 games, or 8 with more than one order AI); `0` just prints the report from the file; `forever` plays until cancelled (see [Running overnight](#running-overnight)) |
 | `--ai LIST` | Greedy | the AIs that may be drawn for a block |
+| `--order LIST` | Keeper | the order AIs that may be drawn for a block ([ordering.md](ordering.md#in-the-balance-checker)); with more than one, each block draws two different ones and plays 8 games |
 | `--version V` | `balance_version()` in tuning.cx | the [balance version](#versions) whose totals to add to or report |
 | `--file PATH` | balance-data/*version*/balance.json | where the running totals live; the folder is made if it isn't there |
 | `--compare A B` | | print how versions A and B differ and write the compare page ([Versions](#versions)) |
@@ -200,7 +201,9 @@ Every run also appends to two logs next to the totals file, as JSON lines (one
 object per line), for looking at a long run afterwards (`src/balance/logs.cx`):
 
 - **`balance.games.jsonl`**: every game, as recorded: `time` (Unix seconds),
-  `home_ai`, `away_ai`, `home` and `away` (character names), `winner` (0 home,
+  `home_ai`, `away_ai`, `home_order` and `away_order` (the order AIs; games
+  from before order AIs have neither, and were in the Keeper's order), `home`
+  and `away` (character names, in slot order), `winner` (0 home,
   1 away, -1 draw), `rounds`, `secs` (how long the game took to play).
 - **`balance.timeline.jsonl`**: a `start` line when a run (or a batch of a
   `forever` run) begins, with its arguments and the games in the totals; then

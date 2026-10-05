@@ -1,0 +1,92 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random } from "std/random/Random";
+import { Fighter } from "../content/roster";
+import { KeeperOrderer } from "keeper";
+import { PlannerOrderer, new_planner } from "planner";
+
+/**
+ * Whoever arranges a team into slots before a battle (docs/ordering.md): a
+ * separate kind of AI from the move AIs (`Agent`), so the two can get better
+ * independently. It sees both teams and whether its team is home, but not
+ * the foe's order, and the order it answers is kept for the whole battle.
+ *
+ * Like `Agent`, the method declares every effect any order AI may need.
+ */
+trait Orderer {
+    /** The order for `mine`: for each slot from 0, the index in `mine` of the character that goes there. */
+    fn arrange(self, mine: List<Fighter>, theirs: List<Fighter>, home: bool): <async, Console, Stdin, Random, Throw<IoError>> List<int>;
+}
+
+/** The names of the order AIs, as `orderer_named` knows them. */
+fn orderer_names(): List<string> { return ["Keeper", "Planner"]; }
+
+/** The order AI with this name (any case), or None. */
+fn orderer_named(name: string): Option<Orderer> {
+    var wanted = name.to_lower();
+    if (wanted == "keeper") { var o: Orderer = KeeperOrderer; return Option.Some(o); }
+    if (wanted == "planner") { var o: Orderer = new_planner(); return Option.Some(o); }
+    return Option.None;
+}
+
+/** The order that keeps a team of `n` as it is: 0, 1, ..., n - 1. */
+fn kept(n: int): List<int> {
+    var out: List<int> = [];
+    var i = 0;
+    while (i < n) { out.push(i); i = i + 1; }
+    return out;
+}
+
+/** Whether `order` puts each of a team of `n` in exactly one slot. */
+fn valid_order(order: List<int>, n: int): bool {
+    if (order.len() != n) { return false; }
+    var i = 0;
+    while (i < n) {
+        var seen = 0;
+        for (x in order) {
+            if (x == i) { seen = seen + 1; }
+        }
+        if (seen != 1) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+/** The team in slot order: `order[s]` is the index of who goes in slot s. An invalid order keeps the team as it is. */
+fn arranged(team: List<Fighter>, order: List<int>): List<Fighter> {
+    var use = order;
+    if (!valid_order(order, team.len())) { use = kept(team.len()); }
+    var out: List<Fighter> = [];
+    for (i in use) { out.push(team[i]); }
+    return out;
+}
+
+/** Every order of a team of `n`, the kept order first. */
+fn all_orders(n: int): List<List<int>> {
+    var out: List<List<int>> = [];
+    permute([], kept(n), out);
+    return out;
+}
+
+fn permute(prefix: List<int>, rest: List<int>, out: List<List<int>>) {
+    if (rest.len() == 0) {
+        out.push(prefix);
+        return;
+    }
+    var i = 0;
+    while (i < rest.len()) {
+        var next: List<int> = [];
+        for (x in prefix) { next.push(x); }
+        next.push(rest[i]);
+        var left: List<int> = [];
+        var j = 0;
+        while (j < rest.len()) {
+            if (j != i) { left.push(rest[j]); }
+            j = j + 1;
+        }
+        permute(next, left, out);
+        i = i + 1;
+    }
+}

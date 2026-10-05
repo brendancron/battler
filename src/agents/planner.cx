@@ -1,0 +1,294 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random } from "std/random/Random";
+import { Character, tier_rank } from "../core/creature";
+import { Battle, Side, Slot, new_battle } from "../core/battle";
+import { Engine, engine } from "../core/engine";
+import { MoveDef, use_move } from "../core/move";
+import { Choice } from "../core/target";
+import { Fighter, roster } from "../content/roster";
+import { Orderer, all_orders } from "orderer";
+import { choices } from "scoring";
+
+/**
+ * Order AI generation 1: setup rules (docs/ordering.md#planner-setup-rules).
+ * Within a speed tier a team acts in slot order, so a character that sets
+ * something up should have a lower slot than the one that cashes it in.
+ * The Planner finds out who sets up whom by trying their moves out in a
+ * sandbox battle against the real foes, never by name, then scores all 24
+ * orders and keeps the best (the kept order wins a tie).
+ */
+type PlannerOrderer { recent: List<Remembered> }
+
+/** An order the Planner worked out, for the teams and side in `key`. */
+type Remembered { key: string, order: List<int> }
+
+fn new_planner(): PlannerOrderer { return PlannerOrderer { recent: [] }; }
+
+impl Orderer for PlannerOrderer {
+    fn arrange(self, mine: List<Fighter>, theirs: List<Fighter>, home: bool): <async, Console, Stdin, Random, Throw<IoError>> List<int> {
+        // Probing takes a while, and the balance checker asks about the
+        // same teams game after game in a block, so the last few answers
+        // are kept.
+        var key = situation(mine, theirs, home);
+        for (r in self.recent) {
+            if (r.key == key) { return r.order; }
+        }
+        var order = best_order(plan_of(mine, theirs), mine);
+        var kept: List<Remembered> = [Remembered { key: key, order: order }];
+        for (r in self.recent) {
+            if (kept.len() < remembered()) { kept.push(r); }
+        }
+        self.recent = kept;
+        return order;
+    }
+}
+
+/** How many answers the Planner keeps: enough for both teams, home and away, under two order AIs. */
+fn remembered(): int { return 8; }
+
+/** The teams and side, as a string. */
+fn situation(mine: List<Fighter>, theirs: List<Fighter>, home: bool): string {
+    var out = "";
+    for (f in mine) { out = out + f.body.name + ","; }
+    out = out + "|";
+    for (f in theirs) { out = out + f.body.name + ","; }
+    if (home) { return out + "|home"; }
+    return out + "|away";
+}
+
+// The rules' numbers. Placeholders, to be tuned by how the Planner does
+// against the Keeper.
+
+/** What a combo (one character making another's move better) adds to an order's score. */
+fn combo_worth(): int { return 2; }
+/** What an area hitter before a finisher adds. */
+fn finish_worth(): int { return 2; }
+/** A foe made to skip its turn counts as this much HP lost, when measuring a move. */
+fn skip_worth(): int { return 25; }
+/** A move cashes in a setup if it does at least this percent more after it... */
+fn combo_percent(): int { return 10; }
+/** ...and at least this much more. */
+fn combo_least(): int { return 3; }
+/** A finisher does at least this percent of its usual damage to a wounded foe. */
+fn finisher_percent(): int { return 120; }
+/** A wounded foe, for the finisher probe, is at this percent of its max HP. */
+fn wounded_percent(): int { return 40; }
+/** Sandbox foes have this much max HP, so no probe hit knocks one out. */
+fn sandbox_hp(): int { return 1000; }
+
+/**
+ * What the Planner found out about a team: `combo[i][j]` when i's move makes
+ * j's next move do more, `spreads[i]` when i hits several foes at once,
+ * `finishes[j]` when j does more to a wounded foe, and each one's tier rank.
+ */
+type Setups { combo: List<List<bool>>, spreads: List<bool>, finishes: List<bool>, tiers: List<int> }
+
+/** The two teams being probed, and the rules to play the probes by (built once: it's the costly part). */
+type Probe { mine: List<Fighter>, theirs: List<Fighter>, rules: Engine }
+
+fn plan_of(mine: List<Fighter>, theirs: List<Fighter>): Setups {
+    var pr = Probe { mine: mine, theirs: theirs, rules: engine() };
+    var n = mine.len();
+    var alone: List<int> = [];
+    var spreads: List<bool> = [];
+    var finishes: List<bool> = [];
+    var tiers: List<int> = [];
+    var j = 0;
+    while (j < n) {
+        alone.push(best_alone(pr, j));
+        spreads.push(hits_several(pr, j));
+        finishes.push(finisher(pr, j));
+        tiers.push(tier_rank(mine[j].body.tier));
+        j = j + 1;
+    }
+    var combo: List<List<bool>> = [];
+    var i = 0;
+    while (i < n) {
+        var row: List<bool> = [];
+        j = 0;
+        while (j < n) {
+            row.push(i != j && tiers[i] == tiers[j] && sets_up(pr, i, j, alone[j]));
+            j = j + 1;
+        }
+        combo.push(row);
+        i = i + 1;
+    }
+    return Setups { combo: combo, spreads: spreads, finishes: finishes, tiers: tiers };
+}
+
+/** An order's score: every pair in the same tier set up the right way round. */
+fn order_score(p: Setups, order: List<int>): int {
+    var score = 0;
+    var a = 0;
+    while (a < order.len()) {
+        var b = a + 1;
+        while (b < order.len()) {
+            var first = order[a];
+            var second = order[b];
+            if (p.tiers[first] == p.tiers[second]) {
+                if (p.combo[first][second]) { score = score + combo_worth(); }
+                if (p.spreads[first] && p.finishes[second]) { score = score + finish_worth(); }
+            }
+            b = b + 1;
+        }
+        a = a + 1;
+    }
+    return score;
+}
+
+/** The order with the best score; the first found wins a tie, and the kept order is found first. */
+fn best_order(p: Setups, mine: List<Fighter>): List<int> {
+    var orders = all_orders(mine.len());
+    var best = orders[0];
+    var best_score = order_score(p, best);
+    for (o in orders) {
+        var s = order_score(p, o);
+        if (s > best_score) { best = o; best_score = s; }
+    }
+    return best;
+}
+
+// The sandbox
+
+/** A fresh body for the fighter (characters carry HP and effects), from `all`, a newly built roster. */
+fn fresh_body(all: List<Fighter>, f: Fighter): Character {
+    for (r in all) {
+        if (r.body.name == f.body.name) { return r.body; }
+    }
+    return f.body;
+}
+
+/** A battle of fresh copies, `mine` home, with every foe at `sandbox_hp()` so no probe knocks one out. */
+fn sandbox(pr: Probe): Battle {
+    // One roster for all eight: the two teams never share a character.
+    var all = roster();
+    var a: List<Character> = [];
+    for (f in pr.mine) { a.push(fresh_body(all, f)); }
+    var b: List<Character> = [];
+    for (f in pr.theirs) {
+        var c = fresh_body(all, f);
+        c.base_max_hp = sandbox_hp();
+        c.hp = sandbox_hp();
+        b.push(c);
+    }
+    return new_battle([Side { active: a }, Side { active: b }], 0);
+}
+
+fn mine_at(i: int): Slot { return Slot { side: 0, index: i }; }
+fn first_foe(): Slot { return Slot { side: 1, index: 0 }; }
+
+fn aims_at(c: Choice, wanted: List<Slot>): bool {
+    match c {
+        Choice.Slots(slots) => {
+            for (s in slots) {
+                for (w in wanted) {
+                    if (s.side == w.side && s.index == w.index) { return true; }
+                }
+            }
+        }
+        Choice.NoTarget => {}
+    }
+    return false;
+}
+
+/** Uses the move from the slot, on a target in `wanted` if it can be aimed there. False if it has no target at all. */
+fn try_move(rules: Engine, b: Battle, user: Slot, move: MoveDef, wanted: List<Slot>): bool {
+    var options = choices(b, user, move);
+    if (options.len() == 0) { return false; }
+    var pick = options[0];
+    var found = false;
+    for (c in options) {
+        if (!found && aims_at(c, wanted)) { pick = c; found = true; }
+    }
+    return use_move(rules, b, user, move, pick);
+}
+
+/** The foes' HP, all of it. */
+fn foe_hp(b: Battle): int {
+    var total = 0;
+    for (c in b.sides[1].active) { total = total + c.hp; }
+    return total;
+}
+
+fn foes_skipping(b: Battle): int {
+    var n = 0;
+    for (c in b.sides[1].active) {
+        if (c.skips_turn()) { n = n + 1; }
+    }
+    return n;
+}
+
+/** What a move does to the foes, measured: HP lost, and each foe it makes skip its turn. */
+fn measured(rules: Engine, b: Battle, user: Slot, move: MoveDef): int {
+    var hp = foe_hp(b);
+    var skipping = foes_skipping(b);
+    if (!try_move(rules, b, user, move, [first_foe()])) { return 0; }
+    return hp - foe_hp(b) + skip_worth() * (foes_skipping(b) - skipping);
+}
+
+/** The most j's moves do to the foes on their own. */
+fn best_alone(pr: Probe, j: int): int {
+    var best = 0;
+    for (m in pr.mine[j].moves) {
+        var v = measured(pr.rules, sandbox(pr), mine_at(j), m);
+        if (v > best) { best = v; }
+    }
+    return best;
+}
+
+/** Whether some move of i, used first (on the first foe, or on j), makes one of j's moves do clearly more than `alone`. */
+fn sets_up(pr: Probe, i: int, j: int, alone: int): bool {
+    var needed = alone + alone * combo_percent() / 100;
+    if (needed < alone + combo_least()) { needed = alone + combo_least(); }
+    for (setup in pr.mine[i].moves) {
+        for (m in pr.mine[j].moves) {
+            var b = sandbox(pr);
+            if (try_move(pr.rules, b, mine_at(i), setup, [first_foe(), mine_at(j)])) {
+                if (measured(pr.rules, b, mine_at(j), m) >= needed) { return true; }
+            }
+        }
+    }
+    return false;
+}
+
+/** Whether some move of i takes HP off two foes or more. */
+fn hits_several(pr: Probe, i: int): bool {
+    for (m in pr.mine[i].moves) {
+        var b = sandbox(pr);
+        var before: List<int> = [];
+        for (c in b.sides[1].active) { before.push(c.hp); }
+        if (try_move(pr.rules, b, mine_at(i), m, [first_foe()])) {
+            var hit = 0;
+            var k = 0;
+            while (k < before.len()) {
+                if (b.sides[1].active[k].hp < before[k]) { hit = hit + 1; }
+                k = k + 1;
+            }
+            if (hit >= 2) { return true; }
+        }
+    }
+    return false;
+}
+
+/** Whether some move of j does clearly more to a wounded foe than to the same foe at full HP. */
+fn finisher(pr: Probe, j: int): bool {
+    for (m in pr.mine[j].moves) {
+        var full = first_foe_loss(pr, j, m, false);
+        var hurt = first_foe_loss(pr, j, m, true);
+        if (full > 0 && hurt * 100 >= full * finisher_percent()) { return true; }
+    }
+    return false;
+}
+
+/** HP the first foe loses to j's move, with it wounded first or not. */
+fn first_foe_loss(pr: Probe, j: int, m: MoveDef, wounded: bool): int {
+    var b = sandbox(pr);
+    var foe = b.sides[1].active[0];
+    if (wounded) { foe.hp = sandbox_hp() * wounded_percent() / 100; }
+    var hp = foe.hp;
+    if (!try_move(pr.rules, b, mine_at(j), m, [first_foe()])) { return 0; }
+    return hp - foe.hp;
+}

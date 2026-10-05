@@ -345,6 +345,8 @@ const TABLES = [
   { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
   { id: "agents", title: "AIs", rows: d => d.agents, columns: ratingColumns, sort: 1,
     note: "Rated only in games between two different AIs." },
+  { id: "orders", title: "Order AIs", rows: d => d.orders || [], columns: ratingColumns, sort: 1,
+    note: "The AIs that arrange each team into slots before the battle. Rated only in games where the two teams were arranged by different order AIs." },
   { id: "sides", title: "Home and away", rows: d => d.sides, columns: ratingColumns, sort: 2,
     note: "Read the win rate here; with two entries the Elo mostly follows the latest games." },
   { id: "counters", title: "Counters", rows: counterRows, columns: counterColumns, sort: 1, filterOn: r => r.first,

@@ -40,7 +40,8 @@ characters, speed tiers, targeting, effects and draft. The design lives in `docs
 - **New AI ideas make a new AI.** Don't make an existing agent smarter: write
   the next generation in its own file in `src/agents/`, building on the last
   one, and check with the balance checker that it beats it
-  (`docs/balance.md#generations`).
+  (`docs/balance.md#generations`). The same goes for order AIs
+  (`docs/ordering.md`), which are separate from the move AIs.
 - **Design in `docs/` before building.** When the user describes a mechanic or
   character, write it into the matching doc (`characters.md`, `effects.md`,
   `speed.md`, `targeting.md`, `events.md`, `moves.md`, `draft.md`, `fatigue.md`,
@@ -52,6 +53,7 @@ characters, speed tiers, targeting, effects and draft. The design lives in `docs
 cx run                                       # play: coin flip, draft, battle vs the AI
 cx test                                      # the test suite (tests/*.cx)
 cx run src/balance.cx -- --games 200 --ai Greedy,Tactician --jobs 4   # balance checker
+cx run src/balance.cx -- --games 200 --ai Marshal --order Keeper,Planner --jobs 8   # order AIs
 cx run src/balance.cx -- --games forever --ai Greedy,Tactician --jobs 8 quiet   # until Ctrl+C
 cx run src/balance.cx -- --compare v0.0.1 v0.0.2   # what a balance patch changed
 ```
@@ -101,6 +103,10 @@ Imports are relative to the importing file (`"../core/battle"`); tests use
     `tactician.cx`, `guardian.cx`, `marshal.cx`.
   - `scoring.cx`: move scoring shared by Greedy, Tactician, Guardian and Marshal.
   - A new AI gets its own file and an entry in `ai_names`/`ai_named`.
+  - Order AIs (`docs/ordering.md`), which arrange a team into slots before a
+    battle: `orderer.cx` (the `Orderer` trait, `orderer_named`, `arranged`),
+    `keeper.cx`, `planner.cx`. A new one gets its own file and an entry in
+    `orderer_names`/`orderer_named`.
 - `src/ui/`: `display.cx` and `term.cx` (the battle screen), `prompt.cx`
   (numbered console questions).
 - `src/balance/`:

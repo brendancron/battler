@@ -1,0 +1,20 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random } from "std/random/Random";
+import { Fighter } from "../content/roster";
+import { Orderer, kept } from "orderer";
+
+/**
+ * Order AI generation 0: keeps the team in the order it arrived (pick order,
+ * or a random team's order), which is how slots worked before order AIs. The
+ * benchmark the others have to beat (docs/ordering.md).
+ */
+type KeeperOrderer;
+
+impl Orderer for KeeperOrderer {
+    fn arrange(self, mine: List<Fighter>, theirs: List<Fighter>, home: bool): <async, Console, Stdin, Random, Throw<IoError>> List<int> {
+        return kept(mine.len());
+    }
+}
