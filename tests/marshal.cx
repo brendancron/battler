@@ -1,0 +1,99 @@
+import { Character } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { MoveDef, basic_attack, damage } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { Pick } from "battler/agents/scoring";
+import { output, kit_of } from "battler/agents/tactician";
+import { guarded } from "battler/agents/guardian";
+import { commanded, contribution } from "battler/agents/marshal";
+import { prayer, purify, bulwark, brimstone } from "battler/content/moves";
+import { brimstone_power } from "battler/content/tuning";
+import { duel, who, slot, sturdy } from "support";
+
+// The Marshal (docs/marshal.md): the Guardian's forecast, with each character
+// worth everything it brings rather than only its best hit.
+
+fn none(n: int): int { return 0; }
+
+fn jab(power: int): MoveDef { return basic_attack("Jab", power); }
+
+fn healer_kit(): List<MoveDef> { return [jab(5), prayer(), purify()]; }
+
+fn target_of(p: Pick): int {
+    match p.choice {
+        Choice.Slots(slots) => { return slots[0].index; }
+        Choice.NoTarget => { return -1; }
+    }
+    return -1;
+}
+
+fn guardian_pick(b: Battle, user: Slot, kits: List<List<List<MoveDef>>>): Pick {
+    match guarded(b, user, kits[user.side][user.index], kits, 0, none) {
+        Option.Some(p) => { return p; }
+        Option.None => {}
+    }
+    assert(false, "no pick");
+    return Pick { move: kits[0][0][0], choice: Choice.NoTarget, score: 0 };
+}
+
+fn marshal_pick(b: Battle, user: Slot, kits: List<List<List<MoveDef>>>): Pick {
+    match commanded(b, user, kits[user.side][user.index], kits, 0, none) {
+        Option.Some(p) => { return p; }
+        Option.None => {}
+    }
+    assert(false, "no pick");
+    return Pick { move: kits[0][0][0], choice: Choice.NoTarget, score: 0 };
+}
+
+@test
+fn a_healers_contribution_counts_its_heals() {
+    var b = duel(["Healer", "Ally"], ["Foe"]);
+    var kits = [[healer_kit(), [jab(10)]], [[jab(10)]]];
+    var s = slot(0, 0);
+    assert(contribution(b, s, kits) > output(b, s, kit_of(kits, s)), "more than its best hit");
+}
+
+@test
+fn a_contribution_is_the_basic_attack_plus_each_moves_share() {
+    var b = duel(["Hitter"], ["Foe"]);
+    sturdy(who(b, slot(1, 0)));
+    var kits = [[[jab(10)]], [[jab(10)]]];
+    var basic = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), 10);
+    assert(contribution(b, slot(0, 0), kits) == basic, "just the basic attack");
+}
+
+@test
+fn nobody_down_or_idle_contributes() {
+    var b = duel(["Healer"], ["Foe"]);
+    var kits = [[healer_kit()], [[jab(10)]]];
+    who(b, slot(0, 0)).hp = 0;
+    assert(contribution(b, slot(0, 0), kits) == 0, "a fallen character brings nothing");
+}
+
+/** A protector, a healer and a weak hitter, both about to fall to a Brimstone. */
+fn both_threatened(): Battle {
+    var b = duel(["Protector", "Healer", "Hitter"], ["Foe"]);
+    var foe = who(b, slot(1, 0));
+    sturdy(who(b, slot(0, 0)));
+    who(b, slot(0, 1)).hp = damage(foe, who(b, slot(0, 1)), brimstone_power()) - 5;
+    who(b, slot(0, 2)).hp = damage(foe, who(b, slot(0, 2)), brimstone_power()) - 5;
+    return b;
+}
+
+@test
+fn the_marshal_shields_the_healer_the_guardian_would_leave() {
+    var b = both_threatened();
+    var kits = [[[bulwark()], healer_kit(), [jab(10)]], [[brimstone()]]];
+    assert(target_of(guardian_pick(b, slot(0, 0), kits)) == 2, "the Guardian saves the better hitter");
+    assert(target_of(marshal_pick(b, slot(0, 0), kits)) == 1, "the Marshal saves the healer, who brings more");
+}
+
+@test
+fn the_marshal_knocks_out_the_foe_healer_first() {
+    var b = duel(["Striker"], ["Healer", "Hitter"]);
+    who(b, slot(1, 0)).hp = 20;
+    who(b, slot(1, 1)).hp = 20;
+    var kits = [[[jab(30)]], [healer_kit(), [jab(10)]]];
+    assert(target_of(guardian_pick(b, slot(0, 0), kits)) == 1, "the Guardian goes for the hitter");
+    assert(target_of(marshal_pick(b, slot(0, 0), kits)) == 0, "the Marshal for the healer");
+}

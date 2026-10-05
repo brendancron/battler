@@ -57,17 +57,26 @@ fn guardian_action(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: Lis
  * (`kill_threat`).
  */
 fn guarded<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
+    fn hits(s: Slot): int { return output(battle, s, kit_of(kits, s)); }
+    return guarded_by(battle, user, moveset, kits, jitter, noise, hits);
+}
+
+/**
+ * `guarded`, with what a character is worth to its side given as `worth`:
+ * for the Guardian, its best hit; a later AI can count more (docs/marshal.md).
+ */
+fn guarded_by<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>, jitter: int, noise: (int) -> <E> int, worth: (Slot) -> int): <E> Option<Pick> {
     var me = battle.sides[user.side].active[user.index];
-    var baseline = danger(battle, me, kits);
+    var baseline = danger_by(battle, me, kits, worth);
     fn revalue(c: Character, target: Character, fx: Effect): Option<int> {
-        match protection(battle, me, kits, baseline, target, fx) {
+        match protection_by(battle, me, kits, baseline, target, fx, worth) {
             Option.Some(v) => { return Option.Some(v); }
             Option.None => {}
         }
         return scaling_worth(battle, c, target, fx, kits);
     }
     fn adjust(move: MoveDef, choice: Choice, score: int): int {
-        return score + rescue(battle, user, move, choice, kits, baseline) + kill_threat(battle, user, move, choice, kits);
+        return score + rescue_by(battle, user, move, choice, kits, baseline, worth) + kill_threat_by(battle, user, move, choice, kits, worth);
     }
     return best_adjusted(battle, user, moveset, revalue, adjust, jitter, noise);
 }
@@ -189,9 +198,9 @@ fn endure(ally: Character, hits: List<Hit>, fate: Fate, immune: bool): Fate {
     return f;
 }
 
-/** What losing the ally costs (placeholder): its best hit, three times over, and 25 for being there at all. */
-fn save_value(battle: Battle, s: Slot, kits: List<List<List<MoveDef>>>): int {
-    return output(battle, s, kit_of(kits, s)) * 3 + 25;
+/** What losing the ally costs (placeholder): its worth, three times over, and 25 for being there at all. */
+fn save_value(worth: (Slot) -> int, s: Slot): int {
+    return worth(s) * 3 + 25;
 }
 
 /**
@@ -201,6 +210,12 @@ fn save_value(battle: Battle, s: Slot, kits: List<List<List<MoveDef>>>): int {
  * if it would fall, and its best hit again if it would fall before acting.
  */
 fn danger(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>): int {
+    fn hits(s: Slot): int { return output(battle, s, kit_of(kits, s)); }
+    return danger_by(battle, me, kits, hits);
+}
+
+/** `danger`, with each ally worth `worth`. */
+fn danger_by(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, worth: (Slot) -> int): int {
     var now = forecast(battle, me, kits, true);
     var next = next_round(battle, me, kits);
     var total = 0;
@@ -213,8 +228,8 @@ fn danger(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>): int {
         var f = endure(ally, now, standing(ally), ally.untouchable());
         total = total + f.lost;
         if (f.falls) {
-            total = total + save_value(battle, s, kits);
-            if (f.falls_first) { total = total + output(battle, s, kit_of(kits, s)); }
+            total = total + save_value(worth, s);
+            if (f.falls_first) { total = total + worth(s); }
             continue;
         }
         // Next round: shields decay, Invincible is over, nobody has acted yet.
@@ -223,7 +238,7 @@ fn danger(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>): int {
         f.lost = 0;
         var later = endure(ally, next, f, false);
         total = total + later.lost / 2;
-        if (later.falls) { total = total + save_value(battle, s, kits) / 2; }
+        if (later.falls) { total = total + save_value(worth, s) / 2; }
     }
     return total;
 }
@@ -252,13 +267,13 @@ fn next_round(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>): L
 }
 
 /** The danger with `fx` on `target` for a moment. */
-fn danger_with(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, target: Character, fx: Effect): int {
+fn danger_with(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, target: Character, fx: Effect, worth: (Slot) -> int): int {
     var original = target.effects;
     var trial: List<Effect> = [];
     for (e in original) { trial.push(e); }
     trial.push(fx);
     target.effects = trial;
-    var d = danger(battle, me, kits);
+    var d = danger_by(battle, me, kits, worth);
     target.effects = original;
     return d;
 }
@@ -278,9 +293,15 @@ fn guards(me: Character, target: Character, fx: Effect): bool {
  * value stands), or one that also changes attack or defense.
  */
 fn protection(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, baseline: int, target: Character, fx: Effect): Option<int> {
+    fn hits(s: Slot): int { return output(battle, s, kit_of(kits, s)); }
+    return protection_by(battle, me, kits, baseline, target, fx, hits);
+}
+
+/** `protection`, with each ally worth `worth`. */
+fn protection_by(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, baseline: int, target: Character, fx: Effect, worth: (Slot) -> int): Option<int> {
     if (target.fainted() || !guards(me, target, fx)) { return Option.None; }
     if (fx.attack_steps != 0 || fx.defense_steps != 0) { return Option.None; }
-    return Option.Some(baseline - danger_with(battle, me, kits, target, fx));
+    return Option.Some(baseline - danger_with(battle, me, kits, target, fx, worth));
 }
 
 /**
@@ -289,6 +310,12 @@ fn protection(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, ba
  * The HP restored is already in the score.
  */
 fn rescue(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<List<List<MoveDef>>>, baseline: int): int {
+    fn hits(s: Slot): int { return output(battle, s, kit_of(kits, s)); }
+    return rescue_by(battle, user, move, choice, kits, baseline, hits);
+}
+
+/** `rescue`, with each ally worth `worth`. */
+fn rescue_by(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<List<List<MoveDef>>>, baseline: int, worth: (Slot) -> int): int {
     var c = battle.sides[user.side].active[user.index];
     match bind(move.shape, choice, battle, user) {
         Option.Some(target) => {
@@ -306,7 +333,7 @@ fn rescue(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<
             if (healed.len() == 0) { return 0; }
             var i = 0;
             while (i < healed.len()) { healed[i].hp = healed[i].hp + amounts[i]; i = i + 1; }
-            var changed = danger(battle, c, kits);
+            var changed = danger_by(battle, c, kits, worth);
             i = 0;
             while (i < healed.len()) { healed[i].hp = healed[i].hp - amounts[i]; i = i + 1; }
             return baseline - changed;
@@ -318,7 +345,7 @@ fn rescue(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<
 
 // Knockouts, valued by the foe's threat.
 
-/** A knockout is worth this many of the foe's best hits (placeholder). */
+/** A knockout is worth this many times the foe's worth (placeholder). */
 fn kill_weight(): int { return 3; }
 
 /** The slot the character stands in, if it's on the field. */
@@ -335,12 +362,12 @@ fn slot_of(battle: Battle, c: Character): Option<Slot> {
     return Option.None;
 }
 
-/** The scores give a flat 50 for knocking a foe out; this swaps it for the damage that foe would go on to deal. */
-fn threat_of(battle: Battle, user: Character, target: Character, amount: int, kits: List<List<List<MoveDef>>>): int {
+/** The scores give a flat 50 for knocking a foe out; this swaps it for what that foe is worth, three times over. */
+fn threat_of(battle: Battle, user: Character, target: Character, amount: int, worth: (Slot) -> int): int {
     if (target.team == user.team || target.fainted()) { return 0; }
     if (amount < target.hp + shield_on(target)) { return 0; }
     match slot_of(battle, target) {
-        Option.Some(s) => { return output(battle, s, kit_of(kits, s)) * kill_weight() - 50; }
+        Option.Some(s) => { return worth(s) * kill_weight() - 50; }
         Option.None => {}
     }
     return 0;
@@ -348,6 +375,12 @@ fn threat_of(battle: Battle, user: Character, target: Character, amount: int, ki
 
 /** The change to the score from valuing each knockout by the foe's threat (`threat_of`). */
 fn kill_threat(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<List<List<MoveDef>>>): int {
+    fn hits(s: Slot): int { return output(battle, s, kit_of(kits, s)); }
+    return kill_threat_by(battle, user, move, choice, kits, hits);
+}
+
+/** `kill_threat`, with each foe worth `worth`. */
+fn kill_threat_by(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<List<List<MoveDef>>>, worth: (Slot) -> int): int {
     var c = battle.sides[user.side].active[user.index];
     match bind(move.shape, choice, battle, user) {
         Option.Some(target) => {
@@ -355,12 +388,12 @@ fn kill_threat(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: 
             var total = 0;
             for (a in apply(battle, c, target)) {
                 match a {
-                    Action.Damage(t, _, amount, _) => { total = total + threat_of(battle, c, t, amount, kits); }
-                    Action.Drain(t, _, amount, _) => { total = total + threat_of(battle, c, t, amount, kits); }
+                    Action.Damage(t, _, amount, _) => { total = total + threat_of(battle, c, t, amount, worth); }
+                    Action.Drain(t, _, amount, _) => { total = total + threat_of(battle, c, t, amount, worth); }
                     Action.AreaDrain(_, ts, amounts, _) => {
                         var i = 0;
                         while (i < ts.len()) {
-                            total = total + threat_of(battle, c, ts[i], amounts[i], kits);
+                            total = total + threat_of(battle, c, ts[i], amounts[i], worth);
                             i = i + 1;
                         }
                     }

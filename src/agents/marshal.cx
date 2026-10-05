@@ -1,0 +1,153 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random, random_int } from "std/random/Random";
+import { Character, Action } from "../core/creature";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef } from "../core/move";
+import { Choice, bind } from "../core/target";
+import { Fighter } from "../content/roster";
+import { foe_pick, roll } from "../game/draft";
+import { Agent, Plan, Turn } from "agent";
+import { Pick, choices, worth, effect_worth, shield_on, smaller } from "scoring";
+import { kit_of } from "tactician";
+import { guarded_by } from "guardian";
+
+/**
+ * Generation 4: plays like the Guardian, and values a character by
+ * everything it brings, not just its best hit. The Guardian's forecast
+ * weighs saving an ally, and knocking out a foe, by that character's
+ * damage, so a healer or a protector was hardly worth saving or killing.
+ * The Marshal weighs them by their **contribution**: what a turn of theirs
+ * is worth on average, heals, shields and auras counted at face value. See
+ * docs/marshal.md.
+ */
+type MarshalAgent;
+
+impl Agent for MarshalAgent {
+    fn choose_move(self, turn: Turn): <async, Console, Stdin, Random, Throw<IoError>> Option<Plan> {
+        return Option.Some(marshal_action(turn.battle, turn.slot, turn.moves, turn.kits));
+    }
+
+    fn choose_pick(self, available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): <async, Console, Stdin, Random, Throw<IoError>> int {
+        return foe_pick(available, mine, roll);
+    }
+}
+
+fn noise(n: int): int { return random_int(0, n + 1); }
+
+/** The Marshal's move: the Guardian's choice, with each character worth its contribution, and a little noise. */
+fn marshal_action(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>): Plan {
+    match commanded(battle, user, moveset, kits, 4, noise) {
+        Option.Some(p) => { return Plan { slot: user, move: p.move, choice: p.choice }; }
+        Option.None => { return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget }; }
+    }
+    return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget };
+}
+
+/** The best move and target for the slot, the Marshal way. */
+fn commanded<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
+    fn brings(s: Slot): int { return contribution(battle, s, kits); }
+    return guarded_by(battle, user, moveset, kits, jitter, noise, brings);
+}
+
+// What a character brings.
+
+/**
+ * What one action does at face value, for `user`'s side: damage that can
+ * land on a foe, healing an ally could take at most (its max HP, not what
+ * it's missing now: a healer is worth its heals before anyone is hurt), a
+ * shield's size, half a regen's total (it comes slowly), Invincible as 30.
+ * Anything else is worth what the scores say.
+ */
+fn face(battle: Battle, user: Character, action: Action): int {
+    match action {
+        Action.Damage(t, _, amount, _) => {
+            if (t.team != user.team && !t.fainted()) { return smaller(amount, t.hp + shield_on(t)); }
+            return 0;
+        }
+        Action.Drain(t, _, amount, _) => {
+            if (t.team != user.team && !t.fainted()) { return smaller(amount, t.hp + shield_on(t)); }
+            return 0;
+        }
+        Action.AreaDrain(_, ts, amounts, _) => {
+            var total = 0;
+            var i = 0;
+            while (i < ts.len()) {
+                if (ts[i].team != user.team && !ts[i].fainted()) { total = total + smaller(amounts[i], ts[i].hp + shield_on(ts[i])); }
+                i = i + 1;
+            }
+            return total;
+        }
+        Action.Heal(t, amount) => {
+            if (t.team == user.team && !t.fainted()) { return smaller(amount, t.max_health()); }
+            return 0;
+        }
+        Action.HealTeam(_, amount) => {
+            var total = 0;
+            for (a in battle.sides[user.team].active) {
+                if (!a.fainted()) { total = total + amount; }
+            }
+            return total;
+        }
+        Action.HealLowestAlly(_, amount) => { return amount; }
+        Action.AddEffect(t, fx) => {
+            if (t.fainted()) { return 0; }
+            if (fx.buff && t.team == user.team) {
+                if (fx.absorbs) { return fx.power; }
+                if (fx.kind == "Regen") { return fx.power * fx.rounds / 2; }
+                if (fx.prevents_damage) { return 30; }
+            }
+            return effect_worth(user, t, fx);
+        }
+        _ => { return worth(battle, user, action, []); }
+    }
+    return 0;
+}
+
+/** The most one use of the move could bring now, over every target it allows; 0 if none binds. */
+fn move_face(battle: Battle, s: Slot, move: MoveDef): int {
+    var c = battle.sides[s.side].active[s.index];
+    var top = 0;
+    for (choice in choices(battle, s, move)) {
+        match bind(move.shape, choice, battle, s) {
+            Option.Some(target) => {
+                var apply = move.apply;
+                var total = 0;
+                for (a in apply(battle, c, target)) { total = total + face(battle, c, a); }
+                if (total > top) { top = total; }
+            }
+            Option.None => {}
+        }
+    }
+    return top;
+}
+
+/**
+ * What a turn of the character's is worth on average: its basic attack,
+ * plus, for each other move, what it adds over the basic attack, shared
+ * over the turns its cooldown takes (a move with cooldown 3 comes every 4th
+ * turn). Cooldowns aren't checked: a character is worth its moves whether
+ * or not one is ready this turn. Nothing for one that's down or takes no
+ * turns.
+ */
+fn contribution(battle: Battle, s: Slot, kits: List<List<List<MoveDef>>>): int {
+    var c = battle.sides[s.side].active[s.index];
+    if (c.fainted() || !c.takes_turns()) { return 0; }
+    var kit = kit_of(kits, s);
+    var basic = 0;
+    for (m in kit) {
+        if (m.basic) {
+            var f = move_face(battle, s, m);
+            if (f > basic) { basic = f; }
+        }
+    }
+    var total = basic;
+    for (m in kit) {
+        if (m.basic) { continue; }
+        var gain = move_face(battle, s, m) - basic;
+        if (gain > 0) { total = total + gain / (m.cooldown + 1); }
+    }
+    return total;
+}

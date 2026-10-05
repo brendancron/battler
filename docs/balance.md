@@ -80,6 +80,7 @@ The AIs, one file each in `src/agents/` (shared scoring in `scoring.cx`):
 | Greedy | the move that scores best right now: damage, knockouts, healing, a flat value for each buff or debuff |
 | Tactician | like Greedy, but a buff or debuff that changes attack or defense is worth how much it changes the damage each side could deal next turn, for as long as it lasts. It knows every character's moves, so it energizes the hitter still to act this round, and gives nothing for boosting an ally that can't attack |
 | Guardian | like Tactician, but it forecasts the foes: each foe still to act makes its Greedy pick, and protection (Invincible, shields, barriers, taunts, potions, speed changes) is worth the danger it takes off its side. So Fairy Ring goes on the ally about to be knocked out, a taunt goes up when a frail ally is about to be focused, and a heal that lifts an ally out of reach gets a bonus. A knockout is worth the damage that foe would go on to deal ([guardian.md](guardian.md)) |
+| Marshal | like Guardian, but a character is worth everything it brings, not just its best hit: heals, shields and auras count at face value, shared over their cooldowns. So it protects a healer or a Shaman about to cast, and goes after the foe's healer first ([marshal.md](marshal.md)) |
 
 All of them draft at random, all but Random without repeating an archetype.
 
@@ -90,7 +91,7 @@ and lives in its own file. A better way to play goes into a **new** AI, not
 into an old one, so the old ones stay as fixed benchmarks and the balance
 checker can show whether each generation really beats the last
 (`--ai Tactician,Guardian`). Random (0), Greedy (1), Tactician (2),
-Guardian (3). Guardian replaced the Strategist, which counted what a
+Guardian (3), Marshal (4). Guardian replaced the Strategist, which counted what a
 cooldown costs (waste × cooldown ÷ 4) and didn't beat the Tactician by
 enough to keep.
 
