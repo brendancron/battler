@@ -19,7 +19,7 @@ import {
     reap_power, reap_wound_divisor, reap_cooldown, soul_siphon_power, soul_siphon_drain_percent,
     soul_siphon_cooldown, writhing_depths_power, writhing_depths_cooldown, shield_bash_power,
     shield_bash_rounds, shield_bash_cooldown, bulwark_shield, bulwark_cooldown,
-    healing_rain_regen, healing_rain_rounds, healing_rain_cooldown, resurrection_percent,
+    healing_rain_heal, healing_rain_regen, healing_rain_rounds, healing_rain_cooldown, resurrection_percent,
     resurrection_cooldown, spirit_link_cooldown, totem_hp, totem_defense, backstab_power, backstab_cooldown,
     execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown,
     largo_rounds, largo_cooldown, fairy_ring_cooldown, wither_power, wither_cooldown,
@@ -460,14 +460,17 @@ fn healing_rain_apply(battle: Battle, user: Character, target: Target): List<Act
     var out: List<Action> = [];
     match target {
         Target.Spread(allies) => {
-            for (a in allies) { out.push(Action.AddEffect(a, regen(healing_rain_regen(), healing_rain_rounds()))); }
+            for (a in allies) {
+                out.push(Action.Heal(a, healing_rain_heal()));
+                out.push(Action.AddEffect(a, regen(healing_rain_regen(), healing_rain_rounds())));
+            }
         }
         _ => {}
     }
     return out;
 }
 
-/** All allies, the user included: regen on each. */
+/** All allies, the user included: a heal at once, then regen on each. */
 fn healing_rain(): MoveDef {
     return MoveDef { name: "Healing Rain", shape: TargetShape.AllAllies, apply: healing_rain_apply, cooldown: healing_rain_cooldown(), basic: false };
 }

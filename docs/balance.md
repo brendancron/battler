@@ -361,7 +361,7 @@ The report page shows two tables from them:
   longest, the middle half (25th to 75th percentile) and the middle 80%,
   over a chart of how many games lasted each number of rounds with the
   median, the mean and the Short ≤ line marked.
-- **Short and long games**: each character's games split four ways, as
+- **Short and long games**: each character's archetype and its games split four ways, as
   shares of all its games that add up to 100: **won short**, **lost short**,
   **won long**, **lost long**. A character built to protect early (the
   Fairy) should rarely lose short; one built to snowball (the Bard) should

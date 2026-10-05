@@ -310,6 +310,7 @@ const wonShort = r => share(r, r.short.wins), lostShort = r => share(r, r.short.
 const wonLong = r => share(r, r.long.wins), lostLong = r => share(r, r.long.games - r.long.wins);
 const shortLongColumns = [
   { label: "Name", value: r => r.name },
+  { label: "Archetype", value: r => stat(r, 2), then: r => -lostShort(r) },
   { label: "Won short %", value: wonShort, text: r => fixed(wonShort(r), 1), num: true },
   { label: "Lost short %", value: lostShort, text: r => fixed(lostShort(r), 1), num: true },
   { label: "Won long %", value: wonLong, text: r => fixed(wonLong(r), 1), num: true },
@@ -337,7 +338,7 @@ const TABLES = [
   { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 3,
     note: "Off 50 is how far the win % is from 50, either way. Atk and Def are base stats, before effects." },
   { id: "lengths", title: "Game length", render: renderLengths },
-  { id: "short-long", title: "Short and long games", rows: shortLongRows, columns: shortLongColumns, sort: 2, dir: 1,
+  { id: "short-long", title: "Short and long games", rows: shortLongRows, columns: shortLongColumns, sort: 3, dir: 1,
     note: d => `Each character's games split four ways, as shares of all its games (they add up to 100): won or lost, short or long. Short games last up to ${shortCut()} rounds (set it with Short ≤; empty is the median, ${medianLength()}), long ones more. A character that protects early should rarely lose short.` },
   { id: "by-ai", title: "Characters by AI", rows: byAiRows, get columns() { return byAiColumns(); }, sort: 0,
     note: "Win % under each AI, and the edge: that less the AI's own win %. A character whose edge is much higher under one AI is played better by it. Games is the fewest it has under any one AI; a gap needs a few thousand games each to mean much." },

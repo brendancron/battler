@@ -13,7 +13,7 @@ import {
     brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, panacea_mist_heal, disarming_palm_power,
     crippling_blow_power, crippling_blow_turns, flurry_power, flurry_picks, reap_power, reap_wound_divisor,
     soul_siphon_power, soul_siphon_drain_percent, writhing_depths_power, shield_bash_power, bulwark_shield,
-    healing_rain_regen, healing_rain_rounds, backstab_power, execution_power, resurrection_percent, predator_line_percent
+    healing_rain_heal, healing_rain_regen, healing_rain_rounds, backstab_power, execution_power, resurrection_percent, predator_line_percent
 } from "battler/content/tuning";
 import { duel, who, slot, logged, has_effect, sturdy } from "support";
 
@@ -521,15 +521,17 @@ fn the_log_lists_each_pick() {
 // Shaman
 
 @test
-fn healing_rain_regens_the_team_for_its_rounds() {
+fn healing_rain_heals_at_once_then_regens_the_team_for_its_rounds() {
     var b = duel(["A", "B"], ["C"]);
     var total = healing_rain_regen() * healing_rain_rounds();
-    who(b, slot(0, 0)).take(90);
+    sturdy(who(b, slot(0, 0)));
+    who(b, slot(0, 0)).take(990);
     who(b, slot(0, 1)).take(1);
     who(b, slot(1, 0)).take(90);
     use(b, slot(0, 0), "healing_rain", Choice.NoTarget);
+    assert(who(b, slot(0, 0)).hp == 10 + healing_rain_heal(), "the heal lands at once");
     end_rounds(b, healing_rain_rounds() + 1);
-    assert(who(b, slot(0, 0)).hp == healed(10, total), "the regen each round, for its rounds");
+    assert(who(b, slot(0, 0)).hp == 10 + healing_rain_heal() + total, "then the regen each round, for its rounds");
     assert(who(b, slot(0, 1)).hp == 100, "capped at max");
     assert(who(b, slot(1, 0)).hp == 10, "not the foes");
     assert(!has_effect(who(b, slot(0, 0)), "Regen"), "gone after its rounds");

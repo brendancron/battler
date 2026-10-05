@@ -1,6 +1,6 @@
 import { Character, Effect, Tier, character } from "../core/creature";
 import { MoveDef, basic_attack } from "../core/move";
-import { rage, last_rites, keen_eye, vigil, inner_peace, soul_harvest, predator, panacea_supply, fae_bargain, sanguine, cold_aura, ironclad, shadowed, crescendo, on_guard } from "effects";
+import { rage, last_rites, keen_eye, vigil, inner_peace, soul_harvest, predator, panacea_supply, fae_bargain, sanguine, cold_aura, ironclad, shadowed, crescendo } from "effects";
 import {
     cleave, smite, guard, lay_on_hands, aimed_shot, hunters_mark, prayer, purify, sanctuary, brimstone, hex_move,
     acid_flask, greater_health_potion_move, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows,
@@ -78,7 +78,7 @@ fn stormbringer(): Fighter { return fighter("Mage", character("Stormbringer", 10
 
 fn ninja(): Fighter { return fighter("Rogue", character("Ninja", 110, 50, Tier.Fast), [shadowed()], [basic_attack("Kunai", 10), shuriken()]); }
 
-fn swashbuckler(): Fighter { return fighter("Warrior", character("Swashbuckler", 95, 68, Tier.Fast), [on_guard()], [basic_attack("Cutlass", 10), pistol_shot(), plunder(), en_garde()]); }
+fn swashbuckler(): Fighter { return fighter("Warrior", character("Swashbuckler", 95, 68, Tier.Fast), [], [basic_attack("Cutlass", 10), pistol_shot(), plunder(), en_garde()]); }
 
 fn jester(): Fighter { return fighter("Rogue", character("Jester", 90, 50, Tier.Fast), [], [basic_attack("Juggled Knife", 8), trick_blade(), puppeteer()]); }
 

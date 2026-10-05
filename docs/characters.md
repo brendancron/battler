@@ -407,12 +407,12 @@ it alive until then.
 
 | Move           | Target        | Effect |
 |----------------|---------------|--------|
-| Healing Rain   | all allies    | Regen 30 for 3 rounds on each ([effects.md](effects.md)): 90 HP each over the rounds (18 a round until v0.0.3, 24 until v0.0.4). |
+| Healing Rain   | all allies    | Heals each 25 at once (placeholder), then regen 20 for 5 rounds on each ([effects.md](effects.md)): 125 HP each in all. Shaman's big turn-1 move. (Until v0.0.5 it was regen only, for 3 rounds: 18 a round, then 24 in v0.0.3 and 30 in v0.0.4.) |
 | Spirit Link    | one foe       | Links the Shaman to the foe for 2 rounds: 50% of the damage the Shaman takes goes to the foe instead, and 75% of the healing the foe takes goes to the Shaman. Cooldown 3. |
 | Totem          | —             | Summons a totem with its own small HP pool ([summons.md](summons.md)). While it stands, the whole team has +35% attack and +35% defense (25% until v0.0.4). |
 
 Regen heals at the end of each round and doesn't stack: casting it again resets
-it to 3 rounds rather than doubling the healing.
+it to 5 rounds rather than doubling the healing.
 
 The total is high on purpose: the Shaman is Slow, and regen pays out over
 several rounds, so the healing arrives late.
@@ -911,9 +911,9 @@ act. (A Rogue with defense 55 until v0.0.3.)
 A pirate duelist that takes what it wants: the first character that steals
 ([effects.md](effects.md#removing-and-moving-effects)).
 
-**Passive: On Guard.** It starts every battle with a parry ready: the first
-direct hit a foe lands on it is blocked, and it ripostes (below). Once used,
-the passive does nothing more. (The name is a placeholder.)
+**Passive:** none since v0.0.5. In v0.0.3 and v0.0.4 it had On Guard, a
+parry ready at the start of the battle; it went while the Swashbuckler still
+won most of its games.
 
 **Moves** (names, powers and cooldowns are placeholders)
 
@@ -931,8 +931,6 @@ the passive does nothing more. (The name is a placeholder.)
   (a drain counts), not indirect damage like poison or bleed, which goes
   through and leaves the parry up. The riposte is a direct hit, so a foe's
   own parry can answer it. A second En Garde while one is up does nothing.
-  On Guard's starting parry and En Garde's are separate: with both up, the
-  passive's goes first.
 - Until v0.0.3 the Swashbuckler had only Plunder and its basic attack.
 - v0.0.4 toned it down after it won 84% of v0.0.3's games: attack 110 to
   95, riposte power 20 to 12, En Garde's cooldown 3 to 4.
