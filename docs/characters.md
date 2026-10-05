@@ -173,9 +173,11 @@ Rejected so far:
 
 Support ([archetypes.md](archetypes.md)).
 
+Stats (placeholders): attack 70, defense 75 (81 until v0.0.4).
+
 **Passive: Vigil.** At the end of each round, heals the ally with the lowest
-HP for 10. The Cleric counts as an ally, and a tie goes to the lowest slot.
-(The name and the 10 are placeholders.)
+HP for 8. The Cleric counts as an ally, and a tie goes to the lowest slot.
+(The name and the 8 are placeholders; it was 10 until v0.0.4.)
 
 **Moves** (names are placeholders)
 
@@ -392,7 +394,12 @@ The Final Offering details:
 ### Shaman
 
 Support ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md)).
-Stats (placeholders): attack 65, defense 70 (75 until v0.0.3).
+Stats (placeholders): attack 65, defense 50 (75 until v0.0.3, 70 until
+v0.0.4).
+
+Balanced like the Warlock: if it gets its first turns in, its totem and
+Healing Rain carry the team, but it's frail and Slow, so the team has to keep
+it alive until then.
 
 **Passive:** to be designed.
 
@@ -400,9 +407,9 @@ Stats (placeholders): attack 65, defense 70 (75 until v0.0.3).
 
 | Move           | Target        | Effect |
 |----------------|---------------|--------|
-| Healing Rain   | all allies    | Regen 24 for 3 rounds on each ([effects.md](effects.md)): 72 HP each over the rounds (18 a round until v0.0.3). |
+| Healing Rain   | all allies    | Regen 30 for 3 rounds on each ([effects.md](effects.md)): 90 HP each over the rounds (18 a round until v0.0.3, 24 until v0.0.4). |
 | Spirit Link    | one foe       | Links the Shaman to the foe for 2 rounds: 50% of the damage the Shaman takes goes to the foe instead, and 75% of the healing the foe takes goes to the Shaman. Cooldown 3. |
-| Totem          | —             | Summons a totem with its own small HP pool ([summons.md](summons.md)). While it stands, the whole team has +25% attack and +25% defense. |
+| Totem          | —             | Summons a totem with its own small HP pool ([summons.md](summons.md)). While it stands, the whole team has +35% attack and +35% defense (25% until v0.0.4). |
 
 Regen heals at the end of each round and doesn't stack: casting it again resets
 it to 3 rounds rather than doubling the healing.
@@ -894,7 +901,7 @@ Ninja's safety behind its shroud is worth something. More moves later.
 ### Swashbuckler
 
 Warrior ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
-Stats (placeholders): attack 110, defense 68.
+Stats (placeholders): attack 95, defense 68 (attack 110 until v0.0.4).
 
 The only **Fast Warrior**: it wins the war of attrition rather than picking
 foes off. Parry and riposte punish the foe for hitting it, Plunder strips
@@ -914,7 +921,7 @@ the passive does nothing more. (The name is a placeholder.)
 |---------|---------|--------|
 | Pistol Shot | any foe | A direct hit, power 30 ([damage.md](damage.md)), on any foe standing: taunts and other targeting tiers don't apply. Cooldown 2. |
 | Plunder | one foe | Steals every buff the foe has and puts them on the Swashbuckler, then a direct hit, power 20 ([damage.md](damage.md)). Cooldown 3. |
-| En Garde | the user | Parry: the next direct hit a foe lands on the Swashbuckler is blocked, and it ripostes, a direct hit of power 20 back on the attacker. It lasts until it's used, however many rounds that takes. Cooldown 3. |
+| En Garde | the user | Parry: the next direct hit a foe lands on the Swashbuckler is blocked, and it ripostes, a direct hit of power 12 back on the attacker. It lasts until it's used, however many rounds that takes. Cooldown 4. |
 
 - **Pistol Shot reaches the backline.** It ignores targeting tiers like an
   area move does, but hits one foe of the Swashbuckler's choosing: a Fairy,
@@ -927,6 +934,8 @@ the passive does nothing more. (The name is a placeholder.)
   On Guard's starting parry and En Garde's are separate: with both up, the
   passive's goes first.
 - Until v0.0.3 the Swashbuckler had only Plunder and its basic attack.
+- v0.0.4 toned it down after it won 84% of v0.0.3's games: attack 110 to
+  95, riposte power 20 to 12, En Garde's cooldown 3 to 4.
 - **Every buff, for now.** Stealing just one (the player's pick, or the
   newest) was considered; it can be revisited after balance testing.
 - **Steal first, then hit,** as Smite dispels first: a shield, barrier or

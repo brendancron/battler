@@ -24,8 +24,8 @@ come later.)
   It's a minion, and it doesn't take turns: it just stands there giving its
   bonus.
 - Has its own HP pool, and is fairly squishy.
-- While it stands, every character on the Shaman's team has **+25% attack and
-  +25% defense**. This is its own multiplier (× 1.25), separate from the
+- While it stands, every character on the Shaman's team has **+35% attack and
+  +35% defense** (25% until v0.0.4). This is its own multiplier (× 1.35), separate from the
   × 1.5 stat ups and downs ([effects.md](effects.md)), and it multiplies with
   them.
 - The bonus is an **aura** on the totem, Totem's Blessing
@@ -46,9 +46,10 @@ come later.)
 - **Its cooldown starts when the totem is destroyed, not when it's summoned:**
   3 of the Shaman's turns after the totem falls. A totem that stands for many
   turns doesn't use those turns up; the cooldown only begins once it's gone.
-- Its HP and defense are placeholders: **20 HP and 32 defense** (40 with its
-  own aura, as before v0.0.3, when it was 40 without one), so an average
-  hit of power 30 takes most of it.
+- Its HP and defense are placeholders: **40 HP and 32 defense** (43 with its
+  own aura). From v0.0.4 it takes a deliberate effort to kill rather than
+  falling to a stray hit; it had 20 HP before, and 40 defense without an
+  aura until v0.0.3.
 
 ## The Necromancer's skeletons
 

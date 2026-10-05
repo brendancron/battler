@@ -5,7 +5,12 @@ from, and the question is removed from here.
 
 ## Open
 
-None right now.
+- **More ways to remove corpses** ([fainting.md](fainting.md#removing-corpses)).
+  The Cleric's Resurrection (v0.0.3) made bringing allies back common, and
+  only the Grim Reaper's Soul Harvest, the Necromancer's Wither and Raise
+  Dead, and the Jester's Puppeteer take corpses away. More counters would
+  check Resurrection without nerfing it directly: who should get one, and
+  how (a passive, a move, an effect of some hits)?
 
 ## Later
 

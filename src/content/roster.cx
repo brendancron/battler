@@ -32,7 +32,7 @@ fn barbarian(): Fighter { return fighter("Warrior", character("Barbarian", 130, 
 
 fn ranger(): Fighter { return fighter("Rogue", character("Ranger", 115, 55, Tier.Fast), [keen_eye()], [basic_attack("Quick Shot", 10), aimed_shot(), hunters_mark()]); }
 
-fn cleric(): Fighter { return fighter("Support", character("Cleric", 70, 81, Tier.Normal), [vigil()], [basic_attack("Holy Spark", 8), prayer(), purify(), resurrection()]); }
+fn cleric(): Fighter { return fighter("Support", character("Cleric", 70, 75, Tier.Normal), [vigil()], [basic_attack("Holy Spark", 8), prayer(), purify(), resurrection()]); }
 
 fn paladin(): Fighter { return fighter("Tank", character("Paladin", 90, 156, Tier.Slow), [last_rites()], [basic_attack("Mace Strike", 8), smite(), guard(), lay_on_hands()]); }
 
@@ -52,7 +52,7 @@ fn warlock(): Fighter { return fighter("Mage", character("Warlock", 110, 45, Tie
 
 fn knight(): Fighter { return fighter("Tank", character("Knight", 85, 140, Tier.Normal), [], [basic_attack("Sword Strike", 8), shield_bash(), bulwark()]); }
 
-fn shaman(): Fighter { return fighter("Support", character("Shaman", 65, 70, Tier.Slow), [], [basic_attack("Spirit Strike", 8), healing_rain(), spirit_link(), totem_move()]); }
+fn shaman(): Fighter { return fighter("Support", character("Shaman", 65, 50, Tier.Slow), [], [basic_attack("Spirit Strike", 8), healing_rain(), spirit_link(), totem_move()]); }
 
 fn assassin(): Fighter {
     return fighter("Rogue", character("Assassin", 88, 52, Tier.Fast), [predator()], [basic_attack("Quick Cut", 10), backstab(), execution()]);
@@ -78,7 +78,7 @@ fn stormbringer(): Fighter { return fighter("Mage", character("Stormbringer", 10
 
 fn ninja(): Fighter { return fighter("Rogue", character("Ninja", 110, 50, Tier.Fast), [shadowed()], [basic_attack("Kunai", 10), shuriken()]); }
 
-fn swashbuckler(): Fighter { return fighter("Warrior", character("Swashbuckler", 110, 68, Tier.Fast), [on_guard()], [basic_attack("Cutlass", 10), pistol_shot(), plunder(), en_garde()]); }
+fn swashbuckler(): Fighter { return fighter("Warrior", character("Swashbuckler", 95, 68, Tier.Fast), [on_guard()], [basic_attack("Cutlass", 10), pistol_shot(), plunder(), en_garde()]); }
 
 fn jester(): Fighter { return fighter("Rogue", character("Jester", 90, 50, Tier.Fast), [], [basic_attack("Juggled Knife", 8), trick_blade(), puppeteer()]); }
 

@@ -81,7 +81,7 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Ninja       | Shuriken       | 2 |
 | Swashbuckler | Pistol Shot   | 2 |
 | Swashbuckler | Plunder       | 3 |
-| Swashbuckler | En Garde      | 3 |
+| Swashbuckler | En Garde      | 4 |
 | Jester      | Trick Blade    | 2 |
 | Jester      | Puppeteer      | 5, from when the puppet falls ([summons.md](summons.md#the-jesters-puppets)) |
 
