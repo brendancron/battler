@@ -161,7 +161,7 @@
   </div>
 </nav>
 <main id="tables"></main>
-<footer>Click a column heading to sort by it; click again to reverse. Written by the balance checker (docs/balance.md).</footer>
+<footer>Hover a column heading for what it means; click it to sort by it, again to reverse. Written by the balance checker (docs/balance.md).</footer>
 
 <script>
 // The totals, as the checker saved them: set by the data script beside this
@@ -184,12 +184,6 @@ const ratingColumns = [
   { label: "Wins", value: r => r.wins, num: true },
   { label: "Games", value: r => r.games, num: true },
 ];
-const mixColumns = [
-  { label: "Mix", value: r => r.name },
-  { label: "Score", value: r => r.games ? 100 * r.surprise / r.games : null, text: r => signed(r.games ? 100 * r.surprise / r.games : null), num: true, bar: true, base: 0, signed: true },
-  { label: "Win %", value: r => pct(r.wins, r.games), text: r => fixed(pct(r.wins, r.games), 1), num: true },
-  { label: "Games", value: r => r.games, num: true },
-];
 // Characters: no Wins column (Win % and Games say it), and their base stats
 // from the data script, so the table sorts by them.
 const stat = (r, i) => STATS[r.name] ? STATS[r.name][i] : null;
@@ -207,11 +201,10 @@ const characterColumns = [
   { label: "Atk×Def", value: r => stat(r, 0) == null ? null : stat(r, 0) * stat(r, 1), num: true },
   ratingColumns[4],
 ];
-const pairColumns = [{ label: "Pair", value: r => r.name }, ...mixColumns.slice(1)];
 
 // Counters: each matchup is kept once, from the first name's side in
-// alphabetical order ("Assassin vs Fairy"); here it shows both ways round, so
-// filtering by a name (which looks at the first) lists its matchups from its side.
+// alphabetical order ("Assassin vs Fairy"); here it's both ways round, for
+// the counter grid and the bounds.
 function counterRows(d) {
   const out = [];
   for (const m of d.counters || []) {
@@ -222,7 +215,6 @@ function counterRows(d) {
   }
   return out;
 }
-const counterColumns = [{ label: "Matchup", value: r => r.name }, ...mixColumns.slice(1)];
 function signed(x) { return x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1); }
 
 // Characters by AI: a row per character, with its win % under each AI that
@@ -690,6 +682,54 @@ const synergyColumns = [
   { label: `In top ${KIND.top} pairs`, value: r => r.inTop, num: true, tone: r => r.inTop >= 3 ? "fail" : "" },
 ];
 
+// What each column means, shown on hovering its heading. Keyed by label;
+// a table's own `help` overrides an entry where the column means something
+// more particular there.
+const HELP = {
+  "Name": "The character (or AI, archetype, side) being rated.",
+  "Elo": "Rating from every game it played: 1000 is average, and 100 points above another means winning about 64% against it.",
+  "Win %": "Share of its games it won.",
+  "Wins": "Games it won.",
+  "Games": "Games it played.",
+  "Score": "Win % above what the characters' ratings predicted, in points. Positive means it does better than its characters' strength explains.",
+  "Archetype": "The character's class: Tank, Warrior, Mage, Rogue or Support.",
+  "Speed": "Its speed tier: Fast acts before Normal, Normal before Slow.",
+  "Off 50": "How far its win % is from 50, either way. Sort ascending for the most balanced first.",
+  "Atk": "Base attack, before effects.",
+  "Def": "Base defense, before effects.",
+  "Atk×Def": "Base attack times base defense: a rough measure of its raw stats.",
+  "Won short %": "Share of all its games that were short (up to Short ≤ rounds) and won.",
+  "Lost short %": "Share of all its games that were short (up to Short ≤ rounds) and lost. Low for a character that protects early.",
+  "Won long %": "Share of all its games that were long (over Short ≤ rounds) and won.",
+  "Lost long %": "Share of all its games that were long (over Short ≤ rounds) and lost.",
+  "Gap": "Its best edge under any AI less its worst: how much it depends on who plays it.",
+  "Suits": "The AI it does best under, relative to that AI's own win %.",
+  "Range": "The least to the most it can be played in a competitive metagame; the line is the optimal mix.",
+  "Least %": "The least it can be played in a mix that holds 50 less Slack against any one character. Above 20 means every competitive metagame needs it.",
+  "Most %": "The most it can be played in such a mix. About 0: no room for it. Above 50: nothing punishes everyone playing it.",
+  "Optimal %": "Its share of one optimal mix of the selection game. One of possibly many; read the range instead.",
+  "Avg %": "Its plain average win % across its matchups, as random teams measure it.",
+  "Verdict": "Always excluded (most about 0), sometimes dominant (most above 50) or always dominant (least above 20).",
+  "Box": "Which of five boxes it falls in, from its win %, spread and counts. Hover a box for what to do.",
+  "Spread": "How much its matchup scores swing once its strength is taken out (root mean square, in points). High is polarised, low generic.",
+  "Counters": "Matchups it does clearly better in than the ratings expect (over 3 standard errors).",
+  "Countered by": "Matchups it does clearly worse in than the ratings expect (over 3 standard errors).",
+  "Kind": "Build-around, some partners or plug-and-play, from its synergy spread. Hover a kind for what it means.",
+  "Partners": "Teammates it does clearly better with than the ratings expect (over 3 standard errors).",
+  "Clashes": "Teammates it does clearly worse with than the ratings expect (over 3 standard errors).",
+  "Best partner": "Its best teammate and that pair's score. Orange: the pair beats the strongest counter in the game.",
+};
+// A column's help: the table's own, then the shared one, then the by-AI columns.
+function helpFor(table, col) {
+  const own = table.help && table.help[col.label];
+  if (own) return own;
+  if (HELP[col.label]) return HELP[col.label];
+  if (col.label.endsWith(" edge")) return `Its win % under ${col.label.slice(0, -5)} less that AI's own win %: above 0 means that AI plays it better than it plays the average character.`;
+  if (col.label.endsWith(" win %")) return `Its win % in games ${col.label.slice(0, -6)} played it.`;
+  if (col.label.startsWith("In top ")) return `How many of the ${KIND.top} strongest pairs it's in. Orange at 3 or more: a hub, where the combos' power lives.`;
+  return "";
+}
+
 const TABLES = [
   { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 3,
     note: "Off 50 is how far the win % is from 50, either way. Atk and Def are base stats, before effects." },
@@ -699,16 +739,12 @@ const TABLES = [
   { id: "by-ai", title: "Characters by AI", rows: byAiRows, get columns() { return byAiColumns(); }, sort: 0,
     note: "Win % under each AI, and the edge: that less the AI's own win %. A character whose edge is much higher under one AI is played better by it. Games is the fewest it has under any one AI; a gap needs a few thousand games each to mean much." },
   { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
-  { id: "agents", title: "AIs", rows: d => d.agents, columns: ratingColumns, sort: 1,
+  { id: "agents", title: "AIs", rows: d => d.agents, columns: ratingColumns, sort: 1, help: { "Name": "The move AI." },
     note: "Rated only in games between two different AIs." },
-  { id: "orders", title: "Order AIs", rows: d => d.orders || [], columns: ratingColumns, sort: 1,
+  { id: "orders", title: "Order AIs", rows: d => d.orders || [], columns: ratingColumns, sort: 1, help: { "Name": "The order AI, which arranges a team into slots." },
     note: "The AIs that arrange each team into slots before the battle. Rated only in games where the two teams were arranged by different order AIs." },
   { id: "sides", title: "Home and away", rows: d => d.sides, columns: ratingColumns, sort: 2,
     note: "Read the win rate here; with two entries the Elo mostly follows the latest games." },
-  { id: "counters", title: "Counters", rows: counterRows, columns: counterColumns, sort: 1, filterOn: r => r.first,
-    note: "A character against one on the other team, from the first one's side. Score: win % above what the characters' ratings predicted, in points; positive means the first one does better in that matchup than the ratings explain, so it counters the second. The filter looks at the first name. A matchup needs many games (100+) to mean much; use Min games." },
-  { id: "pairs", title: "Character pairs", rows: d => d.pairs || [], columns: pairColumns, sort: 1,
-    note: "Two characters on the same team. Score: win % above what the characters' ratings predicted, in points; positive means they win more together than their ratings predict. A pair needs many games (100+) to mean much; use Min games." },
   { id: "counter-grid", title: "Counter grid", render: renderGrid, cells: counterCells, mode: "win", label: (a, b) => `${a} vs ${b}`,
     note: "Row against column, from the row's side: a team with the row character against one with the column character. Blue rows win, orange rows lose; a row with no orange is a character nothing counters. Win % is the matchup chart the bounds below use; Score is the points above what the ratings predicted. Best characters first; hover for numbers; squares under Min games are blank; the filter picks the rows." },
   { id: "synergy-grid", title: "Synergy grid", render: renderGrid, cells: pairCells, mode: "score", label: (a, b) => `${a} + ${b}`,
@@ -716,6 +752,7 @@ const TABLES = [
   { id: "profiles", title: "Character profiles", rows: profileRows, columns: profileColumns, sort: 1,
     note: () => `Does each character have clear strengths and weaknesses? Win %: within ${BOX.even} of 50. Spread: how much its matchups swing once its strength is taken out (points above or below what the ratings expected); ±${BOX.polarised}+ is polarised, under ±${BOX.partly} generic. Counters and Countered by: matchups clearly better or worse than expected (over 3 standard errors); ${BOX.each}+ each. Blue clears the line, grey is partly there, orange misses. ` + BOXES.map(b => `${b.mark} ${b.name}: ${b.hint}.`).join(" ") + " Hover a name for its best and worst matchups (docs/balance.md#character-boxes)." },
   { id: "synergy-profiles", title: "Synergy profiles", rows: synergyRows, columns: synergyColumns, sort: 1, render: renderSynergy,
+    help: { "Spread": "How much its pair scores swing (root mean square, in points): how much its results hang on its teammates. ±5+ build-around, under ±4 plug-and-play." },
     note: () => `How much each character's results hang on its teammates, from the synergy grid's scores (points above what the two characters' ratings predicted). Spread: how much its pairs swing; ±${KIND.around}+ is a build-around, under ±${KIND.plug} plug-and-play. Partners and Clashes: pairs clearly better or worse together (over 3 standard errors). Neither kind is better: synergy is a choice, not a requirement. A build-around's win % averages its good and bad teams, and a draft picks the good ones, so don't buff one on win % alone. Combo ceiling: the best pair should score no more than the best counter, so every combo has an answer as strong; a best partner past it is orange. Hub: a character in 3+ of the top ${KIND.top} pairs, where the combos' power really lives. Hover a name for its worst partner (docs/balance.md#synergy-profiles).` },
   { id: "bounds", title: "Metagame bounds", rows: boundsRows, columns: boundsColumns, sort: 3,
     note: d => `How much of a competitive metagame each character could make up: among every mix of characters that wins at least ${50 - slack()}% against any one character (50 less Slack), the least and most each one is played. From the counter grid's win %, treating a draft as one pick each (Jaffe, "Metagame Balance"). The bar is the range, the line the optimal mix. Always excluded: no room for it. Sometimes dominant: everyone could play it unpunished, so it lacks a counter. Avg % is its plain average against the others. Matchups under Min games count as even. Use one AI and one set of rules (docs/balance.md#grids-and-metagame-bounds).` },
@@ -772,7 +809,7 @@ function renderTable(table) {
   table.columns.forEach((col, i) => {
     const arrow = s.col === i ? el("span", { class: "arrow" }, s.dir < 0 ? "▼" : "▲") : null;
     head.append(el("th", {
-      class: col.num ? "num" : "", title: "Sort by " + col.label,
+      class: col.num ? "num" : "", title: [helpFor(table, col), "Click to sort by " + col.label + "."].filter(Boolean).join("\n"),
       onclick: () => { state.sorts[table.id] = { col: i, dir: s.col === i ? -s.dir : -1 }; remember(); render(); },
     }, col.label, arrow));
   });
@@ -821,6 +858,8 @@ function render() {
 
 function init() {
   recall();
+  // A remembered tab that's gone (Counters and Character pairs were) falls back to All.
+  if (state.tab !== "all" && !TABLES.some(t => t.id === state.tab)) state.tab = "all";
   const games = DATA.games || 0, draws = DATA.draws || 0;
   // When the checker last saved, from the data script.
   const when = WRITTEN ? ` · updated ${WRITTEN.toLocaleTimeString()}` : "";

@@ -124,13 +124,11 @@ and **Auto-refresh** reloads every 10 seconds (keeping your place on the
 page) to follow a run live. `--games 0` writes both for the file as it is,
 without playing.
 
-- One table per thing rated (characters, archetypes, AIs, home and away,
-  character pairs), each with a bar showing how far above or below the
+- One table per thing rated (characters, archetypes, AIs, home and away),
+  each with a bar showing how far above or below the
   middle (1000 Elo, 50%, a score of 0) each row is.
 - **Game length** and **Short and long games** show how long games last and
   how each character's games end, short or long ([below](#game-length)).
-- **Counters** shows how each character does against each one on the other
-  team ([below](#counters)).
 - **Characters by AI** shows each character's win rate under each AI that
   played it ([below](#characters-by-ai)).
 - **Counter grid** and **Synergy grid** show every matchup and every pair as
@@ -147,9 +145,10 @@ without playing.
   attack × defense, to sort by and see how stats line up with win rates.
   They're the stats the version was played with: the data script carries
   them, with the archetype and tier, as `window.BALANCE_STATS`.
-- Click a heading to sort by that column, again to reverse. A filter by name
-  and a minimum number of games apply to every table; tabs show one table
-  or all of them. The page remembers these in the browser.
+- Hover a heading for what its column means; click it to sort by that
+  column, again to reverse. A filter by name and a minimum number of games
+  apply to every table; tabs show one table or all of them. The page
+  remembers these in the browser.
 
 The page is a copy of `src/balance/report.html`; the data script
 (`src/balance/page.cx`) is `window.BALANCE_DATA = {...}`, loaded with a
@@ -328,8 +327,8 @@ With 23 characters there are 253 pairs, and each game feeds 12 of them, so a
 pair needs many games to settle: each turns up in about 1 team in 42, and
 telling a real +8% from noise takes 100+ games together, so 4,000-5,000 games
 in all. The printed report lists the best and worst 10 pairs with 30+ games
-(`pair_min_games`, `pair_ends` in src/balance.cx); the report page has every
-pair, with Min games to hide the thin ones. Pairs are kept in the totals file
+(`pair_min_games`, `pair_ends` in src/balance.cx); the report page's synergy
+grid has every pair, with Min games to blank the thin ones. Pairs are kept in the totals file
 under `pairs`; a file from before pairs existed starts with none.
 
 Balancing combo characters means two numbers: the character's own
@@ -397,10 +396,9 @@ does better against the second than the ratings explain, so it counters it.
 Each matchup is kept once, in alphabetical order and from the first
 character's side, under `counters` in the totals file ("Assassin vs Fairy";
 the Fairy's view is the same numbers turned round). A character against
-itself, when both teams drafted it, isn't counted. The report page's
-**Counters** table shows every matchup both ways round, and its filter
-looks at the first name, so filtering for "Fairy" lists the Fairy's
-matchups from its side. The printed report lists the best and worst 10 with
+itself, when both teams drafted it, isn't counted. The report page shows
+every matchup both ways round in the counter grid
+([below](#grids-and-metagame-bounds)). The printed report lists the best and worst 10 with
 30+ games, and the compare page compares their scores.
 
 With 253 matchups and 16 credited a game, a matchup turns up in about 1 game
@@ -409,9 +407,9 @@ in 16, so 100+ games in a matchup takes 1,600+ games, and telling a real
 
 ## Grids and metagame bounds
 
-The Counters and Character pairs tables list 253 rows each; the report page
-also draws them as two grids, a row and a column per character, so a
-character's whole story is one line across.
+The report page shows the 253 matchups and the 253 pairs as two grids, a
+row and a column per character, so a character's whole story is one line
+across. (They were long tables until v0.0.8.)
 
 - **Counter grid**: the square at row A, column B is how a team with A does
   against a team with B, from A's side. The grid is its own complement (B
