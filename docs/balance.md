@@ -137,7 +137,8 @@ without playing.
   one shaded square each, and **Metagame bounds** works out from the counter
   grid how much of a competitive metagame each character could make up
   ([below](#grids-and-metagame-bounds)). **Character profiles** sums up each
-  character's row: how polarised its matchups are, and against whom.
+  character's row: how polarised its matchups are, and against whom; **Synergy
+  profiles** does the same for its pairs.
 - The characters table has **Off 50**, how far each win rate is from 50%
   either way, to sort from most to least balanced, and each character's
   **Archetype** and **Speed** tier: sorting by either groups the characters,
@@ -414,12 +415,12 @@ character's whole story is one line across.
 
 - **Counter grid**: the square at row A, column B is how a team with A does
   against a team with B, from A's side. The grid is its own complement (B
-  against A is 100 − A against B), so a row with no red in it is a character
-  nothing counters, and a column with no green one that counters everything.
+  against A is 100 − A against B), so a row with no orange in it is a character
+  nothing counters, and a column with no blue one that counters everything.
 - **Synergy grid**: the square at row A, column B is A and B on the same
   team. It's the same across the diagonal.
 
-Each grid shades by **Win %** (red below 50, green above) or by **Score**,
+Each grid shades by **Win %** (orange below 50, blue above) or by **Score**,
 the points above what the two characters' ratings predicted (as in the
 tables). A toggle on each grid switches; counters start on Win %, the
 matchup chart the bounds use, and synergy on Score, since a pair's raw win %
@@ -472,26 +473,68 @@ the ratings expected. Over a character's matchups (those with Min games):
 
 Ideally every row has a win % near 50, a spread of ±7 or more (the 4-v-4
 format dilutes a counter, so ±15 is about the most one matchup shows), and
-two to four on each side. A generic row needs its kit sharpened, not its
+three or more on each side. A generic row needs its kit sharpened, not its
 numbers; a polarised row far from 50 % needs its strength moved.
 
 ### Character boxes
 
 The profiles' **Box** column sorts each character into one of five, from
-d = |win % − 50| and s = spread (the lines are placeholders, in `BOX` in the
-page):
+d = |win % − 50| and s = spread. The lines are the user's call (raised in
+v0.0.8 to spread ±5 and three each way, to push clear strengths and
+weaknesses), kept in `BOX` in the page:
 
 | Box | Rule | What to do |
 |---|---|---|
-| 🎯 Balanced | d ≤ 3, s ≥ 4.5, Counters ≥ 2 and Countered by ≥ 2 | nothing: even, with clear strengths and weaknesses |
+| 🎯 Balanced | d ≤ 3, s ≥ 5, Counters ≥ 3 and Countered by ≥ 3 | nothing: even, with clear strengths and weaknesses |
 | 🌱 Nearly | d ≤ 3, s ≥ 4, not Balanced | sharpen one edge |
 | 😐 Bland | d ≤ 3, s < 4 | give it a conditional strength and weakness (kit, not numbers) |
 | ⚖️ Off power | d > 3, s ≥ 4 | tune its numbers; the shape is right |
 | 🛠️ Rework | d > 3, s < 4 | its kit first, then its numbers |
 
+The table shows only what decides the box: win % (and how far from 50),
+spread and the two counts, each cell blue when it clears its line, grey in
+the partly-polarised band (spread ±4 to ±5), orange when it misses. Hovering
+a name shows its best and worst matchups and how many characters have it as
+their worst. Spread is rounded to one place before the lines are applied, so
+the colour matches the number shown.
+
 The count of 🎯 is the roster's score for strong strengths and big
 weaknesses; a patch should raise it. Spread carries noise (about ±1.5 points
 with 1,000 games a matchup), so a character on a line can flip between runs.
+
+### Synergy profiles
+
+The same summary for the synergy grid: each character's 22 pairs, each
+pair's score being the points above what the two characters' ratings
+predicted. Synergy is a choice, not a requirement: a character with no
+partners can be perfectly balanced. What the table shows is how much a
+character's results hang on its teammates.
+
+- **Spread** over its pairs, and a **Kind** from it: 🧩 Build-around (±5 or
+  more), 🤝 Some partners (±4 to ±5), 🔌 Plug-and-play (under ±4). The lines
+  are placeholders, in `KIND` in the page.
+- **Partners** and **Clashes**: pairs clearly better or worse together (over
+  3 standard errors).
+- **Best partner** (worst partner on hovering the name), and **In top 10
+  pairs**: how many of the ten strongest pairs it's in.
+
+A build-around's win % averages its good teams and its bad ones. Random
+teams draw both alike, but a draft picks the good ones, so a build-around
+plays stronger than its win % says: don't buff one on win % alone.
+
+Two checks on the roster, shown as tiles above the table, in orange when
+they fail:
+
+- **Combo ceiling**: the best pair's score is no more than the best
+  counter's. A combo worth more than any counter means drafting the combo
+  beats drafting the answer to it. A best partner past the line is orange
+  in the table.
+- **Hubs**: a character in 3 or more of the top 10 pairs. The combos' power
+  really lives in it, so a fix goes to its enabling interaction rather than
+  to each partner.
+
+Anti-synergies (the most negative pairs) want a look too: one the two kits
+explain is a draft lesson; one they don't is a hidden trap, or an AI quirk.
 
 Two limits: this is a 4-v-4 draft, not a single pick, so the counter grid
 blends in each character's teammates and the bounds don't see synergy; and

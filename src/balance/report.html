@@ -19,19 +19,22 @@
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
     --line: #e4e3df; --accent: #2f6fdb; --good: #2e8b57; --bad: #c0392b;
-    --bar: #dbe6fb; --bar-bad: #f6dcd8; --head: #f0efeb;
+    --hi: #0072b2; --lo: #d55e00;
+    --bar: #dbe6fb; --bar-bad: #fbe1cc; --head: #f0efeb;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
       --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
-      --bar: #233350; --bar-bad: #4a2621; --head: #262624;
+      --hi: #56b4e9; --lo: #e69f00;
+      --bar: #233350; --bar-bad: #4a3214; --head: #262624;
     }
   }
   :root[data-theme="dark"] {
     --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
     --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
-    --bar: #233350; --bar-bad: #4a2621; --head: #262624;
+    --hi: #56b4e9; --lo: #e69f00;
+    --bar: #233350; --bar-bad: #4a3214; --head: #262624;
   }
   * { box-sizing: border-box; }
   body {
@@ -95,6 +98,11 @@
   td.barcell span { position: relative; }
   .pos { color: var(--good); }
   .neg { color: var(--bad); }
+  /* Pass, near and fail: blue, grey and orange, told apart with most colour blindness. */
+  td.pass { background: color-mix(in srgb, var(--hi) 30%, var(--panel)); }
+  td.near { background: color-mix(in srgb, var(--muted) 30%, var(--panel)); }
+  .tile.fail { background: color-mix(in srgb, var(--lo) 38%, var(--panel)); }
+  td.fail { background: color-mix(in srgb, var(--lo) 38%, var(--panel)); }
   .empty { padding: 12px 14px; color: var(--muted); }
   .hidden { display: none; }
   .tiles { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 14px 10px; }
@@ -378,10 +386,10 @@ function pairCells(d) {
   return cells;
 }
 const score = m => m.games ? 100 * m.surprise / m.games : null;
-// A square's colour: red below the middle, green above, full at `scale` points away.
+// A square's colour: orange below the middle, blue above, full at `scale` points away.
 function shade(off, scale) {
   const strength = Math.round(70 * Math.min(1, Math.abs(off) / scale));
-  return `color-mix(in srgb, var(${off < 0 ? "--bad" : "--good"}) ${strength}%, var(--panel))`;
+  return `color-mix(in srgb, var(${off < 0 ? "--lo" : "--hi"}) ${strength}%, var(--panel))`;
 }
 const GRID_MODES = {
   win: { label: "Win %", value: m => pct(m.wins, m.games), text: v => v.toFixed(0), off: v => v - 50, scale: 20 },
@@ -546,25 +554,34 @@ const boundsColumns = [
 
 // Character profiles: each character's row of the counter grid, strength
 // taken out (a matchup's score is already beyond the ratings), summed up.
+// One character's row of a grid (counters or pairs), each square's score
+// already beyond the ratings: their spread (root mean square, to one place as
+// shown, so ±4.5 sits on a ±4.5 line), how many are clearly above or below 0
+// (over 3 standard errors), the best and worst, and the games behind them.
+function rowOf(cells, name) {
+  const ms = Object.entries(cells[name] || {}).filter(([other, m]) => other !== name && m.games >= Math.max(1, state.min))
+    .map(([other, m]) => {
+      const p = m.wins / m.games, se = 100 * Math.sqrt(Math.max(p * (1 - p), 0.01) / m.games);
+      return { foe: other, score: score(m), z: score(m) / se, games: m.games };
+    });
+  if (!ms.length) return null;
+  const byScore = [...ms].sort((a, b) => b.score - a.score);
+  return {
+    spread: Math.round(10 * Math.sqrt(ms.reduce((s, m) => s + m.score * m.score, 0) / ms.length)) / 10,
+    above: ms.filter(m => m.z > 3).length, below: ms.filter(m => m.z < -3).length,
+    best: byScore[0], worst: byScore[byScore.length - 1],
+    games: ms.reduce((s, m) => s + m.games, 0),
+  };
+}
+const winOf = (d, name) => { const c = (d.characters || []).find(c => c.name === name); return c ? pct(c.wins, c.games) : null; };
+
+// Character profiles: each character's row of the counter grid, summed up.
 function profileRows(d) {
   const cells = counterCells(d);
-  const totals = Object.fromEntries((d.characters || []).map(c => [c.name, c]));
   const rows = gridNames(d).map(name => {
-    const ms = Object.entries(cells[name] || {}).filter(([foe, m]) => foe !== name && m.games >= Math.max(1, state.min))
-      .map(([foe, m]) => {
-        const p = m.wins / m.games, se = 100 * Math.sqrt(Math.max(p * (1 - p), 0.01) / m.games);
-        return { foe, score: score(m), z: score(m) / se, games: m.games };
-      });
-    const c = totals[name];
-    if (!ms.length) return { name, win: pct(c.wins, c.games), games: 0, worstFor: 0 };
-    const byScore = [...ms].sort((a, b) => b.score - a.score);
-    return {
-      name, win: pct(c.wins, c.games), worstFor: 0,
-      spread: Math.sqrt(ms.reduce((s, m) => s + m.score * m.score, 0) / ms.length),
-      counters: ms.filter(m => m.z > 3).length, countered: ms.filter(m => m.z < -3).length,
-      best: byScore[0], worst: byScore[byScore.length - 1],
-      games: ms.reduce((s, m) => s + m.games, 0),
-    };
+    const r = rowOf(cells, name);
+    if (!r) return { name, win: winOf(d, name), games: 0, worstFor: 0 };
+    return { name, win: winOf(d, name), worstFor: 0, spread: r.spread, counters: r.above, countered: r.below, best: r.best, worst: r.worst, games: r.games };
   });
   for (const r of rows) {
     const them = rows.find(o => r.worst && o.name === r.worst.foe);
@@ -574,8 +591,8 @@ function profileRows(d) {
 }
 const against = m => m ? `${m.foe} ${signed(m.score)}` : "—";
 // Which box a profile falls in, from d = |win % − 50| and s = spread
-// (docs/balance.md#character-boxes). The lines are placeholders.
-const BOX = { even: 3, polarised: 4.5, partly: 4, each: 2 };
+// (docs/balance.md#character-boxes). The lines are the user's.
+const BOX = { even: 3, polarised: 5, partly: 4, each: 3 };
 const BOXES = [
   { mark: "🎯", name: "Balanced", hint: "even, with clear strengths and weaknesses" },
   { mark: "🌱", name: "Nearly", hint: "even and partly polarised: sharpen one edge" },
@@ -591,18 +608,86 @@ function boxOf(r) {
   return r.spread >= BOX.partly ? 3 : 4;
 }
 const boxText = r => { const b = boxOf(r); return b == null ? "—" : `${BOXES[b].mark} ${BOXES[b].name}`; };
+// Only what decides the box, each cell coloured by whether it clears its
+// line: green clears it, amber is the partly-polarised band, red misses.
+// Best, worst and worst-for are in the name's tooltip.
+const tone = (v, pass, near) => v == null ? "" : v >= pass ? "pass" : near != null && v >= near ? "near" : "fail";
 const profileColumns = [
-  { label: "Name", value: r => r.name },
+  { label: "Name", value: r => r.name,
+    title: r => r.best ? `Best: ${against(r.best)}\nWorst: ${against(r.worst)}\nWorst matchup for ${r.worstFor} character${r.worstFor === 1 ? "" : "s"}\n${r.games} matchup games` : "" },
   // Sorts 🎯 first; within a box, the most polarised first.
-  { label: "Box", value: boxOf, text: boxText, order: b => b, then: r => r.spread },
-  { label: "Win %", value: r => r.win, text: r => fixed(r.win, 1), num: true, bar: true, base: 50 },
+  { label: "Box", value: boxOf, text: boxText, order: b => b, then: r => r.spread,
+    title: r => boxOf(r) == null ? "" : BOXES[boxOf(r)].hint },
+  { label: "Win %", value: r => r.win, text: r => r.win == null ? "—" : `${r.win.toFixed(1)} (${signed(r.win - 50)})`, num: true,
+    tone: r => r.win == null ? "" : Math.abs(r.win - 50) <= BOX.even ? "pass" : "fail" },
+  { label: "Spread", value: r => r.spread, text: r => r.spread == null ? "—" : "±" + r.spread.toFixed(1), num: true,
+    tone: r => tone(r.spread, BOX.polarised, BOX.partly) },
+  { label: "Counters", value: r => r.counters, text: r => String(r.counters ?? "—"), num: true, tone: r => tone(r.counters, BOX.each) },
+  { label: "Countered by", value: r => r.countered, text: r => String(r.countered ?? "—"), num: true, tone: r => tone(r.countered, BOX.each) },
+];
+
+// Synergy profiles: each character's row of the synergy grid, summed up
+// (docs/balance.md#synergy-profiles). How much its results hang on its
+// teammates, who they are, and two checks on the roster's combos.
+const KIND = { around: 5, plug: 4, top: 10 };
+const KINDS = [
+  { mark: "🧩", name: "Build-around", hint: "its results hang on its teammates; random teams underrate it, as a draft can pick its partners" },
+  { mark: "🤝", name: "Some partners", hint: "a few teammates it's clearly better or worse with" },
+  { mark: "🔌", name: "Plug-and-play", hint: "about the same with anyone" },
+];
+const kindOf = r => r.spread == null ? null : r.spread >= KIND.around ? 0 : r.spread >= KIND.plug ? 1 : 2;
+// The strongest pairs, with Min games, best first.
+function topPairs(d) {
+  return (d.pairs || []).filter(m => m.games >= Math.max(1, state.min)).map(m => ({ name: m.name, score: score(m) }))
+    .sort((a, b) => b.score - a.score).slice(0, KIND.top);
+}
+// The strongest counter, the line no combo should pass.
+function topCounter(d) {
+  let best = null;
+  for (const r of counterRows(d)) if (r.games >= Math.max(1, state.min) && (!best || score(r) > score(best))) best = r;
+  return best;
+}
+function synergyRows(d) {
+  const cells = pairCells(d), top = topPairs(d);
+  return gridNames(d).map(name => {
+    const r = rowOf(cells, name);
+    const inTop = top.filter(p => p.name.split(" + ").includes(name)).length;
+    if (!r) return { name, win: winOf(d, name), games: 0, inTop };
+    return { name, win: winOf(d, name), spread: r.spread, partners: r.above, clashes: r.below, best: r.best, worst: r.worst, games: r.games, inTop };
+  });
+}
+// The roster checks above the table: the combo ceiling and any hub.
+function renderSynergy(table) {
+  const section = renderTable(table);
+  const top = topPairs(DATA), counter = topCounter(DATA);
+  if (!top.length || !counter) return section;
+  const tile = (label, value, bad) => {
+    const t = el("div", { class: "tile" + (bad ? " fail" : "") }, el("div", { class: "tile-value" }, value), el("div", { class: "tile-label" }, label));
+    return t;
+  };
+  const over = top[0].score - score(counter);
+  const hubs = synergyRows(DATA).filter(r => r.inTop >= 3).sort((a, b) => b.inTop - a.inTop);
+  const tiles = el("div", { class: "tiles" },
+    tile(`best pair: ${top[0].name}`, signed(top[0].score)),
+    tile(`best counter: ${counter.name}`, signed(score(counter))),
+    tile("combo ceiling", over > 0 ? `over by ${over.toFixed(1)}` : "OK", over > 0),
+    tile(`hubs: in 3+ of the top ${KIND.top} pairs`, hubs.length ? hubs.map(h => `${h.name} (${h.inTop})`).join(", ") : "none", hubs.length > 0));
+  section.querySelector("p.note").after(tiles);
+  return section;
+}
+const synergyColumns = [
+  { label: "Name", value: r => r.name, title: r => r.worst ? `Worst partner: ${against(r.worst)}\n${r.games} pair games` : "" },
+  // Sorts build-arounds first; within a kind, the most team-dependent first.
+  { label: "Kind", value: kindOf, text: r => kindOf(r) == null ? "—" : `${KINDS[kindOf(r)].mark} ${KINDS[kindOf(r)].name}`, order: k => k, then: r => r.spread,
+    title: r => kindOf(r) == null ? "" : KINDS[kindOf(r)].hint },
+  { label: "Win %", value: r => r.win, text: r => fixed(r.win, 1), num: true },
   { label: "Spread", value: r => r.spread, text: r => r.spread == null ? "—" : "±" + r.spread.toFixed(1), num: true },
-  { label: "Counters", value: r => r.counters, text: r => String(r.counters ?? "—"), num: true },
-  { label: "Countered by", value: r => r.countered, text: r => String(r.countered ?? "—"), num: true },
-  { label: "Best", value: r => r.best ? r.best.score : null, text: r => against(r.best) },
-  { label: "Worst", value: r => r.worst ? r.worst.score : null, text: r => against(r.worst) },
-  { label: "Worst for", value: r => r.worstFor, num: true },
-  { label: "Games", value: r => r.games, num: true },
+  { label: "Partners", value: r => r.partners, text: r => String(r.partners ?? "—"), num: true },
+  { label: "Clashes", value: r => r.clashes, text: r => String(r.clashes ?? "—"), num: true },
+  // A best partner past the strongest counter is a combo nothing answers as hard.
+  { label: "Best partner", value: r => r.best ? r.best.score : null, text: r => against(r.best),
+    tone: r => { const c = topCounter(DATA); return r.best && c && r.best.score > score(c) ? "fail" : ""; } },
+  { label: `In top ${KIND.top} pairs`, value: r => r.inTop, num: true, tone: r => r.inTop >= 3 ? "fail" : "" },
 ];
 
 const TABLES = [
@@ -625,11 +710,13 @@ const TABLES = [
   { id: "pairs", title: "Character pairs", rows: d => d.pairs || [], columns: pairColumns, sort: 1,
     note: "Two characters on the same team. Score: win % above what the characters' ratings predicted, in points; positive means they win more together than their ratings predict. A pair needs many games (100+) to mean much; use Min games." },
   { id: "counter-grid", title: "Counter grid", render: renderGrid, cells: counterCells, mode: "win", label: (a, b) => `${a} vs ${b}`,
-    note: "Row against column, from the row's side: a team with the row character against one with the column character. Green rows win, red rows lose; a row with no red is a character nothing counters. Win % is the matchup chart the bounds below use; Score is the points above what the ratings predicted. Best characters first; hover for numbers; squares under Min games are blank; the filter picks the rows." },
+    note: "Row against column, from the row's side: a team with the row character against one with the column character. Blue rows win, orange rows lose; a row with no orange is a character nothing counters. Win % is the matchup chart the bounds below use; Score is the points above what the ratings predicted. Best characters first; hover for numbers; squares under Min games are blank; the filter picks the rows." },
   { id: "synergy-grid", title: "Synergy grid", render: renderGrid, cells: pairCells, mode: "score", label: (a, b) => `${a} + ${b}`,
     note: "Row and column on the same team. Score (the start) is the points above what the two characters' ratings predicted, so a strong character doesn't make every pair green; Win % is the plain win rate. Best characters first; hover for numbers; squares under Min games are blank." },
   { id: "profiles", title: "Character profiles", rows: profileRows, columns: profileColumns, sort: 1,
-    note: () => BOXES.map(b => `${b.mark} ${b.name}: ${b.hint}.`).join(" ") + ` Balanced is win % within ${BOX.even} of 50, spread ±${BOX.polarised} or more and ${BOX.each}+ each way; Nearly and Off power have spread ±${BOX.partly}+. ` + "Each character's matchups with its strength taken out, to see whether it has clear strengths and weaknesses. Spread: how much its matchup scores (points above what the ratings expected) swing; high is polarised, near ±3 is generic. Counters and Countered by: matchups clearly above or below expected (over 3 standard errors). Best and Worst: its biggest edge and weakness beyond strength. Worst for: how many characters have it as their worst matchup. Ideal: win % near 50, spread ±7 or more, 2 to 4 each way. Matchups under Min games are left out (docs/balance.md#grids-and-metagame-bounds)." },
+    note: () => `Does each character have clear strengths and weaknesses? Win %: within ${BOX.even} of 50. Spread: how much its matchups swing once its strength is taken out (points above or below what the ratings expected); ±${BOX.polarised}+ is polarised, under ±${BOX.partly} generic. Counters and Countered by: matchups clearly better or worse than expected (over 3 standard errors); ${BOX.each}+ each. Blue clears the line, grey is partly there, orange misses. ` + BOXES.map(b => `${b.mark} ${b.name}: ${b.hint}.`).join(" ") + " Hover a name for its best and worst matchups (docs/balance.md#character-boxes)." },
+  { id: "synergy-profiles", title: "Synergy profiles", rows: synergyRows, columns: synergyColumns, sort: 1, render: renderSynergy,
+    note: () => `How much each character's results hang on its teammates, from the synergy grid's scores (points above what the two characters' ratings predicted). Spread: how much its pairs swing; ±${KIND.around}+ is a build-around, under ±${KIND.plug} plug-and-play. Partners and Clashes: pairs clearly better or worse together (over 3 standard errors). Neither kind is better: synergy is a choice, not a requirement. A build-around's win % averages its good and bad teams, and a draft picks the good ones, so don't buff one on win % alone. Combo ceiling: the best pair should score no more than the best counter, so every combo has an answer as strong; a best partner past it is orange. Hub: a character in 3+ of the top ${KIND.top} pairs, where the combos' power really lives. Hover a name for its worst partner (docs/balance.md#synergy-profiles).` },
   { id: "bounds", title: "Metagame bounds", rows: boundsRows, columns: boundsColumns, sort: 3,
     note: d => `How much of a competitive metagame each character could make up: among every mix of characters that wins at least ${50 - slack()}% against any one character (50 less Slack), the least and most each one is played. From the counter grid's win %, treating a draft as one pick each (Jaffe, "Metagame Balance"). The bar is the range, the line the optimal mix. Always excluded: no room for it. Sometimes dominant: everyone could play it unpunished, so it lacks a counter. Avg % is its plain average against the others. Matchups under Min games count as even. Use one AI and one set of rules (docs/balance.md#grids-and-metagame-bounds).` },
 ];
@@ -714,7 +801,8 @@ function renderTable(table) {
         const text = el("span", { class: col.signed && v != null ? (v > 0 ? "pos" : v < 0 ? "neg" : "") : "" }, shown);
         tr.append(el("td", { class: "barcell num" }, bar, text));
       } else {
-        tr.append(el("td", { class: col.num ? "num" : "" }, shown));
+        const cls = [col.num ? "num" : "", col.tone ? col.tone(r) : ""].filter(Boolean).join(" ");
+        tr.append(el("td", col.title ? { class: cls, title: col.title(r) } : { class: cls }, shown));
       }
     });
     body.append(tr);
