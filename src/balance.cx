@@ -23,7 +23,7 @@ import {
 } from "balance/logs";
 import {
     Pool, Rating, new_pool, side_elo, expected, record, ranked, fixed, Mixes, new_mixes, credit, mix_name, count_name,
-    pool_table, mix_table, ends_table, pairs_of, ai_name, Ledger, new_ledger, ledger_data, ledger_from
+    pool_table, ends_table, pairs_of, ai_name, length_name, Ledger, new_ledger, ledger_data, ledger_from
 } from "balance/ratings";
 import { versions_root, version_file, compare_template, compare_page, versions_path, versions_script, compare_table } from "balance/versions";
 
@@ -242,11 +242,12 @@ fn write_data(r: Run, json: string) {
     }
 }
 
-/** The roster's base stats, for the report page. */
+/** The roster's base stats, archetypes and tiers, for the report page. */
 fn stats(): string {
     var bodies: List<Character> = [];
-    for (f in roster()) { bodies.push(f.body); }
-    return stats_json(bodies);
+    var archetypes: List<string> = [];
+    for (f in roster()) { bodies.push(f.body); archetypes.push(f.archetype); }
+    return stats_json(bodies, archetypes);
 }
 
 /** Copies the report page next to the totals file. It loads the totals from the data script. */
@@ -534,6 +535,7 @@ fn tally(r: Run, g: Game) {
     log_game(r, g);
     r.pending.push(game_record(g, now().unix_seconds()));
     count_game(r.interval, g);
+    credit(l.lengths, length_name("All", g.rounds), g.winner == 0, 0.5);
     if (g.winner < 0) {
         l.draws = l.draws + 1;
     } else {
@@ -561,6 +563,8 @@ fn tally(r: Run, g: Game) {
         for (p in pairs_of(g.away)) { credit(l.pairs, p, !home_won, 1.0 - home_expected); }
         for (c in g.home) { credit(l.by_ai, ai_name(c, g.home_ai), home_won, home_expected); }
         for (c in g.away) { credit(l.by_ai, ai_name(c, g.away_ai), !home_won, 1.0 - home_expected); }
+        for (c in g.home) { credit(l.lengths, length_name(c, g.rounds), home_won, home_expected); }
+        for (c in g.away) { credit(l.lengths, length_name(c, g.rounds), !home_won, 1.0 - home_expected); }
     }
     log_standings(r);
     if (r.done % snapshot_every() == 0) { snapshot(r); }
@@ -671,10 +675,6 @@ fn report(r: Run) {
     for (line in pool_table("ARCHETYPES", l.archetypes)) { print(line); }
     print("");
     for (line in pool_table("SIDES", l.sides)) { print(line); }
-    print("");
-    for (line in mix_table("ARCHETYPE COUNTS (score: win % above what the characters predict)", l.counts, 1)) { print(line); }
-    print("");
-    for (line in mix_table("TEAM MIXES WITH 10+ GAMES", l.mixes, 10)) { print(line); }
     print("");
     for (line in ends_table("CHARACTER PAIRS WITH " + str(pair_min_games()) + "+ GAMES (best and worst " + str(pair_ends()) + ")", l.pairs, pair_min_games(), pair_ends())) { print(line); }
     if (l.agents.ratings.len() > 0) {

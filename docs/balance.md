@@ -118,14 +118,20 @@ page) to follow a run live. `--games 0` writes both for the file as it is,
 without playing.
 
 - One table per thing rated (characters, archetypes, AIs, home and away,
-  archetype counts, team mixes), each with a bar showing how far above or
-  below the middle (1000 Elo, 50%, a score of 0) each row is.
+  character pairs), each with a bar showing how far above or below the
+  middle (1000 Elo, 50%, a score of 0) each row is.
+- **Game length** and **Short and long games** show how long games last and
+  each character's win rate in short and long ones ([below](#game-length)).
 - **Characters by AI** shows each character's win rate under each AI that
   played it ([below](#characters-by-ai)).
+- The characters table has **Off 50**, how far each win rate is from 50%
+  either way, to sort from most to least balanced, and each character's
+  **Archetype** and **Speed** tier: sorting by either groups the characters,
+  best win rate first within each, to see whether a class fills its niche.
 - The characters table also shows each character's base attack, defense and
   attack × defense, to sort by and see how stats line up with win rates.
   They're the stats the version was played with: the data script carries
-  them as `window.BALANCE_STATS`.
+  them, with the archetype and tier, as `window.BALANCE_STATS`.
 - Click a heading to sort by that column, again to reverse. A filter by name
   and a minimum number of games apply to every table; tabs show one table
   or all of them. The page remembers these in the browser.
@@ -161,7 +167,7 @@ and AI's win rate in both versions, biggest change first, each marked:
 | noise | less: could be luck |
 
 Every run also writes **`balance-data/compare.html`**, the same comparison
-for every table on the report page (mixes, counts and pairs compare scores),
+for every table on the report page (pairs compare scores),
 with menus for the two versions (the two newest by default, or
 `compare.html?a=v0.0.1&b=v0.0.2`) and a button to hide the noise. Each
 version's report page links to it. It reads each version's data script, so
@@ -279,6 +285,11 @@ There are 70 possible archetype mixes, so most take many games to settle. A
 coarser view fills up faster: win rate and score by how many of each
 archetype a team has (0 to 4 Supports, 0 to 4 Mages, and so on).
 
+The checker still counts both (`mixes` and `counts` in the totals file),
+but neither the report page, the compare page nor the printed report shows
+them any more: they turned out to matter less for balancing than the
+character tables. Showing them again is an entry in each page's `TABLES`.
+
 ## Character pairs
 
 Teams are random, so a character built for a combo is mostly measured with
@@ -330,3 +341,26 @@ sides) of games, and like any win rate it needs thousands of games to
 settle: with two AIs, 10,000 games give each character about 1,700 under
 each, enough to show a gap of about 9 points as real; a 5-point gap takes
 about 30,000 games.
+
+## Game length
+
+Some characters are built for one end of a game: the Bard snowballs early
+and should fade, the Cleric and the Grim Reaper grind. So the checker counts
+games by how many rounds they lasted, kept in the totals file under
+`lengths` (a file from before starts with none):
+
+- `All @ 7` counts every game of 7 rounds (its wins are the home side's,
+  kept for later).
+- `Fairy @ 7` counts the Fairy's games of 7 rounds, wins and losses.
+
+The report page shows two tables from them:
+
+- **Game length**: the number of games, the mean, median, shortest and
+  longest, the middle half (25th to 75th percentile) and the middle 80%,
+  over a chart of how many games lasted each number of rounds with the
+  median, the mean and the Short ≤ line marked.
+- **Short and long games**: each character's win rate in short games and
+  in long ones, and long − short (above 0, it gets better as a game goes
+  on). **Short ≤** in the toolbar sets where short games end; empty, it's
+  the median length. The lengths are kept round by round, so the line can
+  move without rerunning anything.

@@ -144,6 +144,13 @@ fn pair_name(a: string, b: string): string {
     return a + " + " + b;
 }
 
+/**
+ * A name at a game length, as one name: "Fairy @ 7" for the Fairy's games
+ * that lasted 7 rounds. "All @ 7" counts every game of 7 rounds, its wins
+ * being the home side's.
+ */
+fn length_name(name: string, rounds: int): string { return name + " @ " + str(rounds); }
+
 /** A character under the AI that played it, as one name: "Fairy · Guardian". */
 fn ai_name(character: string, ai: string): string { return character + " · " + ai; }
 
@@ -277,12 +284,14 @@ type Ledger {
     pairs: Mixes,
     /** Each character under each AI that played it (docs/balance.md#characters-by-ai). */
     by_ai: Mixes,
+    /** Games by length, overall and for each character (docs/balance.md#game-length). */
+    lengths: Mixes,
 }
 
 fn new_ledger(): Ledger {
     return Ledger {
         games: 0, draws: 0, characters: new_pool(), archetypes: new_pool(), sides: new_pool(),
-        agents: new_pool(), mixes: new_mixes(), counts: new_mixes(), pairs: new_mixes(), by_ai: new_mixes()
+        agents: new_pool(), mixes: new_mixes(), counts: new_mixes(), pairs: new_mixes(), by_ai: new_mixes(), lengths: new_mixes()
     };
 }
 
@@ -317,7 +326,7 @@ fn ledger_data(l: Ledger): Data {
         entry("characters", pool_data(l.characters)), entry("archetypes", pool_data(l.archetypes)),
         entry("sides", pool_data(l.sides)), entry("agents", pool_data(l.agents)),
         entry("mixes", mixes_data(l.mixes)), entry("counts", mixes_data(l.counts)), entry("pairs", mixes_data(l.pairs)),
-        entry("by_ai", mixes_data(l.by_ai))
+        entry("by_ai", mixes_data(l.by_ai)), entry("lengths", mixes_data(l.lengths))
     ]);
 }
 
@@ -390,6 +399,6 @@ fn ledger_from(d: Data): Ledger {
         characters: pool_from(field(d, "characters")), archetypes: pool_from(field(d, "archetypes")),
         sides: pool_from(field(d, "sides")), agents: pool_from(field(d, "agents")),
         mixes: mixes_from(field(d, "mixes")), counts: mixes_from(field(d, "counts")), pairs: mixes_from(field(d, "pairs")),
-        by_ai: mixes_from(field(d, "by_ai"))
+        by_ai: mixes_from(field(d, "by_ai")), lengths: mixes_from(field(d, "lengths"))
     };
 }

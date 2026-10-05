@@ -97,6 +97,19 @@
   .neg { color: var(--bad); }
   .empty { padding: 12px 14px; color: var(--muted); }
   .hidden { display: none; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 14px 10px; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; min-width: 84px; }
+  .tile-value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile-label { color: var(--muted); font-size: 12px; }
+  .chart-wrap { padding: 0 14px 6px; }
+  .chart { width: 100%; height: auto; display: block; }
+  .chart .col { fill: var(--accent); opacity: 0.75; }
+  .chart .col:hover { opacity: 1; }
+  .chart .grid { stroke: var(--line); }
+  .chart .axis { fill: var(--muted); font-size: 12px; }
+  .chart .median { stroke: var(--text); stroke-width: 2; }
+  .chart .mean { stroke: var(--text); stroke-width: 2; stroke-dasharray: 6 4; }
+  .chart .cut { stroke: var(--bad); stroke-width: 2; stroke-dasharray: 2 4; }
   footer { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -113,6 +126,8 @@
       <input type="search" id="filter" placeholder="Filter by name" aria-label="Filter by name">
       <label for="min">Min games</label>
       <input type="number" id="min" min="0" value="0">
+      <label for="short" title="Where short games end, for Short and long games. Empty: the median length">Short ≤</label>
+      <input type="number" id="short" min="1" placeholder="median" aria-label="Short games last up to this many rounds">
       <button id="auto" aria-pressed="false" title="Reload every 10 seconds, to follow a run as it plays">Auto-refresh</button>
       <button id="theme" title="Switch light or dark">Theme</button>
     </div>
@@ -151,8 +166,15 @@ const mixColumns = [
 // Characters: no Wins column (Win % and Games say it), and their base stats
 // from the data script, so the table sorts by them.
 const stat = (r, i) => STATS[r.name] ? STATS[r.name][i] : null;
+const TIER_ORDER = { Fast: 0, Normal: 1, Slow: 2 };
 const characterColumns = [
-  ...ratingColumns.slice(0, 3),
+  ratingColumns[0],
+  // Sorting by archetype or speed keeps the best win rate first within each.
+  { label: "Archetype", value: r => stat(r, 2), then: r => pct(r.wins, r.games) },
+  { label: "Speed", value: r => stat(r, 3), text: r => stat(r, 3) || "—", order: v => TIER_ORDER[v], then: r => pct(r.wins, r.games) },
+  ...ratingColumns.slice(1, 3),
+  // How far from an even 50%, either way: sort ascending for the most balanced first.
+  { label: "Off 50", value: r => r.games ? Math.abs(pct(r.wins, r.games) - 50) : null, text: r => fixed(r.games ? Math.abs(pct(r.wins, r.games) - 50) : null, 1), num: true },
   { label: "Atk", value: r => stat(r, 0), num: true },
   { label: "Def", value: r => stat(r, 1), num: true },
   { label: "Atk×Def", value: r => stat(r, 0) == null ? null : stat(r, 0) * stat(r, 1), num: true },
@@ -179,6 +201,105 @@ function byAiRows(d) {
   AI_TOTALS = totals;
   return Object.values(rows).map(r => ({ ...r, games: Math.min(...BY_AI.map(a => r.ais[a] ? r.ais[a].games : 0)) }));
 }
+// Game length (docs/balance.md#game-length). "All @ 7" counts every game of
+// 7 rounds, its wins being the home side's; "Fairy @ 7" counts the Fairy's.
+function lengthsOf(d) {
+  const all = {}, chars = {};
+  for (const m of d.lengths || []) {
+    const at = m.name.lastIndexOf(" @ ");
+    const name = m.name.slice(0, at), rounds = Number(m.name.slice(at + 3));
+    if (name === "All") all[rounds] = m; else (chars[name] = chars[name] || {})[rounds] = m;
+  }
+  return { all, chars };
+}
+function lengthStats(all) {
+  const rs = Object.keys(all).map(Number).sort((a, b) => a - b);
+  const total = rs.reduce((s, r) => s + all[r].games, 0);
+  if (!total) return null;
+  // The length the given share of games are no longer than.
+  const upTo = q => { let seen = 0; for (const r of rs) { seen += all[r].games; if (seen >= q * total) return r; } return rs[rs.length - 1]; };
+  const mean = rs.reduce((s, r) => s + r * all[r].games, 0) / total;
+  return { total, mean, median: upTo(0.5), p10: upTo(0.1), p25: upTo(0.25), p75: upTo(0.75), p90: upTo(0.9), min: rs[0], max: rs[rs.length - 1] };
+}
+const medianLength = () => { const s = lengthStats(lengthsOf(DATA).all); return s ? s.median : 10; };
+const shortCut = () => state.short || medianLength();
+// The Game length section: the numbers as tiles, and a chart of how many
+// games lasted each number of rounds, with the mean, the median and the
+// Short ≤ line marked.
+function renderLengths(table) {
+  const section = el("section", { id: table.id });
+  section.append(el("h2", {}, table.title));
+  const { all } = lengthsOf(DATA);
+  const s = lengthStats(all);
+  if (!s) { section.append(el("div", { class: "empty" }, "No game lengths yet: they're counted from the first run after they were added.")); return section; }
+  const tile = (label, value) => el("div", { class: "tile" }, el("div", { class: "tile-value" }, value), el("div", { class: "tile-label" }, label));
+  section.append(el("div", { class: "tiles" },
+    tile("games", String(s.total)), tile("mean", s.mean.toFixed(1)), tile("median", String(s.median)),
+    tile("shortest", String(s.min)), tile("longest", String(s.max)),
+    tile("middle half", `${s.p25}–${s.p75}`), tile("middle 80%", `${s.p10}–${s.p90}`)));
+  section.append(lengthChart(all, s));
+  section.append(el("p", { class: "note" }, "Rounds each game lasted. Solid line: median; dashed: mean; dotted: where short games end (Short ≤)."));
+  return section;
+}
+function lengthChart(all, s) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const W = 1000, H = 220, left = 40, right = 10, top = 10, bottom = 28;
+  const lo = s.min, hi = s.max, n = hi - lo + 1;
+  const most = Math.max(...Object.values(all).map(m => m.games));
+  const step = (W - left - right) / n;
+  const x = r => left + (r - lo) * step;
+  const y = g => top + (H - top - bottom) * (1 - g / most);
+  const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img", "aria-label": "Games by number of rounds" });
+  for (const frac of [0, 0.5, 1]) {
+    const g = Math.round(most * frac);
+    chart.append(svg("line", { x1: left, x2: W - right, y1: y(g), y2: y(g), class: "grid" }));
+    chart.append(svg("text", { x: left - 6, y: y(g) + 4, class: "axis", "text-anchor": "end" }, String(g)));
+  }
+  const every = Math.max(1, Math.ceil(n / 25));
+  for (let r = lo; r <= hi; r++) {
+    const g = all[r] ? all[r].games : 0;
+    const bar = svg("rect", { x: x(r) + step * 0.1, width: step * 0.8, y: y(g), height: y(0) - y(g), class: "col" });
+    bar.append(svg("title", {}, `${r} rounds: ${g} games (${(100 * g / s.total).toFixed(1)}%)`));
+    chart.append(bar);
+    if ((r - lo) % every === 0) chart.append(svg("text", { x: x(r) + step / 2, y: H - 10, class: "axis", "text-anchor": "middle" }, String(r)));
+  }
+  const mark = (r, cls) => chart.append(svg("line", { x1: x(r) + step / 2, x2: x(r) + step / 2, y1: top, y2: y(0), class: cls }));
+  mark(s.median, "median");
+  mark(s.mean, "mean");
+  if (shortCut() >= lo && shortCut() <= hi) chart.append(svg("line", { x1: x(shortCut()) + step, x2: x(shortCut()) + step, y1: top, y2: y(0), class: "cut" }));
+  return el("div", { class: "chart-wrap" }, chart);
+}
+
+// Each character's win % in short games (up to the Short ≤ line) and long ones.
+function shortLongRows(d) {
+  const { chars } = lengthsOf(d);
+  const cut = shortCut();
+  return Object.entries(chars).map(([name, byLength]) => {
+    const short = { wins: 0, games: 0 }, long = { wins: 0, games: 0 };
+    for (const [r, m] of Object.entries(byLength)) {
+      const t = Number(r) <= cut ? short : long;
+      t.wins += m.wins; t.games += m.games;
+    }
+    return { name, short, long, games: Math.min(short.games, long.games) };
+  });
+}
+const shortWin = r => pct(r.short.wins, r.short.games), longWin = r => pct(r.long.wins, r.long.games);
+const shift = r => shortWin(r) == null || longWin(r) == null ? null : longWin(r) - shortWin(r);
+const shortLongColumns = [
+  { label: "Name", value: r => r.name },
+  { label: "Short win %", value: shortWin, text: r => fixed(shortWin(r), 1), num: true, bar: true, base: 50 },
+  { label: "Long win %", value: longWin, text: r => fixed(longWin(r), 1), num: true, bar: true, base: 50 },
+  { label: "Long − short", value: shift, text: r => signed(shift(r)), num: true, bar: true, base: 0, signed: true },
+  { label: "Short games", value: r => r.short.games, num: true },
+  { label: "Long games", value: r => r.long.games, num: true },
+];
+
 const aiWin = (r, ai) => r.ais[ai] ? pct(r.ais[ai].wins, r.ais[ai].games) : null;
 const aiEdge = (r, ai) => aiWin(r, ai) == null ? null : aiWin(r, ai) - pct(AI_TOTALS[ai].wins, AI_TOTALS[ai].games);
 function edges(r) { return BY_AI.map(ai => ({ ai, edge: aiEdge(r, ai) })).filter(e => e.edge != null).sort((a, b) => b.edge - a.edge); }
@@ -196,8 +317,11 @@ function byAiColumns() {
 }
 
 const TABLES = [
-  { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 1,
-    note: "Atk and Def are base stats, before effects." },
+  { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 3,
+    note: "Off 50 is how far the win % is from 50, either way. Atk and Def are base stats, before effects." },
+  { id: "lengths", title: "Game length", render: renderLengths },
+  { id: "short-long", title: "Short and long games", rows: shortLongRows, columns: shortLongColumns, sort: 3,
+    note: d => `Short games last up to ${shortCut()} rounds (set it with Short ≤; empty is the median, ${medianLength()}), long ones more. Long − short above 0: the character gets better as a game goes on. Games is the fewer of the two.` },
   { id: "by-ai", title: "Characters by AI", rows: byAiRows, get columns() { return byAiColumns(); }, sort: 0,
     note: "Win % under each AI, and the edge: that less the AI's own win %. A character whose edge is much higher under one AI is played better by it. Games is the fewest it has under any one AI; a gap needs a few thousand games each to mean much." },
   { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
@@ -205,15 +329,11 @@ const TABLES = [
     note: "Rated only in games between two different AIs." },
   { id: "sides", title: "Home and away", rows: d => d.sides, columns: ratingColumns, sort: 2,
     note: "Read the win rate here; with two entries the Elo mostly follows the latest games." },
-  { id: "counts", title: "Archetype counts", rows: d => d.counts, columns: mixColumns, sort: 1,
-    note: "Score: win % above what the characters' ratings predicted, in points." },
-  { id: "mixes", title: "Team mixes", rows: d => d.mixes, columns: mixColumns, sort: 1,
-    note: "Score as above. Use Min games to hide mixes with few games." },
   { id: "pairs", title: "Character pairs", rows: d => d.pairs || [], columns: pairColumns, sort: 1,
-    note: "Two characters on the same team. Score as above: positive means they win more together than their ratings predict. A pair needs many games (100+) to mean much; use Min games." },
+    note: "Two characters on the same team. Score: win % above what the characters' ratings predicted, in points; positive means they win more together than their ratings predict. A pair needs many games (100+) to mean much; use Min games." },
 ];
 
-const state = { tab: "all", filter: "", min: 0, sorts: {}, auto: false };
+const state = { tab: "all", filter: "", min: 0, short: 0, sorts: {}, auto: false };
 
 // How often Auto-refresh reloads the page, in seconds. The checker rewrites the page every 4 games.
 const REFRESH_SECONDS = 10;
@@ -233,26 +353,31 @@ function el(tag, attrs, ...children) {
 }
 
 function sorted(table, rows) {
-  const s = state.sorts[table.id] || { col: table.sort, dir: -1 };
+  const s = state.sorts[table.id] || { col: table.sort, dir: table.dir || -1 };
   const col = table.columns[s.col];
   return [...rows].sort((a, b) => {
     const x = col.value(a), y = col.value(b);
     if (x == null && y == null) return 0;
     if (x == null) return 1;
     if (y == null) return -1;
-    // dir -1 is the natural order: biggest numbers first, names A to Z.
-    if (typeof x === "string") return s.dir < 0 ? x.localeCompare(y) : y.localeCompare(x);
-    return s.dir < 0 ? y - x : x - y;
+    // dir -1 is the natural order: biggest numbers first, names A to Z (or a
+    // column's own `order`, Fast to Slow). A tie goes to `then`, biggest first.
+    let c;
+    if (col.order) c = s.dir < 0 ? col.order(x) - col.order(y) : col.order(y) - col.order(x);
+    else if (typeof x === "string") c = s.dir < 0 ? x.localeCompare(y) : y.localeCompare(x);
+    else c = s.dir < 0 ? y - x : x - y;
+    if (c === 0 && col.then) return (col.then(b) ?? -Infinity) - (col.then(a) ?? -Infinity);
+    return c;
   });
 }
 
 function renderTable(table) {
   const all = table.rows(DATA) || [];
-  const rows = all.filter(r => (r.games || 0) >= state.min && r.name.toLowerCase().includes(state.filter));
-  const s = state.sorts[table.id] || { col: table.sort, dir: -1 };
+  const rows = all.filter(r => (r.games || 0) >= state.min && (table.nofilter || r.name.toLowerCase().includes(state.filter)));
+  const s = state.sorts[table.id] || { col: table.sort, dir: table.dir || -1 };
   const section = el("section", { id: table.id });
   section.append(el("h2", {}, `${table.title} `, el("span", { class: "summary" }, `(${rows.length} of ${all.length})`)));
-  if (table.note) section.append(el("p", { class: "note" }, table.note));
+  if (table.note) section.append(el("p", { class: "note" }, typeof table.note === "function" ? table.note(DATA) : table.note));
   if (!rows.length) { section.append(el("div", { class: "empty" }, all.length ? "Nothing matches the filter." : "No games yet.")); return section; }
 
   const head = el("tr", {}, el("th", { class: "num" }, "#"));
@@ -300,7 +425,7 @@ function render() {
   tabs.replaceChildren(...[{ id: "all", title: "All" }, ...TABLES].map(t =>
     el("button", { "aria-pressed": String(state.tab === t.id), onclick: () => { state.tab = t.id; remember(); render(); } }, t.title)));
   const main = document.getElementById("tables");
-  main.replaceChildren(...TABLES.filter(t => state.tab === "all" || state.tab === t.id).map(renderTable));
+  main.replaceChildren(...TABLES.filter(t => state.tab === "all" || state.tab === t.id).map(t => t.render ? t.render(t) : renderTable(t)));
 }
 
 function init() {
@@ -334,7 +459,9 @@ function init() {
   follow();
   const filter = document.getElementById("filter");
   const min = document.getElementById("min");
-  filter.value = state.filter; min.value = state.min;
+  const short = document.getElementById("short");
+  filter.value = state.filter; min.value = state.min; short.value = state.short || "";
+  short.addEventListener("input", () => { state.short = Math.max(0, Number(short.value) || 0); remember(); render(); });
   filter.addEventListener("input", () => { state.filter = filter.value.trim().toLowerCase(); remember(); render(); });
   min.addEventListener("input", () => { state.min = Math.max(0, Number(min.value) || 0); remember(); render(); });
   document.getElementById("theme").addEventListener("click", () => {

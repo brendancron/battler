@@ -1,5 +1,5 @@
 import { substring } from "std/text/String";
-import { Character } from "../core/creature";
+import { Character, tier_name } from "../core/creature";
 
 /**
  * The report page (docs/balance.md#report-page): report.html copied next to
@@ -24,15 +24,19 @@ fn page_path(file: string): string { return base_of(file) + ".html"; }
 fn data_path(file: string): string { return base_of(file) + ".data.js"; }
 
 /**
- * Each character's base attack and defense, as a JSON object of name to
- * [attack, defense]. The page shows them beside the totals, so a version's
- * stats are the ones its games were played with.
+ * Each character's base attack and defense, archetype (from `archetypes`,
+ * in the same order) and speed tier, as a JSON object of name to
+ * [attack, defense, archetype, tier]. The page shows them beside the totals,
+ * so a version's stats are the ones its games were played with.
  */
-fn stats_json(characters: List<Character>): string {
+fn stats_json(characters: List<Character>, archetypes: List<string>): string {
     var out = "";
-    for (c in characters) {
+    var i = 0;
+    while (i < characters.len()) {
+        var c = characters[i];
         if (out != "") { out = out + ", "; }
-        out = out + "\"" + c.name + "\": [" + str(c.attack) + ", " + str(c.defense) + "]";
+        out = out + "\"" + c.name + "\": [" + str(c.attack) + ", " + str(c.defense) + ", \"" + archetypes[i] + "\", \"" + tier_name(c.tier) + "\"]";
+        i = i + 1;
     }
     return "{" + out + "}";
 }

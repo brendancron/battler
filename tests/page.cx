@@ -14,9 +14,9 @@ fn the_data_script_sets_the_totals_the_stats_and_the_time() {
 }
 
 @test
-fn the_stats_are_each_characters_attack_and_defense() {
+fn the_stats_are_each_characters_attack_defense_archetype_and_tier() {
     var a = character("A", 120, 80, Tier.Normal);
     var b = character("B", 60, 150, Tier.Slow);
-    assert(stats_json([a, b]) == "{\"A\": [120, 80], \"B\": [60, 150]}", "name to [attack, defense]");
-    assert(stats_json([]) == "{}", "none");
+    assert(stats_json([a, b], ["Warrior", "Tank"]) == "{\"A\": [120, 80, \"Warrior\", \"Normal\"], \"B\": [60, 150, \"Tank\", \"Slow\"]}", "name to [attack, defense, archetype, tier]");
+    assert(stats_json([], []) == "{}", "none");
 }

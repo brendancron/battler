@@ -124,7 +124,7 @@
   </div>
 </nav>
 <main id="tables"></main>
-<footer>Change is in points of win rate (or of score, for mixes and pairs), from the first version to the second. Sure: real is 3+ standard errors from no change (almost surely not luck), likely 2+, noise less. Click a heading to sort by it. Written by the balance checker (docs/balance.md).</footer>
+<footer>Change is in points of win rate (or of score, for pairs), from the first version to the second. Sure: real is 3+ standard errors from no change (almost surely not luck), likely 2+, noise less. Click a heading to sort by it. Written by the balance checker (docs/balance.md).</footer>
 
 <script>
 let A = {}, B = {}, NAME_A = "", NAME_B = "";
@@ -185,11 +185,8 @@ const TABLES = [
   { id: "archetypes", title: "Archetypes", key: "archetypes", kind: "win", sort: 3 },
   { id: "agents", title: "AIs", key: "agents", kind: "win", sort: 3, note: "Rated only in games between two different AIs." },
   { id: "sides", title: "Home and away", key: "sides", kind: "win", sort: 3 },
-  { id: "counts", title: "Archetype counts", key: "counts", kind: "score", sort: 3,
-    note: "Score: win % above what the characters' ratings predicted, in points. Each version's score is against its own ratings." },
-  { id: "mixes", title: "Team mixes", key: "mixes", kind: "score", sort: 3 },
   { id: "pairs", title: "Character pairs", key: "pairs", kind: "score", sort: 3,
-    note: "A pair needs many games (100+ in each version) to mean much; use Min games." },
+    note: "Score: win % above what the characters' ratings predicted, in points; each version's score is against its own ratings. A pair needs many games (100+ in each version) to mean much; use Min games." },
 ];
 
 const state = { tab: "all", filter: "", min: 0, sorts: {}, real: false };
