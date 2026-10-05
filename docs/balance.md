@@ -133,6 +133,10 @@ without playing.
   team ([below](#counters)).
 - **Characters by AI** shows each character's win rate under each AI that
   played it ([below](#characters-by-ai)).
+- **Counter grid** and **Synergy grid** show every matchup and every pair as
+  one shaded square each, and **Metagame bounds** works out from the counter
+  grid how much of a competitive metagame each character could make up
+  ([below](#grids-and-metagame-bounds)).
 - The characters table has **Off 50**, how far each win rate is from 50%
   either way, to sort from most to least balanced, and each character's
   **Archetype** and **Speed** tier: sorting by either groups the characters,
@@ -400,3 +404,54 @@ matchups from its side. The printed report lists the best and worst 10 with
 With 253 matchups and 16 credited a game, a matchup turns up in about 1 game
 in 16, so 100+ games in a matchup takes 1,600+ games, and telling a real
 +8% from noise takes several thousand.
+
+## Grids and metagame bounds
+
+The Counters and Character pairs tables list 253 rows each; the report page
+also draws them as two grids, a row and a column per character, so a
+character's whole story is one line across.
+
+- **Counter grid**: the square at row A, column B is how a team with A does
+  against a team with B, from A's side. The grid is its own complement (B
+  against A is 100 − A against B), so a row with no red in it is a character
+  nothing counters, and a column with no green one that counters everything.
+- **Synergy grid**: the square at row A, column B is A and B on the same
+  team. It's the same across the diagonal.
+
+Each grid shades by **Win %** (red below 50, green above) or by **Score**,
+the points above what the two characters' ratings predicted (as in the
+tables). A toggle on each grid switches; counters start on Win %, the
+matchup chart the bounds use, and synergy on Score, since a pair's raw win %
+mostly repeats how strong its two characters are. Hovering a square shows
+its games, win % and score. Squares with fewer games than **Min games** are
+left blank, and the name filter picks the rows.
+
+**Metagame bounds** follows Alex Jaffe's talk *Metagame Balance* (GDC 2015).
+Treat picking a character as a game of its own, the selection game: both
+sides pick in secret, and the counter grid's win % says who wins. A
+community of players who each pick what beats the current crowd converges
+on the selection game's optimal mix, so that mix is where a competitive
+metagame heads. No real community plays exactly optimally, so the page asks
+a looser question: among every mix of characters that holds at least
+50% − ε against any one character (ε is **Slack**, 2 points to start), what
+is the least and the most each character can be played? Each is a linear
+program, solved in the page (a small simplex, two per character). It reads:
+
+- **Always excluded**: the most is about 0. No competitive metagame has room
+  for the character; buff it.
+- **Sometimes dominant**: the most is above half. Everyone could play it and
+  nothing would punish them; it's missing a counter.
+- **Always dominant**: the least is above a fifth. Every competitive
+  metagame has to play it a lot.
+
+The **Optimal** column is the one mix the selection game itself picks
+(maximising the worst matchup). The **Avg** column is the character's plain
+average across its row, which is what a random team's win rate measures;
+the bounds can disagree with it, as a character with a high average can be
+countered and one with an ordinary average can have no counter.
+
+Two limits: this is a 4-v-4 draft, not a single pick, so the counter grid
+blends in each character's teammates and the bounds don't see synergy; and
+each square has a few hundred games (±3 to ±5 points), so a "no counter"
+means none measured yet. Run it on one AI and one set of rules: a version's
+games under a mix of AIs, or across a mid-patch change, measure those too.

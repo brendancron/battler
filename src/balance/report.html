@@ -110,6 +110,23 @@
   .chart .median { stroke: var(--text); stroke-width: 2; }
   .chart .mean { stroke: var(--text); stroke-width: 2; stroke-dasharray: 6 4; }
   .chart .cut { stroke: var(--bad); stroke-width: 2; stroke-dasharray: 2 4; }
+  .modes { display: flex; gap: 6px; padding: 0 14px 8px; }
+  .modes button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .modes button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  table.grid { width: auto; font-size: 11px; margin: 0 14px 12px; }
+  table.grid th, table.grid td { padding: 0; border: 1px solid var(--line); cursor: default; }
+  table.grid th { background: var(--head); font-weight: 600; padding: 2px 6px; }
+  table.grid thead th.col { writing-mode: vertical-rl; transform: rotate(180deg); height: 96px; padding: 6px 2px; }
+  table.grid td.sq { width: 28px; min-width: 28px; height: 24px; text-align: center; }
+  table.grid td.self { background: var(--head); }
+  table.grid td.row-name { position: sticky; left: 0; z-index: 1; }
+  table.grid tr:hover th, table.grid td.sq:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+  td .range { position: relative; height: 12px; min-width: 160px; background: var(--head); border-radius: 3px; }
+  td .range .span { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.6; border-radius: 3px; }
+  td .range .opt { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); }
   footer { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -128,6 +145,8 @@
       <input type="number" id="min" min="0" value="0">
       <label for="short" title="Where short games end, for Short and long games. Empty: the median length">Short ≤</label>
       <input type="number" id="short" min="1" placeholder="median" aria-label="Short games last up to this many rounds">
+      <label for="slack" title="Metagame bounds: a mix counts as competitive if it wins at least 50 less this, in points, against any one character">Slack</label>
+      <input type="number" id="slack" min="0" max="20" step="0.5" placeholder="2" aria-label="Metagame bounds slack, in points">
       <button id="auto" aria-pressed="false" title="Reload every 10 seconds, to follow a run as it plays">Auto-refresh</button>
       <button id="theme" title="Switch light or dark">Theme</button>
     </div>
@@ -334,6 +353,197 @@ function byAiColumns() {
   return cols;
 }
 
+// Grids and metagame bounds (docs/balance.md#grids-and-metagame-bounds).
+
+// The characters, best win % first, which is the grids' row and column order.
+const gridNames = d => [...(d.characters || [])].sort((a, b) => pct(b.wins, b.games) - pct(a.wins, a.games)).map(c => c.name);
+// Every matchup from each side: cells[a][b] is a team with a against one with b.
+function counterCells(d) {
+  const cells = {};
+  for (const r of counterRows(d)) {
+    const at = r.name.indexOf(" vs ");
+    (cells[r.first] = cells[r.first] || {})[r.name.slice(at + 4)] = r;
+  }
+  return cells;
+}
+// Every pair, both ways round: cells[a][b] and cells[b][a] are a and b together.
+function pairCells(d) {
+  const cells = {};
+  for (const m of d.pairs || []) {
+    const at = m.name.indexOf(" + ");
+    const a = m.name.slice(0, at), b = m.name.slice(at + 3);
+    (cells[a] = cells[a] || {})[b] = m;
+    (cells[b] = cells[b] || {})[a] = m;
+  }
+  return cells;
+}
+const score = m => m.games ? 100 * m.surprise / m.games : null;
+// A square's colour: red below the middle, green above, full at `scale` points away.
+function shade(off, scale) {
+  const strength = Math.round(70 * Math.min(1, Math.abs(off) / scale));
+  return `color-mix(in srgb, var(${off < 0 ? "--bad" : "--good"}) ${strength}%, var(--panel))`;
+}
+const GRID_MODES = {
+  win: { label: "Win %", value: m => pct(m.wins, m.games), text: v => v.toFixed(0), off: v => v - 50, scale: 20 },
+  score: { label: "Score", value: score, text: v => (v > 0 ? "+" : "") + v.toFixed(0), off: v => v, scale: 12 },
+};
+function renderGrid(table) {
+  const section = el("section", { id: table.id });
+  section.append(el("h2", {}, table.title));
+  section.append(el("p", { class: "note" }, table.note));
+  const names = gridNames(DATA);
+  const cells = table.cells(DATA);
+  if (!names.length || !Object.keys(cells).length) { section.append(el("div", { class: "empty" }, "No games yet.")); return section; }
+  const mode = (state.grids || {})[table.id] || table.mode;
+  section.append(el("div", { class: "modes" }, ...Object.entries(GRID_MODES).map(([key, m]) =>
+    el("button", { "aria-pressed": String(mode === key), onclick: () => { state.grids = { ...state.grids, [table.id]: key }; remember(); render(); } }, m.label))));
+  const m = GRID_MODES[mode];
+  const head = el("tr", {}, el("th", {}, ""), ...names.map(n => el("th", { class: "col", title: n }, n)));
+  const body = el("tbody");
+  for (const a of names.filter(n => n.toLowerCase().includes(state.filter))) {
+    const tr = el("tr", {}, el("th", { class: "row-name" }, a));
+    for (const b of names) {
+      const c = a === b ? null : (cells[a] || {})[b];
+      if (!c || c.games < Math.max(1, state.min)) {
+        tr.append(el("td", { class: "sq" + (a === b ? " self" : ""), title: a === b ? a : `${table.label(a, b)}: ${c ? c.games : 0} games` }));
+        continue;
+      }
+      const v = m.value(c);
+      const td = el("td", { class: "sq", title: `${table.label(a, b)}\nwin ${fixed(pct(c.wins, c.games), 1)}% · score ${signed(score(c))} · ${c.games} games` }, m.text(v));
+      td.style.background = shade(m.off(v), m.scale);
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  section.append(el("div", { class: "scroll" }, el("table", { class: "grid" }, el("thead", {}, head), body)));
+  return section;
+}
+
+// The least of c·x for x ≥ 0 with ub·x ≤ ubRhs and eq·x = eqRhs: a two-phase
+// simplex with Bland's rule. Returns { x, value }, or null when nothing fits.
+function simplex(c, ub, ubRhs, eq, eqRhs) {
+  const n = c.length, slacks = ub.length, m = ub.length + eq.length;
+  const width = n + slacks + m;   // the variables, a slack per ≤ row, an artificial per row
+  const T = [], basis = [];
+  [...ub, ...eq].forEach((row, i) => {
+    const t = new Array(width + 1).fill(0);
+    row.forEach((v, j) => { t[j] = v; });
+    if (i < slacks) t[n + i] = 1;
+    t[width] = i < slacks ? ubRhs[i] : eqRhs[i - slacks];
+    if (t[width] < 0) for (let j = 0; j <= width; j++) t[j] = -t[j];
+    t[n + slacks + i] = 1;
+    T.push(t); basis.push(n + slacks + i);
+  });
+  const EPS = 1e-9;
+  const pivot = (r, col) => {
+    const p = T[r][col];
+    for (let j = 0; j <= width; j++) T[r][j] /= p;
+    for (let i = 0; i < m; i++) {
+      if (i === r || Math.abs(T[i][col]) < EPS) continue;
+      const f = T[i][col];
+      for (let j = 0; j <= width; j++) T[i][j] -= f * T[r][j];
+    }
+    basis[r] = col;
+  };
+  // Minimises cost over the columns `allowed` lets in; false if unbounded.
+  const solve = (cost, allowed) => {
+    for (let steps = 0; steps < 5000; steps++) {
+      let enter = -1;
+      for (let j = 0; j < width && enter < 0; j++) {
+        if (!allowed(j) || basis.includes(j)) continue;
+        let reduced = cost[j];
+        for (let i = 0; i < m; i++) reduced -= cost[basis[i]] * T[i][j];
+        if (reduced < -EPS) enter = j;
+      }
+      if (enter < 0) return true;
+      let leave = -1;
+      for (let i = 0; i < m; i++) {
+        if (T[i][enter] <= EPS) continue;
+        const ratio = T[i][width] / T[i][enter];
+        const best = leave < 0 ? Infinity : T[leave][width] / T[leave][enter];
+        if (ratio < best - EPS || (Math.abs(ratio - best) <= EPS && basis[i] < basis[leave])) leave = i;
+      }
+      if (leave < 0) return false;
+      pivot(leave, enter);
+    }
+    return true;
+  };
+  const artificial = j => j >= n + slacks;
+  solve(Array.from({ length: width }, (_, j) => artificial(j) ? 1 : 0), () => true);
+  if (basis.some((b, i) => artificial(b) && T[i][width] > 1e-7)) return null;
+  // An artificial left in the basis at 0 goes out for any real column it can.
+  basis.forEach((b, i) => {
+    if (!artificial(b)) return;
+    for (let j = 0; j < n + slacks; j++) if (Math.abs(T[i][j]) > EPS) { pivot(i, j); return; }
+  });
+  const cost = Array.from({ length: width }, (_, j) => j < n ? c[j] : 0);
+  if (!solve(cost, j => !artificial(j))) return null;
+  const x = new Array(n).fill(0);
+  basis.forEach((b, i) => { if (b < n) x[b] = T[i][width]; });
+  return { x, value: x.reduce((s, v, j) => s + v * c[j], 0) };
+}
+
+// The matchup chart the bounds solve: M[i][j] is i's chance against j, a half
+// on the diagonal and where a matchup has fewer games than Min games.
+function matchupChart(d) {
+  const names = gridNames(d), cells = counterCells(d);
+  const M = names.map(a => names.map(b => {
+    const c = a === b ? null : (cells[a] || {})[b];
+    return c && c.games >= Math.max(1, state.min) ? c.wins / c.games : 0.5;
+  }));
+  return { names, M };
+}
+const slack = () => (state.slack ?? 2);
+function boundsRows(d) {
+  const { names, M } = matchupChart(d);
+  const k = names.length;
+  if (k < 2) return [];
+  const column = j => names.map((_, i) => M[i][j]);
+  // A competitive mix holds 50 − slack against every single character.
+  const ub = names.map((_, j) => column(j).map(v => -v));
+  const floor = names.map(() => -(0.5 - slack() / 100));
+  const one = [names.map(() => 1)];
+  // The selection game's optimal mix: the most v that every column holds.
+  const best = simplex([...names.map(() => 0), -1], names.map((_, j) => [...column(j).map(v => -v), 1]), names.map(() => 0), [[...names.map(() => 1), 0]], [1]);
+  return names.map((name, x) => {
+    const unit = names.map((_, j) => j === x ? 1 : 0);
+    const lo = simplex(unit, ub, floor, one, [1]), hi = simplex(unit.map(v => -v), ub, floor, one, [1]);
+    const others = M[x].filter((_, j) => j !== x);
+    return {
+      name, games: Infinity,
+      least: lo ? 100 * lo.value : null, most: hi ? -100 * hi.value : null,
+      optimal: best ? 100 * best.x[x] : null,
+      avg: 100 * others.reduce((s, v) => s + v, 0) / others.length,
+    };
+  });
+}
+function verdict(r) {
+  if (r.most == null) return "";
+  if (r.least > 20) return "always dominant";
+  if (r.most > 50) return "sometimes dominant";
+  if (r.most < 0.5) return "always excluded";
+  return "";
+}
+function rangeBar(r) {
+  const bar = el("div", { class: "range", title: `${fixed(r.least, 1)}–${fixed(r.most, 1)}%, optimal ${fixed(r.optimal, 1)}%` });
+  if (r.most == null) return bar;
+  const span = el("div", { class: "span" });
+  span.style.left = r.least + "%"; span.style.width = Math.max(0.5, r.most - r.least) + "%";
+  const opt = el("div", { class: "opt" });
+  opt.style.left = `calc(${r.optimal}% - 1px)`;
+  bar.append(span, opt);
+  return bar;
+}
+const boundsColumns = [
+  { label: "Name", value: r => r.name },
+  { label: "Range", value: r => r.most, cell: rangeBar },
+  { label: "Least %", value: r => r.least, text: r => fixed(r.least, 1), num: true },
+  { label: "Most %", value: r => r.most, text: r => fixed(r.most, 1), num: true },
+  { label: "Optimal %", value: r => r.optimal, text: r => fixed(r.optimal, 1), num: true },
+  { label: "Avg %", value: r => r.avg, text: r => fixed(r.avg, 1), num: true },
+  { label: "Verdict", value: verdict },
+];
+
 const TABLES = [
   { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 3,
     note: "Off 50 is how far the win % is from 50, either way. Atk and Def are base stats, before effects." },
@@ -353,6 +563,12 @@ const TABLES = [
     note: "A character against one on the other team, from the first one's side. Score: win % above what the characters' ratings predicted, in points; positive means the first one does better in that matchup than the ratings explain, so it counters the second. The filter looks at the first name. A matchup needs many games (100+) to mean much; use Min games." },
   { id: "pairs", title: "Character pairs", rows: d => d.pairs || [], columns: pairColumns, sort: 1,
     note: "Two characters on the same team. Score: win % above what the characters' ratings predicted, in points; positive means they win more together than their ratings predict. A pair needs many games (100+) to mean much; use Min games." },
+  { id: "counter-grid", title: "Counter grid", render: renderGrid, cells: counterCells, mode: "win", label: (a, b) => `${a} vs ${b}`,
+    note: "Row against column, from the row's side: a team with the row character against one with the column character. Green rows win, red rows lose; a row with no red is a character nothing counters. Win % is the matchup chart the bounds below use; Score is the points above what the ratings predicted. Best characters first; hover for numbers; squares under Min games are blank; the filter picks the rows." },
+  { id: "synergy-grid", title: "Synergy grid", render: renderGrid, cells: pairCells, mode: "score", label: (a, b) => `${a} + ${b}`,
+    note: "Row and column on the same team. Score (the start) is the points above what the two characters' ratings predicted, so a strong character doesn't make every pair green; Win % is the plain win rate. Best characters first; hover for numbers; squares under Min games are blank." },
+  { id: "bounds", title: "Metagame bounds", rows: boundsRows, columns: boundsColumns, sort: 3,
+    note: d => `How much of a competitive metagame each character could make up: among every mix of characters that wins at least ${50 - slack()}% against any one character (50 less Slack), the least and most each one is played. From the counter grid's win %, treating a draft as one pick each (Jaffe, "Metagame Balance"). The bar is the range, the line the optimal mix. Always excluded: no room for it. Sometimes dominant: everyone could play it unpunished, so it lacks a counter. Avg % is its plain average against the others. Matchups under Min games count as even. Use one AI and one set of rules (docs/balance.md#grids-and-metagame-bounds).` },
 ];
 
 const state = { tab: "all", filter: "", min: 0, short: 0, sorts: {}, auto: false };
@@ -423,7 +639,9 @@ function renderTable(table) {
     table.columns.forEach((col, i) => {
       const v = col.value(r);
       const shown = col.text ? col.text(r) : String(v ?? "—");
-      if (col.bar) {
+      if (col.cell) {
+        tr.append(el("td", {}, col.cell(r)));
+      } else if (col.bar) {
         const off = v == null ? 0 : (v - col.base) / spans[i];
         // Bars grow from the middle: right for above the base, left for below.
         const bar = el("div", { class: "bar" + (off < 0 ? " neg" : "") });
@@ -483,6 +701,9 @@ function init() {
   const min = document.getElementById("min");
   const short = document.getElementById("short");
   filter.value = state.filter; min.value = state.min; short.value = state.short || "";
+  const slackBox = document.getElementById("slack");
+  slackBox.value = state.slack ?? "";
+  slackBox.addEventListener("input", () => { state.slack = slackBox.value === "" ? undefined : Math.min(20, Math.max(0, Number(slackBox.value) || 0)); remember(); render(); });
   short.addEventListener("input", () => { state.short = Math.max(0, Number(short.value) || 0); remember(); render(); });
   filter.addEventListener("input", () => { state.filter = filter.value.trim().toLowerCase(); remember(); render(); });
   min.addEventListener("input", () => { state.min = Math.max(0, Number(min.value) || 0); remember(); render(); });
