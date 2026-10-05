@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Balance Compare</title>
+<!--
+  Two balance versions side by side (docs/balance.md#versions). The checker
+  copies this file to balance-data/compare.html, beside the version folders,
+  with versions.js listing the versions that have totals. The page loads each
+  version's data script (<version>/balance.data.js, the same one its report
+  page reads), so a refresh shows the latest of a run in progress.
+
+  Pick the versions with the two menus, or open compare.html?a=v0.0.1&b=v0.0.2.
+  Each table is described once in TABLES, as in report.html.
+-->
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+    --line: #e4e3df; --accent: #2f6fdb; --good: #2e8b57; --bad: #c0392b;
+    --bar: #dbe6fb; --bar-bad: #f6dcd8; --head: #f0efeb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
+      --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
+      --bar: #233350; --bar-bad: #4a2621; --head: #262624;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
+    --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
+    --bar: #233350; --bar-bad: #4a2621; --head: #262624;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto;
+    display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline;
+  }
+  h1 { font-size: 20px; margin: 0; }
+  .summary { color: var(--muted); }
+  nav {
+    position: sticky; top: 0; z-index: 2; background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .inner {
+    max-width: 1100px; margin: 0 auto; padding: 8px 16px;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  }
+  nav button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 999px; padding: 4px 12px; font: inherit; cursor: pointer;
+  }
+  nav button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tools { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tools input {
+    font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--panel); color: var(--text);
+  }
+  .tools input[type="search"] { width: 160px; }
+  .tools input[type="number"] { width: 64px; }
+  .tools label { color: var(--muted); }
+  main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 40px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    margin: 0 0 16px; overflow: hidden;
+  }
+  section h2 { font-size: 15px; margin: 0; padding: 12px 14px 4px; }
+  section p.note { margin: 0; padding: 0 14px 10px; color: var(--muted); font-size: 13px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 12px; text-align: left; border-top: 1px solid var(--line); white-space: nowrap; }
+  th {
+    background: var(--head); font-weight: 600; cursor: pointer; user-select: none;
+    position: relative;
+  }
+  th.num, td.num { text-align: right; }
+  th .arrow { color: var(--accent); margin-left: 4px; }
+  td.rank { color: var(--muted); width: 1%; }
+  td.barcell { position: relative; min-width: 120px; }
+  td.barcell .bar {
+    position: absolute; top: 4px; bottom: 4px; background: var(--bar);
+    border-radius: 3px;
+  }
+  td.barcell::before {
+    content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px;
+    border-left: 1px solid var(--line);
+  }
+  td.barcell .bar.neg { background: var(--bar-bad); }
+  td.barcell span { position: relative; }
+  .pos { color: var(--good); }
+  .neg { color: var(--bad); }
+  .empty { padding: 12px 14px; color: var(--muted); }
+  .hidden { display: none; }
+  footer { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: 12px; }
+  .tools select {
+    font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--panel); color: var(--text);
+  }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Balance Compare</h1>
+  <span class="summary" id="summary"></span>
+</header>
+<nav>
+  <div class="inner">
+    <div id="tabs"></div>
+    <div class="tools">
+      <label for="a">From</label> <select id="a"></select>
+      <label for="b">to</label> <select id="b"></select>
+      <input type="search" id="filter" placeholder="Filter by name" aria-label="Filter by name">
+      <label for="min">Min games</label>
+      <input type="number" id="min" min="0" value="0">
+      <button id="real" aria-pressed="false" title="Hide changes that could be luck (under 2 standard errors)">Hide noise</button>
+      <button id="theme" title="Switch light or dark">Theme</button>
+    </div>
+  </div>
+</nav>
+<main id="tables"></main>
+<footer>Change is in points of win rate (or of score, for mixes and pairs), from the first version to the second. Sure: real is 3+ standard errors from no change (almost surely not luck), likely 2+, noise less. Click a heading to sort by it. Written by the balance checker (docs/balance.md).</footer>
+
+<script>
+let A = {}, B = {}, NAME_A = "", NAME_B = "";
+
+const rate = (wins, games) => games ? wins / games : null;
+const fixed = (x, places) => x == null ? "—" : x.toFixed(places);
+function signed(x) { return x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1); }
+
+// Games come in blocks of 4 with the same two teams, so their results move
+// together: a win rate wobbles about 3 times as much as independent games
+// would make it (block_spread in src/balance/versions.cx).
+const BLOCK_SPREAD = 3;
+
+// Standard errors of the change: the two rates' variances, added. Scores use
+// the win rates' variance too, since a score is a win (0 or 1) less a fixed
+// expectation.
+function z(a, b, change) {
+  if (!a || !b || !a.games || !b.games || change == null) return null;
+  const pa = a.wins / a.games, pb = b.wins / b.games;
+  const spread = BLOCK_SPREAD * (pa * (1 - pa) / a.games + pb * (1 - pb) / b.games);
+  return spread > 0 ? (change / 100) / Math.sqrt(spread) : null;
+}
+const sure = v => v == null ? "—" : Math.abs(v) >= 3 ? "real" : Math.abs(v) >= 2 ? "likely" : "noise";
+
+// One row per name in either version: { name, a, b } with a or b missing
+// when the name is only in one.
+function joined(key) {
+  const rows = new Map();
+  for (const r of A[key] || []) rows.set(r.name, { name: r.name, a: r });
+  for (const r of B[key] || []) rows.set(r.name, { ...(rows.get(r.name) || { name: r.name }), b: r });
+  return [...rows.values()];
+}
+
+const winChange = r => r.a && r.b ? 100 * (rate(r.b.wins, r.b.games) - rate(r.a.wins, r.a.games)) : null;
+const score = m => m && m.games ? 100 * m.surprise / m.games : null;
+const scoreChange = r => r.a && r.b ? score(r.b) - score(r.a) : null;
+
+function columns(kind) {
+  const win = kind === "win";
+  const change = win ? winChange : scoreChange;
+  const value = win ? m => m && m.games ? 100 * m.wins / m.games : null : score;
+  const shown = win ? v => fixed(v, 1) : signed;
+  const zOf = r => z(r.a, r.b, change(r));
+  return [
+    { label: "Name", value: r => r.name },
+    { label: (win ? "Win % " : "Score ") + NAME_A, value: r => value(r.a), text: r => shown(value(r.a)), num: true },
+    { label: (win ? "Win % " : "Score ") + NAME_B, value: r => value(r.b), text: r => shown(value(r.b)), num: true },
+    { label: "Change", value: change, text: r => signed(change(r)), num: true, bar: true, base: 0, signed: true },
+    { label: "Sure", value: r => { const v = zOf(r); return v == null ? null : Math.abs(v); },
+      text: r => { const v = zOf(r); return v == null ? "—" : `${sure(v)} (${Math.abs(v).toFixed(1)})`; }, num: true },
+    { label: "Games " + NAME_A, value: r => r.a ? r.a.games : null, num: true },
+    { label: "Games " + NAME_B, value: r => r.b ? r.b.games : null, num: true },
+  ];
+}
+
+const TABLES = [
+  { id: "characters", title: "Characters", key: "characters", kind: "win", sort: 3 },
+  { id: "archetypes", title: "Archetypes", key: "archetypes", kind: "win", sort: 3 },
+  { id: "agents", title: "AIs", key: "agents", kind: "win", sort: 3, note: "Rated only in games between two different AIs." },
+  { id: "sides", title: "Home and away", key: "sides", kind: "win", sort: 3 },
+  { id: "counts", title: "Archetype counts", key: "counts", kind: "score", sort: 3,
+    note: "Score: win % above what the characters' ratings predicted, in points. Each version's score is against its own ratings." },
+  { id: "mixes", title: "Team mixes", key: "mixes", kind: "score", sort: 3 },
+  { id: "pairs", title: "Character pairs", key: "pairs", kind: "score", sort: 3,
+    note: "A pair needs many games (100+ in each version) to mean much; use Min games." },
+];
+
+const state = { tab: "all", filter: "", min: 0, sorts: {}, real: false };
+function remember() { try { localStorage.setItem("balance-compare", JSON.stringify(state)); } catch (e) {} }
+function recall() { try { Object.assign(state, JSON.parse(localStorage.getItem("balance-compare") || "{}")); } catch (e) {} }
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") node.className = v; else if (k.startsWith("on")) node.addEventListener(k.slice(2), v); else node.setAttribute(k, v);
+  }
+  for (const c of children) if (c != null) node.append(c);
+  return node;
+}
+
+// By default the biggest change either way comes first, so Change sorts by its size.
+function sorted(table, cols, rows) {
+  const s = state.sorts[table.id] || { col: table.sort, dir: -1 };
+  const col = cols[s.col];
+  const key = col.label === "Change" ? r => { const v = col.value(r); return v == null ? null : Math.abs(v); } : col.value;
+  return [...rows].sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    if (typeof x === "string") return s.dir < 0 ? x.localeCompare(y) : y.localeCompare(x);
+    return s.dir < 0 ? y - x : x - y;
+  });
+}
+
+function renderTable(table) {
+  const cols = columns(table.kind);
+  const all = joined(table.key);
+  const change = table.kind === "win" ? winChange : scoreChange;
+  const rows = all.filter(r => {
+    const fewest = Math.min(r.a ? r.a.games : 0, r.b ? r.b.games : 0);
+    if (fewest < state.min || !r.name.toLowerCase().includes(state.filter)) return false;
+    if (state.real) { const v = z(r.a, r.b, change(r)); return v != null && Math.abs(v) >= 2; }
+    return true;
+  });
+  const s = state.sorts[table.id] || { col: table.sort, dir: -1 };
+  const section = el("section", { id: table.id });
+  section.append(el("h2", {}, `${table.title} `, el("span", { class: "summary" }, `(${rows.length} of ${all.length})`)));
+  if (table.note) section.append(el("p", { class: "note" }, table.note));
+  if (!rows.length) { section.append(el("div", { class: "empty" }, all.length ? "Nothing matches the filter." : "No games yet.")); return section; }
+
+  const head = el("tr", {}, el("th", { class: "num" }, "#"));
+  cols.forEach((col, i) => {
+    const arrow = s.col === i ? el("span", { class: "arrow" }, s.dir < 0 ? "▼" : "▲") : null;
+    head.append(el("th", {
+      class: col.num ? "num" : "", title: "Sort by " + col.label,
+      onclick: () => { state.sorts[table.id] = { col: i, dir: s.col === i ? -s.dir : -1 }; remember(); render(); },
+    }, col.label, arrow));
+  });
+
+  const spans = cols.map(col => col.bar ? Math.max(1e-9, ...rows.map(r => Math.abs(col.value(r) ?? 0))) : 0);
+  const body = el("tbody");
+  sorted(table, cols, rows).forEach((r, n) => {
+    const tr = el("tr", {}, el("td", { class: "rank num" }, String(n + 1)));
+    const quiet = sure(z(r.a, r.b, change(r))) === "noise";
+    cols.forEach((col, i) => {
+      const v = col.value(r);
+      const shown = col.text ? col.text(r) : String(v ?? "—");
+      if (col.bar) {
+        const off = v == null ? 0 : v / spans[i];
+        const bar = el("div", { class: "bar" + (off < 0 ? " neg" : "") });
+        const half = Math.abs(off) * 50;
+        bar.style.width = half + "%";
+        bar.style.left = (off < 0 ? 50 - half : 50) + "%";
+        // Noise keeps its bar but loses its colour, so the real changes stand out.
+        const text = el("span", { class: quiet ? "muted" : v > 0 ? "pos" : v < 0 ? "neg" : "" }, shown);
+        tr.append(el("td", { class: "barcell num" }, bar, text));
+      } else {
+        tr.append(el("td", { class: col.num ? "num" : "" }, shown));
+      }
+    });
+    body.append(tr);
+  });
+  section.append(el("div", { class: "scroll" }, el("table", {}, el("thead", {}, head), body)));
+  return section;
+}
+
+function render() {
+  const tabs = document.getElementById("tabs");
+  tabs.replaceChildren(...[{ id: "all", title: "All" }, ...TABLES].map(t =>
+    el("button", { "aria-pressed": String(state.tab === t.id), onclick: () => { state.tab = t.id; remember(); render(); } }, t.title)));
+  document.getElementById("real").setAttribute("aria-pressed", String(state.real));
+  document.getElementById("tables").replaceChildren(...TABLES.filter(t => state.tab === "all" || state.tab === t.id).map(renderTable));
+}
+
+// v0.0.10 after v0.0.9: compare version numbers part by part.
+function byVersion(x, y) {
+  const parts = v => v.replace(/^v/, "").split(".").map(p => Number(p) || 0);
+  const a = parts(x), b = parts(y);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) - (b[i] || 0);
+  return x.localeCompare(y);
+}
+
+function load(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src + "?" + Date.now();
+    script.onload = resolve;
+    script.onerror = () => reject(src);
+    document.head.append(script);
+  });
+}
+
+// A version's data: its data script sets window.BALANCE_DATA, so load one, keep it, then the other.
+async function data(version) {
+  window.BALANCE_DATA = undefined;
+  await load(version + "/balance.data.js");
+  return window.BALANCE_DATA || {};
+}
+
+async function init() {
+  recall();
+  const summary = document.getElementById("summary");
+  try { await load("versions.js"); } catch (e) {
+    summary.textContent = "No versions.js beside this page. Run the balance checker (--games 0 writes it).";
+    return;
+  }
+  const versions = (window.BALANCE_VERSIONS || []).slice().sort(byVersion);
+  if (!versions.length) { summary.textContent = "No versions with totals yet."; return; }
+  const params = new URLSearchParams(location.search);
+  NAME_B = params.get("b") || versions[versions.length - 1];
+  NAME_A = params.get("a") || versions[Math.max(0, versions.indexOf(NAME_B) - 1)];
+
+  for (const [id, chosen] of [["a", NAME_A], ["b", NAME_B]]) {
+    const select = document.getElementById(id);
+    select.replaceChildren(...versions.map(v => { const o = el("option", { value: v }, v); if (v === chosen) o.selected = true; return o; }));
+    select.addEventListener("change", () => {
+      const next = new URLSearchParams({ a: document.getElementById("a").value, b: document.getElementById("b").value });
+      location.search = next.toString();
+    });
+  }
+  try { A = await data(NAME_A); B = await data(NAME_B); } catch (src) {
+    summary.textContent = `No data: ${src} is missing.`;
+    return;
+  }
+  document.title = `Balance Compare ${NAME_A} → ${NAME_B}`;
+  summary.textContent = `${NAME_A}: ${A.games || 0} games · ${NAME_B}: ${B.games || 0} games` + (NAME_A === NAME_B ? " · the same version twice" : "");
+
+  const filter = document.getElementById("filter"), min = document.getElementById("min");
+  filter.value = state.filter; min.value = state.min;
+  filter.addEventListener("input", () => { state.filter = filter.value.trim().toLowerCase(); remember(); render(); });
+  min.addEventListener("input", () => { state.min = Math.max(0, Number(min.value) || 0); remember(); render(); });
+  document.getElementById("real").addEventListener("click", () => { state.real = !state.real; remember(); render(); });
+  document.getElementById("theme").addEventListener("click", () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+  });
+  render();
+}
+init();
+</script>
+</body>
+</html>

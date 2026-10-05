@@ -1,5 +1,5 @@
 import {
-    Pool, Rating, new_pool, rating, expected, side_elo, record, recenter,
+    Pool, Rating, new_pool, rating, expected, k_factor, side_elo, record, recenter,
     Mixes, new_mixes, mix, credit, score, mix_name, count_name, fixed, pool_table, mix_table, ranked, pair_name, pairs_of, ends_table,
     Ledger, new_ledger, ledger_data, ledger_from
 } from "battler/balance/ratings";
@@ -18,10 +18,11 @@ fn four_hundred_points_is_ten_to_one() {
 }
 
 @test
-fn an_even_win_moves_sixteen_points() {
+fn an_even_win_moves_half_of_k() {
     var p = new_pool();
     record(p, ["A"], ["B"]);
-    assert(near(rating(p, "A").elo, 1016.0, 0.001) && near(rating(p, "B").elo, 984.0, 0.001), "K/2 each way");
+    var half = k_factor() / 2.0;
+    assert(near(rating(p, "A").elo, 1000.0 + half, 0.001) && near(rating(p, "B").elo, 1000.0 - half, 0.001), "K/2 each way");
     assert(rating(p, "A").wins == 1 && rating(p, "B").games == 1, "counted");
 }
 
@@ -34,14 +35,14 @@ fn a_side_is_rated_by_its_average_and_moves_together() {
     // Re-centring shifts everyone equally, so compare gaps, not raw ratings.
     assert(near(rating(p, "X").elo, rating(p, "Y").elo, 0.001), "a side moves together");
     assert(near(rating(p, "Strong").elo - rating(p, "Weak").elo, 200.0, 0.001), "and so does the other");
-    assert(rating(p, "X").elo - rating(p, "Weak").elo > 32.0, "beating a stronger side is worth more than 16 each way");
+    assert(rating(p, "X").elo - rating(p, "Weak").elo > k_factor(), "beating a stronger side is worth more than K/2 each way");
 }
 
 @test
 fn a_name_twice_on_a_side_moves_twice() {
     var p = new_pool();
     record(p, ["Mage", "Mage"], ["Tank", "Support"]);
-    assert(near(rating(p, "Mage").elo - rating(p, "Tank").elo, 48.0, 0.001), "Mage moved up twice, Tank down once");
+    assert(near(rating(p, "Mage").elo - rating(p, "Tank").elo, 1.5 * k_factor(), 0.001), "Mage moved up twice, Tank down once");
 }
 
 @test

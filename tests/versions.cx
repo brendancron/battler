@@ -1,0 +1,74 @@
+import { Pool, Rating, new_pool, rating } from "battler/balance/ratings";
+import { version_file, versions_script, change_z, sureness, block_spread, compare_table } from "battler/balance/versions";
+import { balance_version } from "battler/content/tuning";
+
+fn near(x: float, y: float, within: float): bool { return x - y < within && y - x < within; }
+
+fn pool_of(name: string, wins: int, games: int): Pool {
+    var p = new_pool();
+    var r = rating(p, name);
+    r.wins = wins;
+    r.games = games;
+    return p;
+}
+
+@test
+fn each_version_has_a_folder_of_its_own() {
+    assert(version_file("v0.0.1") == "balance-data/v0.0.1/balance.json", "v0.0.1");
+    assert(version_file(balance_version()) != version_file(balance_version() + "x"), "a new version, a new file");
+}
+
+@test
+fn the_versions_script_lists_them_as_json() {
+    assert(versions_script(["v0.0.1", "v0.0.2"]) == "window.BALANCE_VERSIONS = [\"v0.0.1\", \"v0.0.2\"];\n", "two");
+    assert(versions_script([]) == "window.BALANCE_VERSIONS = [];\n", "none");
+}
+
+@test
+fn no_change_is_zero_and_the_sign_follows_the_change() {
+    assert(near(change_z(500, 1000, 500, 1000), 0.0, 0.0001), "same rate");
+    assert(change_z(500, 1000, 600, 1000) > 0.0 && change_z(600, 1000, 500, 1000) < 0.0, "up is positive, down negative");
+    assert(near(change_z(500, 1000, 600, 1000), 0.0 - change_z(600, 1000, 500, 1000), 0.0001), "symmetric");
+    assert(change_z(0, 0, 5, 10) == 0.0, "no games is no evidence");
+}
+
+@test
+fn the_change_is_measured_in_block_adjusted_standard_errors() {
+    // 50% to 60% over 1000 games each: each rate's variance is p(1-p)/n, widened by the blocks.
+    var spread = block_spread() * (0.25 / 1000.0 + 0.24 / 1000.0);
+    var expected_z = 0.1 / pow_half(spread);
+    assert(near(change_z(500, 1000, 600, 1000), expected_z, 0.001), "change over its standard error");
+}
+
+fn pow_half(x: float): float {
+    // Newton's method, so the test doesn't share the code's square root.
+    var r = x;
+    var i = 0;
+    while (i < 60) { r = 0.5 * (r + x / r); i = i + 1; }
+    return r;
+}
+
+@test
+fn more_games_make_the_same_change_surer() {
+    assert(change_z(5000, 10000, 5500, 10000) > change_z(500, 1000, 550, 1000), "ten times the games");
+}
+
+@test
+fn sureness_has_three_bands_either_way() {
+    assert(sureness(3.0) == "real" && sureness(-3.5) == "real", "3+");
+    assert(sureness(2.0) == "likely" && sureness(-2.9) == "likely", "2+");
+    assert(sureness(1.9) == "noise" && sureness(-0.5) == "noise", "under 2");
+}
+
+@test
+fn the_compare_table_puts_the_biggest_change_first_and_notes_missing_names() {
+    var a = pool_of("Small", 500, 1000);
+    var r = rating(a, "Big"); r.wins = 500; r.games = 1000;
+    var gone = rating(a, "Gone"); gone.wins = 1; gone.games = 2;
+    var b = pool_of("Small", 510, 1000);
+    var r2 = rating(b, "Big"); r2.wins = 300; r2.games = 1000;
+    var lines = compare_table("T", "v1", a, "v2", b);
+    assert(lines[2].index_of("Big") >= 0 && lines[3].index_of("Small") >= 0, "biggest change first, either way");
+    assert(lines[2].index_of("-20.0") >= 0 && lines[2].index_of("real") >= 0, "a 20-point drop over 1000 games is real");
+    assert(lines[lines.len() - 1].index_of("Gone (only in v1)") >= 0, "missing from v2");
+}

@@ -20,7 +20,11 @@ Battles are 4 against 4, so Elo is applied team-style:
    (its 4 characters, say).
 2. The usual Elo expected score is worked out from the two sides' ratings.
 3. Every member of a side moves by the same amount: K × (result − expected),
-   with K = 32 to start.
+   with K = 4. K is small because a member's own rating is only a quarter
+   of its side's, so the pull back towards its true rating is weak: at K = 32
+   every character's rating swung about ±160 around its average over a 400k-game
+   run (Cleric read 631 at a 49.4% win rate); swings scale with √K. The flip
+   side is that a fresh file takes a few thousand games to spread out.
 
 ## What gets rated
 
@@ -54,14 +58,17 @@ several also rates the AIs against each other.
 ## Running it
 
 ```
-cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--file PATH] [--jobs N] [quiet]
+cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--version V] [--file PATH] [--jobs N] [quiet]
+cx run src/balance.cx -- --compare A B
 ```
 
 | Option | Default | Meaning |
 |--------|---------|---------|
 | `--games N` | 100 | games to play this run, rounded up to whole blocks of 4; `0` just prints the report from the file; `forever` plays until cancelled (see [Running overnight](#running-overnight)) |
 | `--ai LIST` | Greedy | the AIs that may be drawn for a block |
-| `--file PATH` | balance.json | where the running totals live |
+| `--version V` | `balance_version()` in tuning.cx | the [balance version](#versions) whose totals to add to or report |
+| `--file PATH` | balance-data/*version*/balance.json | where the running totals live; the folder is made if it isn't there |
+| `--compare A B` | | print how versions A and B differ and write the compare page ([Versions](#versions)) |
 | `--jobs N` | 1 | play in N worker processes at once; about 4 per 4 cores is a good start |
 | `quiet` | off | leave out the per-game lines |
 
@@ -92,15 +99,17 @@ The totals are read from the file at the start and saved after every 4 games,
 so runs add up (100 games, then another 100) and an interrupted run keeps what
 it played (all but the last few games). Each save writes a temporary file
 and renames it over the real one, so cancelling mid-save can't leave a
-half-written file. Delete the file to start over, for example after rebalancing a
-character. The file is listed in `.gitignore`.
+half-written file. A balance change starts a new file of its own by bumping
+the [version](#versions); delete a file only to throw a version's games away.
+The files are listed in `.gitignore`.
 
 Progress (a line per game and standings every 20 games) is printed as it
 happens, then the final report of the totals.
 
 ### Report page
 
-Each run writes a **report page** next to the totals file (`balance.json`
+Everything the checker writes goes in `balance-data/<version>/` (gitignored),
+next to the totals file. Each run writes a **report page** there (`balance.json`
 gives `balance.html`), and every save writes the totals beside it as
 `balance.data.js`, which the page loads (all in `.gitignore`). Open the page
 in a browser to look at the totals without running anything. During a run a
@@ -122,6 +131,49 @@ The page is a copy of `src/balance/report.html`; the data script
 internet. The data is a file of its own because splicing it into the page was
 slow in Cronyx (about 5 s a save for a 46K-character ledger). Each table and
 column is one entry in the page's `TABLES` list, so new views are added there.
+
+### Versions
+
+Each balance is a **version**, `balance_version()` at the top of
+`src/content/tuning.cx` (v0.0.1 is the first). Bump it in the same edit as
+any balance change, in `tuning.cx` or `roster.cx`, and tag the commit with it
+(`git tag v0.0.2`), so `git diff v0.0.1 v0.0.2 -- src/content` shows what
+changed in the numbers.
+
+The checker keeps each version's games apart: the totals, page and logs for
+v0.0.1 are in `balance-data/v0.0.1/`, and a run plays and saves under the
+version in `tuning.cx`. So a run after a patch can't add to the old
+version's totals by mistake. `--version V` reports on (or adds to) another
+version, e.g. `--games 0 --version v0.0.1`.
+
+**Comparing.** `--compare v0.0.1 v0.0.2` prints each character's, archetype's
+and AI's win rate in both versions, biggest change first, each marked:
+
+| Mark | Meaning |
+|------|---------|
+| real | the change is 3+ standard errors: almost surely not luck |
+| likely | 2+ standard errors |
+| noise | less: could be luck |
+
+Every run also writes **`balance-data/compare.html`**, the same comparison
+for every table on the report page (mixes, counts and pairs compare scores),
+with menus for the two versions (the two newest by default, or
+`compare.html?a=v0.0.1&b=v0.0.2`) and a button to hide the noise. Each
+version's report page links to it. It reads each version's data script, so
+during a run a refresh shows the latest.
+
+The standard error is widened for the blocks: games come in blocks of 4 with
+the same two teams, so their results move together, and over v0.0.1's 409k
+games a character's win rate varied 2.5-2.8 times as much as independent
+games would make it. The checker counts it as 3 (`block_spread` in
+`src/balance/versions.cx`). Two runs of the same tuning should show about 1
+row in 20 as likely and almost none as real.
+
+How many games a new version needs: each game has 8 of the 23 characters, so
+a version with N games has about 0.35 N per character, and against v0.0.1's
+140k per character a change is real once it's 3 × √(3 × 0.25 / 0.35 N), in
+win rate. About 23,000 games show a 3-point change as real, 110,000 a
+1.5-point one; a change of 5+ points shows up within 8,000.
 
 ### Logs
 

@@ -26,6 +26,19 @@ fn log_base(file: string): string {
     return file;
 }
 
+/** The folder the totals file is in: balance-data/balance.json gives balance-data, balance.json gives "". */
+fn folder_of(file: string): string {
+    var parts = file.split('/');
+    var out = "";
+    var i = 0;
+    while (i + 1 < parts.len()) {
+        if (i > 0) { out = out + "/"; }
+        out = out + parts[i];
+        i = i + 1;
+    }
+    return out;
+}
+
 fn games_log_path(file: string): string { return log_base(file) + ".games.jsonl"; }
 fn timeline_path(file: string): string { return log_base(file) + ".timeline.jsonl"; }
 

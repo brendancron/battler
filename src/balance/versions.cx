@@ -1,0 +1,138 @@
+import { pad_left, pad_right } from "std/text/String";
+import { pow } from "../core/maths";
+import { Pool, Rating, fixed } from "ratings";
+
+/**
+ * Balance versions (docs/balance.md#versions). Each version's totals live in
+ * a folder of their own, balance-data/<version>/, so games played on one
+ * tuning never mix with another's. The compare page and `--compare` set two
+ * versions side by side.
+ */
+
+/** The folder every version's folder sits in, from the project's root. */
+fn versions_root(): string { return "balance-data"; }
+
+/** A version's totals file: v0.0.1 gives balance-data/v0.0.1/balance.json. */
+fn version_file(version: string): string { return versions_root() + "/" + version + "/balance.json"; }
+
+/** Where the compare page template lives, from the project's root. */
+fn compare_template(): string { return "src/balance/compare.html"; }
+
+/** The compare page, beside the version folders. */
+fn compare_page(): string { return versions_root() + "/compare.html"; }
+
+/** The list of versions the compare page offers, beside it. */
+fn versions_path(): string { return versions_root() + "/versions.js"; }
+
+/** The versions script: every version with totals, as a JSON list. */
+fn versions_script(versions: List<string>): string {
+    var out = "";
+    for (v in versions) {
+        if (out != "") { out = out + ", "; }
+        out = out + "\"" + v + "\"";
+    }
+    return "window.BALANCE_VERSIONS = [" + out + "];\n";
+}
+
+fn rate(wins: int, games: int): float {
+    if (games == 0) { return 0.0; }
+    return wins.to_float() / games.to_float();
+}
+
+/**
+ * How much more a win rate wobbles than independent games would make it.
+ * Games come in blocks of 4 with the same two teams (docs/balance.md), so
+ * their results move together: over v0.0.1's 409k games a character's win
+ * rate varied 2.5-2.8 times as much as independent games give.
+ */
+fn block_spread(): float { return 3.0; }
+
+/**
+ * How sure a change in win rate is: the change over its standard error, so
+ * about 2 or more is unlikely to be luck and 3 or more is almost surely real.
+ * 0 when either side has no games.
+ */
+fn change_z(wins_a: int, games_a: int, wins_b: int, games_b: int): float {
+    if (games_a == 0 || games_b == 0) { return 0.0; }
+    var a = rate(wins_a, games_a);
+    var b = rate(wins_b, games_b);
+    var spread = block_spread() * (a * (1.0 - a) / games_a.to_float() + b * (1.0 - b) / games_b.to_float());
+    if (spread <= 0.0) { return 0.0; }
+    return (b - a) / pow(spread, 0.5);
+}
+
+/** A change's z in words: real (3+), likely (2+), or noise. */
+fn sureness(z: float): string {
+    var size = z;
+    if (size < 0.0) { size = 0.0 - z; }
+    if (size >= 3.0) { return "real"; }
+    if (size >= 2.0) { return "likely"; }
+    return "noise";
+}
+
+fn find(pool: Pool, name: string): Option<Rating> {
+    for (r in pool.ratings) {
+        if (r.name == name) { return Option.Some(r); }
+    }
+    return Option.None;
+}
+
+/** One name's win rate in two versions. */
+type Change { name: string, was: Rating, now: Rating }
+
+/** The change in win rate, in points. */
+fn points(c: Change): float {
+    return 100.0 * (rate(c.now.wins, c.now.games) - rate(c.was.wins, c.was.games));
+}
+
+fn size(c: Change): float {
+    var p = points(c);
+    if (p < 0.0) { return 0.0 - p; }
+    return p;
+}
+
+fn signed_points(x: float): string {
+    if (x > 0.0) { return "+" + fixed(x, 1); }
+    return fixed(x, 1);
+}
+
+/**
+ * Win rates in two versions of a pool as a table, biggest change first. A
+ * name in only one version is listed after.
+ */
+fn compare_table(title: string, version_a: string, a: Pool, version_b: string, b: Pool): List<string> {
+    var sorted: List<Change> = [];
+    var only: List<string> = [];
+    for (r in b.ratings) {
+        match find(a, r.name) {
+            Option.Some(was) => {
+                var c = Change { name: r.name, was: was, now: r };
+                var placed = false;
+                var merged: List<Change> = [];
+                for (s in sorted) {
+                    if (!placed && size(c) > size(s)) { merged.push(c); placed = true; }
+                    merged.push(s);
+                }
+                if (!placed) { merged.push(c); }
+                sorted = merged;
+            }
+            Option.None => { only.push(r.name + " (only in " + version_b + ")"); }
+        }
+    }
+    for (r in a.ratings) {
+        match find(b, r.name) {
+            Option.Some(_) => {}
+            Option.None => { only.push(r.name + " (only in " + version_a + ")"); }
+        }
+    }
+    var out = [title, "  " + pad_right("", 14, " ") + pad_left(version_a, 9, " ") + pad_left(version_b, 9, " ") + pad_left("Change", 8, " ")];
+    for (c in sorted) {
+        out.push("  " + pad_right(c.name, 14, " ")
+            + pad_left(fixed(100.0 * rate(c.was.wins, c.was.games), 1) + "%", 9, " ")
+            + pad_left(fixed(100.0 * rate(c.now.wins, c.now.games), 1) + "%", 9, " ")
+            + pad_left(signed_points(points(c)), 8, " ")
+            + "  " + sureness(change_z(c.was.wins, c.was.games, c.now.wins, c.now.games)));
+    }
+    for (o in only) { out.push("  " + o); }
+    return out;
+}

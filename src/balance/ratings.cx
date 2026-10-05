@@ -10,7 +10,12 @@ import { Data, Entry } from "std/encoding/Codec";
 
 /** Where every rating starts, and the average every pool is held at. */
 fn start_elo(): float { return 1000.0; }
-fn k_factor(): float { return 32.0; }
+/**
+ * How far one game moves a rating. Small, because a member's own rating is a
+ * quarter of its side's, so the pull back to its true rating is weak and a
+ * big K leaves every rating swinging (±160 at K = 32 over 400k games).
+ */
+fn k_factor(): float { return 4.0; }
 
 /** One rated thing: a character, an archetype, an agent, a side. */
 type Rating { name: string, elo: float, games: int, wins: int }

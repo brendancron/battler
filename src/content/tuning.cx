@@ -11,6 +11,13 @@
  * attack power are in roster.cx.
  */
 
+/**
+ * The balance version these numbers are (docs/balance.md#versions). Bump it
+ * with every balance change, here or in roster.cx: the balance checker keeps
+ * each version's games apart, in balance-data/<version>/.
+ */
+fn balance_version(): string { return "v0.0.1"; }
+
 // Barbarian
 
 fn cleave_power(): int { return 30; }

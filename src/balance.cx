@@ -7,22 +7,24 @@ import { flush } from "std/io/Console";
 import { lines, IoError, using } from "std/io/Io";
 import { Command, Stdio, Child, spawn, status } from "std/os/Process";
 import { interleaved } from "std/async/Task";
-import { exists, read_text, write_text, move_path, open_file, Mode } from "std/fs/File";
+import { exists, read_text, write_text, move_path, open_file, Mode, make_dirs, list_dir } from "std/fs/File";
 import { parse_json, __pretty } from "std/encoding/Json";
 import { silent_screen } from "ui/display";
 import { Agent, ai_names, ai_named } from "agents/agent";
 import { Seat, Outcome, play_match } from "game/game";
 import { Fighter, roster } from "content/roster";
+import { balance_version } from "content/tuning";
 import { Game, game_line, parse_game, shares } from "balance/jobs";
 import { page_template, page_path, data_path, data_script } from "balance/page";
 import {
     Interval, new_interval, count_game, snapshot_every, games_log_path, timeline_path, game_record, snapshot_record, start_record,
-    rss_from_status
+    rss_from_status, folder_of
 } from "balance/logs";
 import {
     Pool, Rating, new_pool, side_elo, expected, record, ranked, fixed, Mixes, new_mixes, credit, mix_name, count_name,
     pool_table, mix_table, ends_table, pairs_of, Ledger, new_ledger, ledger_data, ledger_from
 } from "balance/ratings";
+import { versions_root, version_file, compare_template, compare_page, versions_path, versions_script, compare_table } from "balance/versions";
 
 // The balance checker (docs/balance.md). Plays games between AIs on random
 // teams and keeps running Elo ratings and win rates for characters,
@@ -34,7 +36,11 @@ import {
 //                0 just prints the report from the file; `forever` plays
 //                until cancelled (Ctrl+C), in batches (`play_forever`)
 //   --ai LIST    which AIs may be drawn for a block (default Greedy)
-//   --file PATH  where the running totals live (default balance.json)
+//   --version V  the balance version whose totals to add to or report
+//                (default balance_version() in tuning.cx)
+//   --file PATH  where the running totals live (default
+//                balance-data/<version>/balance.json)
+//   --compare A B  compare two versions' totals, e.g. --compare v0.0.1 v0.0.2
 //   --jobs N     run N worker processes at once (default 1)
 //   quiet        leave out the per-game lines
 //   --batch      (from `play_forever`) print one line at the end instead of the report
@@ -243,6 +249,97 @@ fn write_page(r: Run) {
         move_path(html + ".tmp", html);
     } handle Throw {
         final ctl throw(e) { printerr("Can't write the report page " + html + ": " + str(e)); }
+    }
+}
+
+/** Every version with totals in balance-data/, in the order the folder lists them. */
+fn versions(): List<string> {
+    var out: List<string> = [];
+    if (!exists(versions_root())) { return out; }
+    run {
+        for (name in list_dir(versions_root())) {
+            if (exists(version_file(name))) { out.push(name); }
+        }
+    } handle Throw {
+        final ctl throw(e) { printerr("Can't list " + versions_root() + ": " + str(e)); }
+    }
+    return out;
+}
+
+/** Writes the compare page and the list of versions it offers, beside the version folders. */
+fn write_compare_page() {
+    if (!exists(versions_root())) { return; }
+    run {
+        write_text(compare_page() + ".tmp", read_text(compare_template()));
+        move_path(compare_page() + ".tmp", compare_page());
+        write_text(versions_path() + ".tmp", versions_script(versions()));
+        move_path(versions_path() + ".tmp", versions_path());
+    } handle Throw {
+        final ctl throw(e) { printerr("Can't write the compare page " + compare_page() + ": " + str(e)); }
+    }
+}
+
+/** The second argument after `--name`, or "" if there isn't one. */
+fn after(name: string): string {
+    var given = args();
+    var i = 0;
+    while (i + 2 < given.len()) {
+        if (given[i] == "--" + name) { return given[i + 2]; }
+        i = i + 1;
+    }
+    return "";
+}
+
+/** --compare A B: prints how win rates changed from version A to B, and writes the compare page. */
+fn compare(a: string, b: string) {
+    if (b == "") {
+        printerr("--compare needs two versions, e.g. --compare v0.0.1 v0.0.2.");
+        return;
+    }
+    for (v in [a, b]) {
+        if (!exists(version_file(v))) {
+            var known = "";
+            for (k in versions()) {
+                if (known != "") { known = known + ", "; }
+                known = known + k;
+            }
+            printerr("No totals for " + v + " (" + version_file(v) + "). Versions with totals: " + known + ".");
+            return;
+        }
+    }
+    match load(version_file(a)) {
+        Option.Some(la) => {
+            match load(version_file(b)) {
+                Option.Some(lb) => {
+                    print(a + ": " + str(la.games) + " games. " + b + ": " + str(lb.games) + " games.");
+                    print("Win rates, biggest change first. real: almost surely not luck (3+ standard errors); likely: 2+; noise: less.");
+                    print("");
+                    for (line in compare_table("CHARACTERS", a, la.characters, b, lb.characters)) { print(line); }
+                    print("");
+                    for (line in compare_table("ARCHETYPES", a, la.archetypes, b, lb.archetypes)) { print(line); }
+                    if (la.agents.ratings.len() > 0 && lb.agents.ratings.len() > 0) {
+                        print("");
+                        for (line in compare_table("AGENTS", a, la.agents, b, lb.agents)) { print(line); }
+                    }
+                    write_compare_page();
+                    print("");
+                    print("Compare page: " + compare_page() + "?a=" + a + "&b=" + b + " (open it in a browser; it has mixes and pairs too).");
+                }
+                Option.None => {}
+            }
+        }
+        Option.None => {}
+    }
+}
+
+/** Makes the folder the totals file goes in, and any above it, if it isn't there yet. */
+fn make_folder(file: string) {
+    var folder = folder_of(file);
+    if (folder == "" || exists(folder)) { return; }
+    run {
+        make_dirs(folder);
+    } handle Throw {
+        final ctl throw(e) { printerr("Can't make the folder " + folder + ": " + str(e)); }
     }
 }
 
@@ -580,7 +677,11 @@ fn report(r: Run) {
 }
 
 fn start(known: List<Entrant>) {
-    var file = option("file", "balance.json");
+    var file = option("file", version_file(option("version", balance_version())));
+    if (option("compare", "") != "") {
+        compare(option("compare", ""), after("compare"));
+        return;
+    }
     var planned = games_wanted();
     var endless = planned == forever();
     if (planned < 0 && !endless) {
@@ -602,6 +703,8 @@ fn start(known: List<Entrant>) {
                 work(allowed, planned);
                 return;
             }
+            make_folder(file);
+            write_compare_page();
             match load(file) {
                 Option.Some(ledger) => {
                     if (planned == 0 && ledger.games == 0) {
@@ -625,6 +728,8 @@ fn start(known: List<Entrant>) {
                         // In case a worker stopped early, short of a save point.
                         save(r);
                         snapshot(r);
+                        // A new version's totals didn't exist when the run started.
+                        write_compare_page();
                     }
                     // A batch of --games forever leaves the full report to the end of the night.
                     if (flag("--batch")) {

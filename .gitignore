@@ -1,14 +1,5 @@
 # The balance checker's running totals (docs/balance.md). Local to each machine; delete to start over.
-balance.json
-balance.json.tmp
-balance.html
-balance.html.tmp
-balance.data.js
-balance.data.js.tmp
-balance.games.jsonl
-balance.timeline.jsonl
-balance.out
-balance.pid
+balance-data/
 
 # Build output
 target/

@@ -104,6 +104,7 @@
 <header>
   <h1>Balance Report</h1>
   <span class="summary" id="summary"></span>
+  <a class="summary" id="compare" href="../compare.html" hidden>Compare versions</a>
 </header>
 <nav>
   <div class="inner">
@@ -259,7 +260,14 @@ function init() {
   const games = DATA.games || 0, draws = DATA.draws || 0;
   // When the checker last saved, from the data script.
   const when = WRITTEN ? ` · updated ${WRITTEN.toLocaleTimeString()}` : "";
-  document.getElementById("summary").textContent = `${games} games, ${draws} draws${when}`;
+  // The balance version is the folder the page is in (balance-data/v0.0.1/balance.html).
+  const folder = decodeURIComponent(location.pathname.split("/").slice(-2)[0] || "");
+  const version = /^v\d/.test(folder) ? folder : "";
+  if (version) {
+    document.title = `Balance Report ${version}`;
+    document.getElementById("compare").hidden = false;
+  }
+  document.getElementById("summary").textContent = `${version ? version + " · " : ""}${games} games, ${draws} draws${when}`;
 
   // Auto-refresh: reload on a timer, coming back to the same scroll position.
   const auto = document.getElementById("auto");

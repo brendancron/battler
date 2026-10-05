@@ -53,10 +53,16 @@ cx run                                       # play: coin flip, draft, battle vs
 cx test                                      # the test suite (tests/*.cx)
 cx run src/balance.cx -- --games 200 --ai Greedy,Tactician --jobs 4   # balance checker
 cx run src/balance.cx -- --games forever --ai Greedy,Tactician --jobs 8 quiet   # until Ctrl+C
+cx run src/balance.cx -- --compare v0.0.1 v0.0.2   # what a balance patch changed
 ```
 
-The balance checker adds to `balance.json` (gitignored) on every run; delete it
-to start over. Each run writes `balance.html`, a sortable report to open
+The balance checker keeps everything it writes in `balance-data/`
+(gitignored), one folder per balance version: it adds to
+`balance-data/<version>/balance.json` on every run, the version being
+`balance_version()` in `tuning.cx`. **Bump the version with every balance
+change** and tag the commit (`git tag v0.0.2`); `--compare` and
+`balance-data/compare.html` show what changed (`docs/balance.md#versions`).
+Each run writes `balance.html`, a sortable report to open
 in a browser, and keeps `balance.data.js` (its data) and two logs
 (`balance.games.jsonl`, `balance.timeline.jsonl`) up to date; `--games 0`
 just writes the page. Options are in `docs/balance.md`.
@@ -102,6 +108,7 @@ Imports are relative to the importing file (`"../core/battle"`); tests use
   - `jobs.cx`: the result lines the `--jobs` workers send back.
   - `report.html`, `page.cx`: the report page and its data script.
   - `logs.cx`: the game log and the timeline (JSON lines).
+  - `versions.cx`, `compare.html`: balance versions and the compare page.
 
 ## Cronyx notes
 
