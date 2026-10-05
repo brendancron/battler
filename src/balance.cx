@@ -23,7 +23,7 @@ import {
 } from "balance/logs";
 import {
     Pool, Rating, new_pool, side_elo, expected, record, ranked, fixed, Mixes, new_mixes, credit, mix_name, count_name,
-    pool_table, mix_table, ends_table, pairs_of, Ledger, new_ledger, ledger_data, ledger_from
+    pool_table, mix_table, ends_table, pairs_of, ai_name, Ledger, new_ledger, ledger_data, ledger_from
 } from "balance/ratings";
 import { versions_root, version_file, compare_template, compare_page, versions_path, versions_script, compare_table } from "balance/versions";
 
@@ -559,6 +559,8 @@ fn tally(r: Run, g: Game) {
         }
         for (p in pairs_of(g.home)) { credit(l.pairs, p, home_won, home_expected); }
         for (p in pairs_of(g.away)) { credit(l.pairs, p, !home_won, 1.0 - home_expected); }
+        for (c in g.home) { credit(l.by_ai, ai_name(c, g.home_ai), home_won, home_expected); }
+        for (c in g.away) { credit(l.by_ai, ai_name(c, g.away_ai), !home_won, 1.0 - home_expected); }
     }
     log_standings(r);
     if (r.done % snapshot_every() == 0) { snapshot(r); }

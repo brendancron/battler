@@ -1,0 +1,375 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random, random_int } from "std/random/Random";
+import { Character, Effect, Action, tier_rank } from "../core/creature";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef } from "../core/move";
+import { Choice, bind } from "../core/target";
+import { Fighter } from "../content/roster";
+import { shield_decay, potion_line_percent } from "../content/tuning";
+import { foe_pick, roll } from "../game/draft";
+import { Agent, Plan, Turn } from "agent";
+import { Pick, as_is, best_by, best_adjusted, shield_on, smaller } from "scoring";
+import { scaling_worth, output, kit_of } from "tactician";
+
+/**
+ * Generation 3: plays like the Tactician, and forecasts the foes. Each foe
+ * still to act is assumed to make its Greedy pick, and the hits that would
+ * land on each ally are added up into a **danger**: HP lost, plus a save
+ * value for each ally that would fall, plus its action if it would fall
+ * before it acts. Protection (Invincible, shields, barriers, taunts, potions,
+ * speed) is worth the danger it takes away, and a heal gets a bonus for an
+ * ally it lifts out of reach. Knocking a foe out is worth the damage that foe
+ * would go on to deal. Drafts like Greedy. See docs/guardian.md.
+ */
+type GuardianAgent;
+
+impl Agent for GuardianAgent {
+    fn choose_move(self, turn: Turn): <async, Console, Stdin, Random, Throw<IoError>> Option<Plan> {
+        return Option.Some(guardian_action(turn.battle, turn.slot, turn.moves, turn.kits));
+    }
+
+    fn choose_pick(self, available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): <async, Console, Stdin, Random, Throw<IoError>> int {
+        return foe_pick(available, mine, roll);
+    }
+}
+
+fn noise(n: int): int { return random_int(0, n + 1); }
+
+/** No noise: the forecast takes each foe's best pick as it is. */
+fn quiet(n: int): int { return 0; }
+
+/** The Guardian's move: the best move and target after the forecast, with a little noise. */
+fn guardian_action(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>): Plan {
+    match guarded(battle, user, moveset, kits, 4, noise) {
+        Option.Some(p) => { return Plan { slot: user, move: p.move, choice: p.choice }; }
+        Option.None => { return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget }; }
+    }
+    return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget };
+}
+
+/**
+ * The best move and target for the slot, the Guardian way: the Tactician's
+ * scores, with protection valued by the danger it takes away (`protection`),
+ * heals by the allies they save (`rescue`) and knockouts by the foe's threat
+ * (`kill_threat`).
+ */
+fn guarded<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
+    var me = battle.sides[user.side].active[user.index];
+    var baseline = danger(battle, me, kits);
+    fn revalue(c: Character, target: Character, fx: Effect): Option<int> {
+        match protection(battle, me, kits, baseline, target, fx) {
+            Option.Some(v) => { return Option.Some(v); }
+            Option.None => {}
+        }
+        return scaling_worth(battle, c, target, fx, kits);
+    }
+    fn adjust(move: MoveDef, choice: Choice, score: int): int {
+        return score + rescue(battle, user, move, choice, kits, baseline) + kill_threat(battle, user, move, choice, kits);
+    }
+    return best_adjusted(battle, user, moveset, revalue, adjust, jitter, noise);
+}
+
+// The forecast.
+
+/** One predicted hit on one of the Guardian's allies. `before`: the foe acts before the ally does this round. */
+type Hit { target: Character, amount: int, direct: bool, before: bool }
+
+/** Whether `foe` acts before `ally` this round: a faster tier, or the same one (taken as first, to be safe). */
+fn acts_before(me: Character, foe: Character, ally: Character): bool {
+    if (ally.acted || same(ally, me)) { return false; }
+    return tier_rank(foe.current_tier()) <= tier_rank(ally.current_tier());
+}
+
+/**
+ * The hits the foes would land on `me`'s side, each foe making its Greedy
+ * pick. `waiting`: only the foes still to act this round.
+ */
+fn forecast(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, waiting: bool): List<Hit> {
+    var hits: List<Hit> = [];
+    var side = 1 - me.team;
+    var i = 0;
+    while (i < battle.sides[side].active.len()) {
+        var foe = battle.sides[side].active[i];
+        var s = Slot { side: side, index: i };
+        i = i + 1;
+        if (foe.fainted() || !foe.takes_turns() || foe.skips_turn()) { continue; }
+        if (waiting && foe.acted) { continue; }
+        var kit = kit_of(kits, s);
+        if (kit.len() == 0) { continue; }
+        match best_by(battle, s, kit, as_is, 0, quiet) {
+            Option.Some(p) => {
+                match bind(p.move.shape, p.choice, battle, s) {
+                    Option.Some(target) => {
+                        var apply = p.move.apply;
+                        for (a in apply(battle, foe, target)) {
+                            match a {
+                                Action.Damage(t, _, amount, direct) => {
+                                    if (t.team == me.team) { hits.push(Hit { target: t, amount: amount, direct: direct, before: acts_before(me, foe, t) }); }
+                                }
+                                Action.Drain(t, _, amount, _) => {
+                                    if (t.team == me.team) { hits.push(Hit { target: t, amount: amount, direct: true, before: acts_before(me, foe, t) }); }
+                                }
+                                Action.AreaDrain(_, ts, amounts, _) => {
+                                    var j = 0;
+                                    while (j < ts.len()) {
+                                        if (ts[j].team == me.team) { hits.push(Hit { target: ts[j], amount: amounts[j], direct: true, before: acts_before(me, foe, ts[j]) }); }
+                                        j = j + 1;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    Option.None => {}
+                }
+            }
+            Option.None => {}
+        }
+    }
+    return hits;
+}
+
+/** How an ally fares under a list of hits. `lost` isn't capped at its HP, so lifting its HP changes only whether it falls. */
+type Fate { lost: int, falls: bool, falls_first: bool, hp: int, shield: int, barriers: int, potions: int }
+
+/** The ally as it stands: HP, shield, barrier charges and Greater Health Potion charges. */
+fn standing(c: Character): Fate {
+    var barriers = 0;
+    var potions = 0;
+    for (e in c.effects) {
+        if (e.blocks_hits) { barriers = barriers + e.charges; }
+        if (e.kind == "Greater Health Potion") { potions = potions + e.charges; }
+    }
+    return Fate { lost: 0, falls: false, falls_first: false, hp: c.hp, shield: shield_on(c), barriers: barriers, potions: potions };
+}
+
+fn potion_heal(c: Character): int {
+    for (e in c.effects) {
+        if (e.kind == "Greater Health Potion") { return e.power; }
+    }
+    return 0;
+}
+
+/**
+ * Runs the hits on `ally` against its fate so far: Invincible stops them,
+ * a barrier blocks a direct one, a cap trims each, a shield soaks, and a
+ * Greater Health Potion fires below its line. The hits from foes that act
+ * before the ally come first, so `falls_first` says it falls before acting.
+ */
+fn endure(ally: Character, hits: List<Hit>, fate: Fate, immune: bool): Fate {
+    var f = fate;
+    var pass = 0;
+    while (pass < 2) {
+        for (h in hits) {
+            if (!same(h.target, ally) || h.before != (pass == 0)) { continue; }
+            if (f.hp <= 0) { continue; }
+            if (immune) { continue; }
+            if (h.direct && f.barriers > 0) { f.barriers = f.barriers - 1; continue; }
+            var through = ally.capped(h.amount);
+            var soaked = smaller(through, f.shield);
+            f.shield = f.shield - soaked;
+            through = through - soaked;
+            f.lost = f.lost + through;
+            f.hp = f.hp - through;
+            if (f.hp <= 0) {
+                f.falls = true;
+                if (pass == 0) { f.falls_first = true; }
+            } else if (f.potions > 0 && f.hp * 100 < ally.max_health() * potion_line_percent()) {
+                var heal = smaller(potion_heal(ally), ally.max_health() - f.hp);
+                f.hp = f.hp + heal;
+                f.lost = f.lost - heal;
+                f.potions = f.potions - 1;
+            }
+        }
+        pass = pass + 1;
+    }
+    return f;
+}
+
+/** What losing the ally costs (placeholder): its best hit, three times over, and 25 for being there at all. */
+fn save_value(battle: Battle, s: Slot, kits: List<List<List<MoveDef>>>): int {
+    return output(battle, s, kit_of(kits, s)) * 3 + 25;
+}
+
+/**
+ * How badly the foes' predicted moves would hurt `me`'s side: this round's
+ * (the foes still to act), then next round's at half, after shields decay
+ * and Invincible ends. Each ally counts the HP it would lose, its save value
+ * if it would fall, and its best hit again if it would fall before acting.
+ */
+fn danger(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>): int {
+    var now = forecast(battle, me, kits, true);
+    var next = next_round(battle, me, kits);
+    var total = 0;
+    var i = 0;
+    while (i < battle.sides[me.team].active.len()) {
+        var ally = battle.sides[me.team].active[i];
+        var s = Slot { side: me.team, index: i };
+        i = i + 1;
+        if (ally.fainted()) { continue; }
+        var f = endure(ally, now, standing(ally), ally.untouchable());
+        total = total + f.lost;
+        if (f.falls) {
+            total = total + save_value(battle, s, kits);
+            if (f.falls_first) { total = total + output(battle, s, kit_of(kits, s)); }
+            continue;
+        }
+        // Next round: shields decay, Invincible is over, nobody has acted yet.
+        f.shield = f.shield - shield_decay();
+        if (f.shield < 0) { f.shield = 0; }
+        f.lost = 0;
+        var later = endure(ally, next, f, false);
+        total = total + later.lost / 2;
+        if (later.falls) { total = total + save_value(battle, s, kits) / 2; }
+    }
+    return total;
+}
+
+/**
+ * Next round's forecast: every foe, against `me`'s side as it will be after
+ * the round ends, when Invincible is over.
+ */
+fn next_round(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>): List<Hit> {
+    var kept: List<List<Effect>> = [];
+    for (ally in battle.sides[me.team].active) {
+        kept.push(ally.effects);
+        var lasting: List<Effect> = [];
+        for (e in ally.effects) {
+            if (!e.prevents_damage) { lasting.push(e); }
+        }
+        ally.effects = lasting;
+    }
+    var hits = forecast(battle, me, kits, false);
+    var i = 0;
+    while (i < kept.len()) {
+        battle.sides[me.team].active[i].effects = kept[i];
+        i = i + 1;
+    }
+    return hits;
+}
+
+/** The danger with `fx` on `target` for a moment. */
+fn danger_with(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, target: Character, fx: Effect): int {
+    var original = target.effects;
+    var trial: List<Effect> = [];
+    for (e in original) { trial.push(e); }
+    trial.push(fx);
+    target.effects = trial;
+    var d = danger(battle, me, kits);
+    target.effects = original;
+    return d;
+}
+
+/** Whether the forecast is what values the effect: protection or speed on an ally, speed on a foe. */
+fn guards(me: Character, target: Character, fx: Effect): bool {
+    if (fx.buff && target.team == me.team) {
+        return fx.prevents_damage || fx.absorbs || fx.blocks_hits || fx.targeting > 0 || fx.tier_shift != 0 || fx.hit_cap > 0 || fx.kind == "Greater Health Potion";
+    }
+    if (!fx.buff && target.team != me.team) { return fx.tier_shift != 0; }
+    return false;
+}
+
+/**
+ * What putting `fx` on `target` is worth by the forecast: the danger it
+ * takes away. None for an effect the forecast doesn't value (the Tactician's
+ * value stands), or one that also changes attack or defense.
+ */
+fn protection(battle: Battle, me: Character, kits: List<List<List<MoveDef>>>, baseline: int, target: Character, fx: Effect): Option<int> {
+    if (target.fainted() || !guards(me, target, fx)) { return Option.None; }
+    if (fx.attack_steps != 0 || fx.defense_steps != 0) { return Option.None; }
+    return Option.Some(baseline - danger_with(battle, me, kits, target, fx));
+}
+
+/**
+ * The bonus for the allies a move's heals save: the danger they take away,
+ * which is only the falls they prevent, since HP lost doesn't depend on HP.
+ * The HP restored is already in the score.
+ */
+fn rescue(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<List<List<MoveDef>>>, baseline: int): int {
+    var c = battle.sides[user.side].active[user.index];
+    match bind(move.shape, choice, battle, user) {
+        Option.Some(target) => {
+            var apply = move.apply;
+            var healed: List<Character> = [];
+            var amounts: List<int> = [];
+            for (a in apply(battle, c, target)) {
+                match a {
+                    Action.Heal(t, amount) => {
+                        if (t.team == c.team && !t.fainted() && !t.heal_blocked()) { healed.push(t); amounts.push(smaller(amount, t.max_health() - t.hp)); }
+                    }
+                    _ => {}
+                }
+            }
+            if (healed.len() == 0) { return 0; }
+            var i = 0;
+            while (i < healed.len()) { healed[i].hp = healed[i].hp + amounts[i]; i = i + 1; }
+            var changed = danger(battle, c, kits);
+            i = 0;
+            while (i < healed.len()) { healed[i].hp = healed[i].hp - amounts[i]; i = i + 1; }
+            return baseline - changed;
+        }
+        Option.None => { return 0; }
+    }
+    return 0;
+}
+
+// Knockouts, valued by the foe's threat.
+
+/** A knockout is worth this many of the foe's best hits (placeholder). */
+fn kill_weight(): int { return 3; }
+
+/** The slot the character stands in, if it's on the field. */
+fn slot_of(battle: Battle, c: Character): Option<Slot> {
+    var side = 0;
+    while (side < battle.sides.len()) {
+        var i = 0;
+        while (i < battle.sides[side].active.len()) {
+            if (same(battle.sides[side].active[i], c)) { return Option.Some(Slot { side: side, index: i }); }
+            i = i + 1;
+        }
+        side = side + 1;
+    }
+    return Option.None;
+}
+
+/** The scores give a flat 50 for knocking a foe out; this swaps it for the damage that foe would go on to deal. */
+fn threat_of(battle: Battle, user: Character, target: Character, amount: int, kits: List<List<List<MoveDef>>>): int {
+    if (target.team == user.team || target.fainted()) { return 0; }
+    if (amount < target.hp + shield_on(target)) { return 0; }
+    match slot_of(battle, target) {
+        Option.Some(s) => { return output(battle, s, kit_of(kits, s)) * kill_weight() - 50; }
+        Option.None => {}
+    }
+    return 0;
+}
+
+/** The change to the score from valuing each knockout by the foe's threat (`threat_of`). */
+fn kill_threat(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<List<List<MoveDef>>>): int {
+    var c = battle.sides[user.side].active[user.index];
+    match bind(move.shape, choice, battle, user) {
+        Option.Some(target) => {
+            var apply = move.apply;
+            var total = 0;
+            for (a in apply(battle, c, target)) {
+                match a {
+                    Action.Damage(t, _, amount, _) => { total = total + threat_of(battle, c, t, amount, kits); }
+                    Action.Drain(t, _, amount, _) => { total = total + threat_of(battle, c, t, amount, kits); }
+                    Action.AreaDrain(_, ts, amounts, _) => {
+                        var i = 0;
+                        while (i < ts.len()) {
+                            total = total + threat_of(battle, c, ts[i], amounts[i], kits);
+                            i = i + 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return total;
+        }
+        Option.None => { return 0; }
+    }
+    return 0;
+}

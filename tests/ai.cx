@@ -7,7 +7,6 @@ import { Pick, score } from "battler/agents/scoring";
 import { best } from "battler/agents/greedy";
 import { planned } from "battler/agents/tactician";
 import { random_pick } from "battler/agents/random";
-import { timed, wasted, cooldown_cost, waste_weight } from "battler/agents/strategist";
 import { hex, taunt, panacea, heal_block, barrier, poison } from "battler/content/effects";
 import { cleave, smite, guard, lay_on_hands, prayer, purify, sanctuary, hex_move, brimstone, acid_flask, greater_health_potion_move, energize_move, flurry_of_blows, soul_siphon, reap, backstab } from "battler/content/moves";
 import { basic_attack, damage } from "battler/core/move";
@@ -322,57 +321,4 @@ fn tactician_wont_energize_allies_who_cant_attack() {
     var kits = [[[energize_move()], [prayer()]], [[basic_attack("Jab", 10)]]];
     assert(planned_pick(b, slot(0, 0), kits).score == 0, "boosting nothing is worth nothing");
     assert(pick(b, slot(0, 0), kits[0][0]).score > 0, "Greedy doesn't know nobody can attack");
-}
-
-// The Strategist
-
-fn strategist_pick(b: Battle, user: Slot, moves: List<MoveDef>): Pick {
-    var kits = [[moves], [[basic_attack("Jab", 10)]]];
-    match timed(b, user, moves, kits, 0, none) {
-        Option.Some(p) => { return p; }
-        Option.None => {}
-    }
-    assert(false, "no pick");
-    return Pick { move: moves[0], choice: Choice.NoTarget, score: 0 };
-}
-
-@test
-fn overhealing_is_waste_and_costs_by_cooldown() {
-    var b = duel(["A", "B", "C"], ["D"]);
-    who(b, slot(0, 1)).take(10);
-    var h = prayer_heal();
-    var waste = 3 * h - smaller(h, 10);
-    assert(wasted(b, slot(0, 0), prayer(), Choice.NoTarget) == waste, "everything past each ally's missing HP");
-    assert(cooldown_cost(b, slot(0, 0), prayer(), Choice.NoTarget) == waste * prayer().cooldown * waste_weight() / 4, "waste x cooldown x weight / 4");
-}
-
-@test
-fn nothing_is_wasted_when_the_team_needs_it_all() {
-    var b = duel(["A", "B"], ["D"]);
-    who(b, slot(0, 0)).take(prayer_heal());
-    who(b, slot(0, 1)).take(prayer_heal());
-    assert(cooldown_cost(b, slot(0, 0), prayer(), Choice.NoTarget) == 0, "every point of the heal lands");
-}
-
-@test
-fn overkill_is_waste_and_a_clean_hit_is_not() {
-    var b = duel(["A"], ["B", "C"]);
-    var d = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), backstab_power());
-    who(b, slot(1, 1)).take(95);
-    assert(wasted(b, slot(0, 0), backstab(), Choice.Slots([slot(1, 0)])) == 0, "a full-HP foe takes it all");
-    assert(wasted(b, slot(0, 0), backstab(), Choice.Slots([slot(1, 1)])) == d - 5, "a foe with 5 left wastes the rest");
-}
-
-@test
-fn strategist_holds_a_team_heal_for_when_its_needed() {
-    var b = duel(["A", "B", "C"], ["D"]);
-    who(b, slot(0, 1)).take(10);
-    assert(strategist_pick(b, slot(0, 0), [prayer(), basic_attack("Jab", 10)]).move.name == "Jab", "not for 10 missing HP");
-}
-
-@test
-fn strategist_finishes_a_low_foe_with_its_basic_attack() {
-    var b = duel(["A"], ["B"]);
-    who(b, slot(1, 0)).take(95);
-    assert(strategist_pick(b, slot(0, 0), [backstab(), basic_attack("Jab", 10)]).move.name == "Jab", "Backstab would be wasted on 5 HP");
 }

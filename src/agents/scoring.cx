@@ -387,7 +387,7 @@ fn unadjusted(move: MoveDef, choice: Choice, score: int): int { return score; }
 /**
  * Like `best_by`, but `adjust(move, choice, score)` gets the last word on each
  * score before the noise, for an AI that weighs something the scores don't
- * (the Strategist's cooldown cost).
+ * (the Guardian's forecast).
  */
 fn best_adjusted<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, revalue: (Character, Character, Effect) -> Option<int>, adjust: (MoveDef, Choice, int) -> int, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
     var found: Option<Pick> = Option.None;

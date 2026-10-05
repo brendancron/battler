@@ -79,7 +79,7 @@ The AIs, one file each in `src/agents/` (shared scoring in `scoring.cx`):
 | Random | any usable move on any legal target |
 | Greedy | the move that scores best right now: damage, knockouts, healing, a flat value for each buff or debuff |
 | Tactician | like Greedy, but a buff or debuff that changes attack or defense is worth how much it changes the damage each side could deal next turn, for as long as it lasts. It knows every character's moves, so it energizes the hitter still to act this round, and gives nothing for boosting an ally that can't attack |
-| Strategist | like Tactician, but it counts what a cooldown costs: a move that would waste part of itself now (healing past max HP, or damage past what a foe has left) loses that waste times its cooldown ÷ 4. So it holds a team heal until the team is really hurt, and finishes a low foe with its basic attack instead of burning a big hit |
+| Guardian | like Tactician, but it forecasts the foes: each foe still to act makes its Greedy pick, and protection (Invincible, shields, barriers, taunts, potions, speed changes) is worth the danger it takes off its side. So Fairy Ring goes on the ally about to be knocked out, a taunt goes up when a frail ally is about to be focused, and a heal that lifts an ally out of reach gets a bonus. A knockout is worth the damage that foe would go on to deal ([guardian.md](guardian.md)) |
 
 All of them draft at random, all but Random without repeating an archetype.
 
@@ -89,13 +89,10 @@ Each AI is a generation: it plays like the one before it plus one new idea,
 and lives in its own file. A better way to play goes into a **new** AI, not
 into an old one, so the old ones stay as fixed benchmarks and the balance
 checker can show whether each generation really beats the last
-(`--ai Tactician,Strategist`). Random (0), Greedy (1), Tactician (2),
-Strategist (3). Guardian (4), which predicts the foes' moves and values
-protection by the damage it stops, is designed but not built
-([guardian.md](guardian.md)).
-
-Strategist's waste weight (÷ 4 per turn of cooldown) is a placeholder, tuned
-by running it against Tactician.
+(`--ai Tactician,Guardian`). Random (0), Greedy (1), Tactician (2),
+Guardian (3). Guardian replaced the Strategist, which counted what a
+cooldown costs (waste × cooldown ÷ 4) and didn't beat the Tactician by
+enough to keep.
 
 The totals are read from the file at the start and saved after every 4 games,
 so runs add up (100 games, then another 100) and an interrupted run keeps what
@@ -123,6 +120,8 @@ without playing.
 - One table per thing rated (characters, archetypes, AIs, home and away,
   archetype counts, team mixes), each with a bar showing how far above or
   below the middle (1000 Elo, 50%, a score of 0) each row is.
+- **Characters by AI** shows each character's win rate under each AI that
+  played it ([below](#characters-by-ai)).
 - The characters table also shows each character's base attack, defense and
   attack × defense, to sort by and see how stats line up with win rates.
   They're the stats the version was played with: the data script carries
@@ -310,3 +309,24 @@ rating (how it does on any team) and its best pair scores (how it does on the
 team it was built for). A character that's weak alone but has strong pairs
 is working as designed (see
 [characters.md](characters.md#strong-strengths-big-weaknesses)).
+
+## Characters by AI
+
+Some characters are only as good as the AI playing them: the Fairy's Ring
+and the Bard's tempo need an AI that sees who is about to be hit
+([guardian.md](guardian.md)). So the checker also counts each character
+under each AI that played it, as `Fairy · Guardian`, kept in the totals file
+under `by_ai` (a file from before starts with none).
+
+The report page's **Characters by AI** table has a row per character: its
+win % under each AI, and its **edge** there, that win % less the AI's own
+win % over every character it played. The edge takes out how good the AI is
+overall, so a character with a much higher edge under one AI is one that AI
+plays better. **Gap** is the best edge less the worst, and **Suits** names
+the AI with the best.
+
+A character under one AI turns up in about 0.35 × (that AI's share of
+sides) of games, and like any win rate it needs thousands of games to
+settle: with two AIs, 10,000 games give each character about 1,700 under
+each, enough to show a gap of about 9 points as real; a 5-point gap takes
+about 30,000 games.

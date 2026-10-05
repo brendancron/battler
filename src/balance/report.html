@@ -161,9 +161,45 @@ const characterColumns = [
 const pairColumns = [{ label: "Pair", value: r => r.name }, ...mixColumns.slice(1)];
 function signed(x) { return x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1); }
 
+// Characters by AI: a row per character, with its win % under each AI that
+// played it and its edge there: that win % less the AI's own (every character
+// it played), so an AI that wins more overall doesn't look as if it suits
+// everyone. Gap is the best edge less the worst; Suits names the best AI.
+let BY_AI = [], AI_TOTALS = {};
+function byAiRows(d) {
+  const rows = {}, totals = {};
+  for (const m of d.by_ai || []) {
+    const at = m.name.lastIndexOf(" · ");
+    const name = m.name.slice(0, at), ai = m.name.slice(at + 3);
+    (rows[name] = rows[name] || { name, ais: {} }).ais[ai] = m;
+    const t = (totals[ai] = totals[ai] || { wins: 0, games: 0 });
+    t.wins += m.wins; t.games += m.games;
+  }
+  BY_AI = Object.keys(totals).sort();
+  AI_TOTALS = totals;
+  return Object.values(rows).map(r => ({ ...r, games: Math.min(...BY_AI.map(a => r.ais[a] ? r.ais[a].games : 0)) }));
+}
+const aiWin = (r, ai) => r.ais[ai] ? pct(r.ais[ai].wins, r.ais[ai].games) : null;
+const aiEdge = (r, ai) => aiWin(r, ai) == null ? null : aiWin(r, ai) - pct(AI_TOTALS[ai].wins, AI_TOTALS[ai].games);
+function edges(r) { return BY_AI.map(ai => ({ ai, edge: aiEdge(r, ai) })).filter(e => e.edge != null).sort((a, b) => b.edge - a.edge); }
+function byAiColumns() {
+  const cols = [{ label: "Name", value: r => r.name }];
+  for (const ai of BY_AI) {
+    cols.push({ label: ai + " win %", value: r => aiWin(r, ai), text: r => fixed(aiWin(r, ai), 1), num: true });
+    cols.push({ label: ai + " edge", value: r => aiEdge(r, ai), text: r => signed(aiEdge(r, ai)), num: true, bar: true, base: 0, signed: true });
+  }
+  const gap = r => { const e = edges(r); return e.length > 1 ? e[0].edge - e[e.length - 1].edge : null; };
+  cols.push({ label: "Gap", value: gap, text: r => fixed(gap(r), 1), num: true });
+  cols.push({ label: "Suits", value: r => { const e = edges(r); return e.length > 1 ? e[0].ai : ""; } });
+  cols.push({ label: "Games", value: r => r.games, num: true });
+  return cols;
+}
+
 const TABLES = [
   { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 1,
     note: "Atk and Def are base stats, before effects." },
+  { id: "by-ai", title: "Characters by AI", rows: byAiRows, get columns() { return byAiColumns(); }, sort: 0,
+    note: "Win % under each AI, and the edge: that less the AI's own win %. A character whose edge is much higher under one AI is played better by it. Games is the fewest it has under any one AI; a gap needs a few thousand games each to mean much." },
   { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
   { id: "agents", title: "AIs", rows: d => d.agents, columns: ratingColumns, sort: 1,
     note: "Rated only in games between two different AIs." },

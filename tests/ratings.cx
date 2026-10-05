@@ -1,6 +1,6 @@
 import {
     Pool, Rating, new_pool, rating, expected, k_factor, side_elo, record, recenter,
-    Mixes, new_mixes, mix, credit, score, mix_name, count_name, fixed, pool_table, mix_table, ranked, pair_name, pairs_of, ends_table,
+    Mixes, new_mixes, mix, credit, score, mix_name, count_name, fixed, pool_table, mix_table, ranked, pair_name, pairs_of, ai_name, ends_table,
     Ledger, new_ledger, ledger_data, ledger_from
 } from "battler/balance/ratings";
 import { write_json, parse_json } from "std/encoding/Json";
@@ -108,12 +108,14 @@ fn a_ledger_survives_a_round_trip_through_json() {
     record(l.agents, ["Greedy"], ["Random"]);
     credit(l.mixes, "Tank, Warrior", true, 0.4);
     credit(l.pairs, "Fairy + Warlock", false, 0.25);
+    credit(l.by_ai, ai_name("Fairy", "Guardian"), true, 0.5);
     var back = ledger_from(parse_json(write_json(ledger_data(l))));
     assert(near(score(mix(back.pairs, "Fairy + Warlock")), -25.0, 0.001), "pair score");
     assert(back.games == 8 && back.draws == 1, "totals");
     assert(near(rating(back.characters, "Monk").elo, rating(l.characters, "Monk").elo, 0.0001), "elo kept exactly");
     assert(rating(back.characters, "Witch").games == 1 && rating(back.agents, "Greedy").wins == 1, "counts");
     assert(near(score(mix(back.mixes, "Tank, Warrior")), 60.0, 0.001), "mix score");
+    assert(mix(back.by_ai, "Fairy · Guardian").wins == 1, "characters by AI");
     assert(back.sides.ratings.len() == 0 && back.counts.mixes.len() == 0, "empty parts stay empty");
 }
 
@@ -194,4 +196,9 @@ fn the_ends_table_keeps_the_best_and_worst() {
     // Title, header, 2 best, "...", 2 worst.
     assert(lines.len() == 7 && lines[4] == "  ...", "trimmed to the ends");
     assert(ends_table("PAIRS", all, 1, 5).len() == 12, "short lists are shown whole");
+}
+
+@test
+fn a_character_under_an_ai_reads_as_one_name() {
+    assert(ai_name("Fairy", "Guardian") == "Fairy · Guardian", "character, then AI");
 }

@@ -1,133 +1,116 @@
-# Guardian (generation 4)
+# Guardian (generation 3)
 
-Design for the next AI ([balance.md](balance.md#generations)). Not built yet.
+The third AI generation ([balance.md](balance.md#generations)),
+`src/agents/guardian.cx`. It replaced the Strategist, which counted what a
+cooldown costs and didn't beat the Tactician by enough to keep.
 
-**Its one new idea: it predicts what the foes will do this round, and values
-protection by the damage it would actually stop.** Otherwise it plays like
-the Strategist (generation 3): the Tactician's scores, the cooldown cost and
-knockouts valued by the foe's threat.
+**Its one new idea: it forecasts what the foes will do, and values
+protection by the danger it takes away.** Otherwise it plays like the
+Tactician (an effect that changes attack or defense is worth what it does to
+the damage each side can deal), and it keeps the Strategist's view of
+knockouts: knocking a foe out is worth that foe's best hit × 3, not a flat
+50.
 
 ## Why
 
-The AIs today value protection blind. In `scoring.cx`:
+The older AIs value protection blind. In `scoring.cx`:
 
-| Effect | Worth today | So |
+| Effect | Worth to Greedy and the Tactician | So |
 |---|---|---|
 | Invincible (Fairy Ring) | a flat 15 | the same on every ally: it lands on a random one |
 | Shield (Pixie Dust, Bulwark) | half its size | the same on an ally nobody is hitting |
 | Barrier (Sanctuary) | 15, then 6 | no idea which hit it blocks |
 | Taunt (Lockdown, Guard, Shield Bash) | 10 | no idea whose hits it pulls away |
-| Greater Health Potion | by how close the ally is to the line | the closest to the design; it guesses "one hit is about 25" |
-| Cleanse | 15 a debuff | the same for a harmless debuff as for Heal Block on a healer |
+| Speed up and down (Allegro, Largo) | a flat 10 or 12 | no idea who acts before whom |
+| Greater Health Potion | by how close the ally is to the line | guesses "one hit is about 25" |
 
 Staged games (Stormbringer, Assassin, Monk, Grim Reaper against Warlock,
-Fairy, Knight, Cleric; Tactician on both sides) showed what that costs:
+Fairy, Knight, Cleric; Tactician on both sides) showed the cost. Fairy Ring
+went to the Witch, the Knight, the Fairy itself or the Cleric, and to the
+Warlock once in 14 games. In round 1 the Fairy always chose Pixie Dust (worth
+about 30) over Ring (15) with Backstab about to land on the Warlock. With
+the Guardian on the Fairy's side, Ring went on the Warlock in round 1 in all
+8 games, and the Warlock fired.
 
-- Fairy Ring went to the Witch, the Knight, the Fairy itself, the Cleric;
-  once in 14 games to the Warlock.
-- In round 1 the Fairy always chose Pixie Dust (worth about 30: 7.5 on each
-  of 4 allies) over Ring (15), with Thunderstorm and Backstab about to land
-  on the Warlock. Ring would have stopped the Backstab: 0 damage, not 63.
-- In round 2 the Assassin, acting first in the Fast phase, finished the
-  Warlock with Execution while the Fairy's Ring went on a Cleric at full HP.
+## The forecast
 
-The Fairy (33% in v0.0.1) and the Alchemist (43%) are the characters whose
-value is mostly protection and timing, so they suffer most. Every support
-with a shield, barrier, taunt or potion does too.
+1. **Each foe still to act** this round (not fainted, takes turns, not
+   skipping) is assumed to make its **Greedy pick**: the move and target
+   that score best for it right now, with no noise. Targeting tiers apply,
+   so a taunt or Shadowed changes who it can pick.
+2. Each picked move's hits on the Guardian's side are collected: a
+   single-target hit on its target, an area hit on everyone.
+3. A hit is **before** the ally if the foe's tier is faster than the ally's,
+   or the same (taken as first, to be safe), and the ally hasn't acted yet.
+   The Guardian itself is acting now, so nothing is before it.
 
-## The prediction
+**Next round** is forecast the same way with every foe, against the side as
+it will be after the round ends: Invincible is over and shields have lost
+their decay.
 
-At the start of each of its turns the Guardian works out an **expected
-damage** for each of its allies: how much the foes still to act will deal
-to that ally before the protection it's thinking of runs out.
+## Danger
 
-1. **Which foes still act.** The foes that haven't acted this round, in the
-   turn order (`order.cx`). For an effect that lasts into the next round
-   (a shield, a taunt for 2 rounds), every foe next round counts too, at
-   half (placeholder): next round is further off and less sure.
-2. **What each foe does.** Each of those foes is assumed to make its Greedy
-   pick (`score` in `scoring.cx`): the move and target that score best for
-   it right now. Greedy is cheap, it's what most foes' choices look like,
-   and it already goes after the low, the frail and the big hits.
-   Targeting tiers are respected, as they are for the foe: a taunt or
-   Shadowed changes who it can pick.
-3. **Damage on each ally.** Each predicted move's damage to each of the
-   Guardian's allies, added up: a single-target move on its target, an area
-   move on every ally. Poison and fatigue due at round end are added too.
+Each ally's hits are run against it: the ones before it first, then the
+rest. Invincible stops them, a barrier blocks the next direct hit, a cap
+(Ironclad) trims each, a shield soaks, and a Greater Health Potion fires
+when the ally drops below its line. Then the ally counts:
 
-Expected damage is a forecast, not a promise, so a protection is worth the
-damage it would stop under the forecast, plus a **save bonus** when the
-forecast says the ally falls without it and lives with it.
+- the **HP it would lose** (not capped at its HP, so raising its HP changes
+  only whether it falls);
+- if it would fall, its **save value**: its best hit × 3, + 25 for being in
+  the fight at all;
+- if it would fall **before it acts**, its best hit again: the action it
+  loses.
 
-The save bonus is the ally's own threat, the way the Strategist values
-knocking a foe out: its best hit (`output`) × the kill weight, more again
-(placeholder × 1.5) if it hasn't acted yet this round, since a save then
-buys its turn. A Warlock that hasn't fired is the biggest save there is.
+The **danger** is this round's total plus next round's at half (an ally that
+falls this round isn't counted next round).
 
-## What it changes
+## What the forecast values
 
-Each is a `revalue` (like the Tactician's `scaling_worth`): it replaces the
-Greedy value of putting an effect on an ally, or of an action.
+- **Protection and speed.** Putting an effect on someone is worth the
+  danger before less the danger with the effect on (worked out by trying
+  it). That covers Invincible, shields, barriers, taunts, damage caps,
+  Greater Health Potions and speed up on an ally, and speed down on a foe.
+  An effect that also changes attack or defense keeps the Tactician's value.
+  Pixie Dust adds up a shield on each ally, so it beats Ring only when the
+  forecast spreads the damage.
+- **Heals get a rescue bonus:** the danger a move's heals take away, by
+  trying the healed HP. Since HP lost doesn't depend on HP, that's only the
+  falls they prevent; the HP restored is already in the score.
+- **Knockouts** are worth the foe's best hit × 3 instead of a flat 50.
 
-| Effect or action | Worth to the Guardian |
-|---|---|
-| **Invincible** | all the ally's expected damage before the round ends, plus the save bonus if it's lethal. Nothing if no foe still to act can reach it. |
-| **Shield** | the expected damage it would soak before it decays, no more than its size, plus the save bonus if it turns a knockout into a survival. Pixie Dust adds this up over every ally, so it beats Ring only when the damage really is spread out. |
-| **Barrier** | the biggest single expected direct hit on the ally (the one it would block), plus the save bonus. |
-| **Taunt** | the expected damage it pulls off the allies (the single-target hits on them that would go to the taunter instead), less what that damage does to the taunter, plus the save bonus for any ally it saves. Taunting is worth a lot when a carry is about to be focused, and little when the foes would hit the taunter anyway. |
-| **Greater Health Potion** | the heal, if the forecast takes the ally below the line, in full; plus the save bonus if the heal is what keeps it alive. Nothing if the forecast never reaches the line. |
-| **Heal** | as now (HP restored), plus the save bonus when it lifts the ally out of the forecast's kill range. |
-| **Cleanse** | each debuff by what it does: an attack or defense change through `pressure` (as the Tactician values it), Heal Block by the healing it would stop this round, a Hex by the turn it would cost. |
+Protection on an ally the forecast leaves alone is worth nothing, so the
+Guardian stops spending turns on it.
 
-Protection on an ally the forecast leaves alone is worth little, so the
-Guardian stops wasting turns on it and attacks instead.
+## What it means for the characters
 
-## Effects on the characters
+- **Fairy:** Ring on whoever is about to be focused; in round 1 that's
+  usually the frail carry. Pixie Dust when an area hit is coming.
+- **Alchemist:** Greater Health Potion on the ally the forecast takes below
+  the line.
+- **Tanks (Knight, Construct, Frost Giant, Paladin):** taunts when a frail
+  ally is about to be focused, held when not. Bulwark on the ally under
+  threat.
+- **Bard:** Allegro's speed up is worth the action of an ally that would
+  otherwise fall first; Largo's speed down the same for a foe.
+- **Cleric:** Sanctuary's barrier on the ally facing the hit, and heals that
+  keep someone standing.
 
-What should change, for checking against the balance checker:
+## Not covered yet
 
-- **Fairy.** Ring on whoever is about to be focused, before they're hit;
-  in round 1 that's usually the frail carry, so it beats Pixie Dust there.
-  Pixie Dust when the forecast spreads damage (an area hit coming).
-- **Alchemist.** Greater Health Potion on the ally the forecast takes below
-  the line, not the one that's merely lowest. Energize is already valued
-  well (the Tactician).
-- **Knight, Construct, Frost Giant, Paladin.** Taunts and Guard used when a
-  frail ally is about to be focused, and held when it isn't. Bulwark on the
-  ally under threat.
-- **Cleric.** Sanctuary's barrier on the ally facing the biggest hit; Purify
-  on the debuff that matters.
+- Cleanses are still worth 15 a debuff (the Greedy value).
+- Overclock and other cooldown cuts are still worth 5 a cooldown a turn.
+- Allegro's attack up lasts one turn but the Tactician counts it as 2
+  rounds.
 
 ## Cost
 
-Predicting means scoring each foe's moves on each of the Guardian's turns:
-up to 4 foes × their moves × their targets, Greedy-style, once per turn (not
-once per move it's considering). That's about the same work as one more
-Greedy turn per foe, so a game should take well under twice as long as a
-Tactician's. If it's slower than that, the forecast can skip foes with no
-damaging move ready.
-
-## Testing
-
-As for every AI, test scoring rules, not which of two tuned moves wins:
-
-- Invincible is worth the expected damage to the ally, and nothing on an
-  ally no foe still to act can reach.
-- A save is worth more than the HP it saves; more again for an ally that
-  hasn't acted.
-- A shield is worth no more than its size or the expected damage, whichever
-  is smaller.
-- A taunt is worth the damage it pulls off the others, less what it costs the
-  taunter.
-- The forecast respects taunts and targeting tiers.
-
-Then the balance checker: `--ai Strategist,Guardian` should show the
-Guardian winning. To see what it does for the Fairy and the Alchemist, play
-games with only the Guardian (`--ai Guardian`, into a version of its own)
-and compare their win rates with a Tactician-only run.
+The forecast scores every foe's moves Greedy-style: once at the start of the
+Guardian's turn, then once more for each protective option it tries. A game
+takes a little longer than a Tactician's.
 
 ## Placeholders
 
-- Next round's foes count at half.
-- The save bonus: the ally's best hit × the kill weight (3), × 1.5 if it
-  hasn't acted.
+- Next round counts at half.
+- Save value: best hit × 3 + 25. Kill weight: 3.
+- The same tier counts as acting first.

@@ -98,8 +98,8 @@ Imports are relative to the importing file (`"../core/battle"`); tests use
 - `src/agents/`: one file per agent.
   - `agent.cx`: the `Agent` trait, `Turn`/`Plan`, and `ai_named`.
   - `console.cx`, and the AIs by generation: `random.cx`, `greedy.cx`,
-    `tactician.cx`, `strategist.cx`.
-  - `scoring.cx`: move scoring shared by Greedy and Tactician.
+    `tactician.cx`, `guardian.cx`.
+  - `scoring.cx`: move scoring shared by Greedy, Tactician and Guardian.
   - A new AI gets its own file and an entry in `ai_names`/`ai_named`.
 - `src/ui/`: `display.cx` and `term.cx` (the battle screen), `prompt.cx`
   (numbered console questions).

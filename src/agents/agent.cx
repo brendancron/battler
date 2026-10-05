@@ -10,7 +10,7 @@ import { Fighter } from "../content/roster";
 import { GreedyAgent } from "greedy";
 import { RandomAgent } from "random";
 import { TacticianAgent } from "tactician";
-import { StrategistAgent } from "strategist";
+import { GuardianAgent } from "guardian";
 
 /**
  * Whoever decides for one side: a person at the console, an AI, or later a
@@ -41,7 +41,7 @@ type Plan { slot: Slot, move: MoveDef, choice: Choice }
 type Turn { battle: Battle, slot: Slot, moves: List<MoveDef>, kits: List<List<List<MoveDef>>>, title: string }
 
 /** The names of the AIs, as `ai_named` knows them. */
-fn ai_names(): List<string> { return ["Greedy", "Random", "Tactician", "Strategist"]; }
+fn ai_names(): List<string> { return ["Greedy", "Random", "Tactician", "Guardian"]; }
 
 /** The AI with this name (any case), or None. */
 fn ai_named(name: string): Option<Agent> {
@@ -49,6 +49,6 @@ fn ai_named(name: string): Option<Agent> {
     if (wanted == "greedy") { var a: Agent = GreedyAgent; return Option.Some(a); }
     if (wanted == "random") { var a: Agent = RandomAgent; return Option.Some(a); }
     if (wanted == "tactician") { var a: Agent = TacticianAgent; return Option.Some(a); }
-    if (wanted == "strategist") { var a: Agent = StrategistAgent; return Option.Some(a); }
+    if (wanted == "guardian") { var a: Agent = GuardianAgent; return Option.Some(a); }
     return Option.None;
 }

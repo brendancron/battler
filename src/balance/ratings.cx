@@ -144,6 +144,9 @@ fn pair_name(a: string, b: string): string {
     return a + " + " + b;
 }
 
+/** A character under the AI that played it, as one name: "Fairy · Guardian". */
+fn ai_name(character: string, ai: string): string { return character + " · " + ai; }
+
 /** Every pair of different characters on a team: 6 for a team of 4. */
 fn pairs_of(team: List<string>): List<string> {
     var out: List<string> = [];
@@ -272,12 +275,14 @@ type Ledger {
     counts: Mixes,
     /** Character pairs on the same team (docs/balance.md#character-pairs). */
     pairs: Mixes,
+    /** Each character under each AI that played it (docs/balance.md#characters-by-ai). */
+    by_ai: Mixes,
 }
 
 fn new_ledger(): Ledger {
     return Ledger {
         games: 0, draws: 0, characters: new_pool(), archetypes: new_pool(), sides: new_pool(),
-        agents: new_pool(), mixes: new_mixes(), counts: new_mixes(), pairs: new_mixes()
+        agents: new_pool(), mixes: new_mixes(), counts: new_mixes(), pairs: new_mixes(), by_ai: new_mixes()
     };
 }
 
@@ -311,7 +316,8 @@ fn ledger_data(l: Ledger): Data {
         entry("games", Data.Int(l.games)), entry("draws", Data.Int(l.draws)),
         entry("characters", pool_data(l.characters)), entry("archetypes", pool_data(l.archetypes)),
         entry("sides", pool_data(l.sides)), entry("agents", pool_data(l.agents)),
-        entry("mixes", mixes_data(l.mixes)), entry("counts", mixes_data(l.counts)), entry("pairs", mixes_data(l.pairs))
+        entry("mixes", mixes_data(l.mixes)), entry("counts", mixes_data(l.counts)), entry("pairs", mixes_data(l.pairs)),
+        entry("by_ai", mixes_data(l.by_ai))
     ]);
 }
 
@@ -383,6 +389,7 @@ fn ledger_from(d: Data): Ledger {
         games: int_of(field(d, "games")), draws: int_of(field(d, "draws")),
         characters: pool_from(field(d, "characters")), archetypes: pool_from(field(d, "archetypes")),
         sides: pool_from(field(d, "sides")), agents: pool_from(field(d, "agents")),
-        mixes: mixes_from(field(d, "mixes")), counts: mixes_from(field(d, "counts")), pairs: mixes_from(field(d, "pairs"))
+        mixes: mixes_from(field(d, "mixes")), counts: mixes_from(field(d, "counts")), pairs: mixes_from(field(d, "pairs")),
+        by_ai: mixes_from(field(d, "by_ai"))
     };
 }

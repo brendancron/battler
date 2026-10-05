@@ -1,0 +1,135 @@
+import { Character, Effect, Tier } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { MoveDef, basic_attack, damage } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { Pick } from "battler/agents/scoring";
+import { guarded, danger, protection, forecast, rescue } from "battler/agents/guardian";
+import { invincible, shield, taunt, speed_up } from "battler/content/effects";
+import { fairy_ring, backstab, purify } from "battler/content/moves";
+import { backstab_power, purify_heal } from "battler/content/tuning";
+import { duel, who, slot, sturdy } from "support";
+
+// The Guardian (docs/guardian.md): it forecasts the foes' Greedy picks and
+// values protection by the danger it takes away.
+
+fn none(n: int): int { return 0; }
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+fn jab(power: int): MoveDef { return basic_attack("Jab", power); }
+
+fn target_of(p: Pick): int {
+    match p.choice {
+        Choice.Slots(slots) => { return slots[0].index; }
+        Choice.NoTarget => { return -1; }
+    }
+    return -1;
+}
+
+fn guardian_pick(b: Battle, user: Slot, kits: List<List<List<MoveDef>>>): Pick {
+    match guarded(b, user, kits[user.side][user.index], kits, 0, none) {
+        Option.Some(p) => { return p; }
+        Option.None => {}
+    }
+    assert(false, "no pick");
+    return Pick { move: kits[0][0][0], choice: Choice.NoTarget, score: 0 };
+}
+
+/** What putting `fx` on the character in `s` is worth to the character in `user`. */
+fn worth(b: Battle, user: Slot, kits: List<List<List<MoveDef>>>, s: Slot, fx: Effect): int {
+    var me = who(b, user);
+    match protection(b, me, kits, danger(b, me, kits), who(b, s), fx) {
+        Option.Some(v) => { return v; }
+        Option.None => {}
+    }
+    assert(false, "the forecast values it");
+    return 0;
+}
+
+/** A Fairy-like protector, a frail ally a Backstab would knock out, and a tough one; one foe with Backstab. */
+fn threatened(): Battle {
+    var b = duel(["Protector", "Frail", "Tough"], ["Foe"]);
+    who(b, slot(0, 1)).hp = damage(who(b, slot(1, 0)), who(b, slot(0, 1)), backstab_power()) - 5;
+    sturdy(who(b, slot(0, 2)));
+    return b;
+}
+
+fn threatened_kits(): List<List<List<MoveDef>>> {
+    return [[[fairy_ring()], [jab(30)], [jab(10)]], [[backstab()]]];
+}
+
+@test
+fn the_forecast_puts_each_foe_on_its_greedy_target() {
+    var b = threatened();
+    var hits = forecast(b, who(b, slot(0, 0)), threatened_kits(), true);
+    assert(hits.len() == 1 && same(hits[0].target, who(b, slot(0, 1))), "the Backstab goes for the knockout");
+}
+
+@test
+fn the_forecast_respects_a_taunt() {
+    var b = threatened();
+    who(b, slot(0, 2)).effects.push(taunt(2));
+    var hits = forecast(b, who(b, slot(0, 0)), threatened_kits(), true);
+    assert(hits.len() == 1 && same(hits[0].target, who(b, slot(0, 2))), "the taunter takes it");
+}
+
+@test
+fn invincible_goes_on_the_ally_about_to_be_knocked_out() {
+    var b = threatened();
+    assert(target_of(guardian_pick(b, slot(0, 0), threatened_kits())) == 1, "the frail ally");
+    assert(worth(b, slot(0, 0), threatened_kits(), slot(0, 1), invincible()) > worth(b, slot(0, 0), threatened_kits(), slot(0, 2), invincible()), "worth more than on the tough one");
+}
+
+@test
+fn invincible_is_worth_nothing_once_every_foe_has_acted() {
+    var b = threatened();
+    who(b, slot(1, 0)).acted = true;
+    assert(worth(b, slot(0, 0), threatened_kits(), slot(0, 1), invincible()) == 0, "nobody left to hit this round");
+}
+
+@test
+fn a_shield_that_saves_nobody_is_worth_no_more_than_its_size() {
+    var b = duel(["Protector"], ["Foe"]);
+    sturdy(who(b, slot(0, 0)));
+    var kits = [[[jab(10)]], [[jab(20)]]];
+    var v = worth(b, slot(0, 0), kits, slot(0, 0), shield(30));
+    assert(v > 0 && v <= 30, "the hits it soaks, at most 30");
+}
+
+@test
+fn a_shield_that_saves_an_ally_is_worth_more_than_its_size() {
+    var b = threatened();
+    assert(worth(b, slot(0, 0), threatened_kits(), slot(0, 1), shield(10)) > 10, "a save is worth more than the HP");
+}
+
+@test
+fn a_taunt_is_worth_the_hits_it_pulls_off_a_frail_ally() {
+    var b = threatened();
+    var kits = threatened_kits();
+    assert(worth(b, slot(0, 0), kits, slot(0, 2), taunt(2)) > 0, "the tough ally takes the Backstab instead");
+    var safe = duel(["Protector", "Ally", "Tough"], ["Foe"]);
+    sturdy(who(safe, slot(0, 1)));
+    sturdy(who(safe, slot(0, 2)));
+    assert(worth(safe, slot(0, 0), kits, slot(0, 2), taunt(2)) < worth(b, slot(0, 0), kits, slot(0, 2), taunt(2)), "worth less when nobody would fall");
+}
+
+@test
+fn speed_up_is_worth_the_action_of_an_ally_that_would_fall_first() {
+    var b = threatened();
+    who(b, slot(0, 1)).tier = Tier.Slow;
+    who(b, slot(1, 0)).tier = Tier.Slow;
+    var kits = threatened_kits();
+    assert(worth(b, slot(0, 0), kits, slot(0, 1), speed_up()) > 0, "it acts before the Backstab");
+    assert(worth(b, slot(0, 0), kits, slot(0, 2), speed_up()) == 0, "nothing for an ally in no danger");
+}
+
+@test
+fn a_heal_that_lifts_an_ally_out_of_reach_gets_a_bonus() {
+    var b = threatened();
+    var kits = [[[purify()], [jab(30)], [jab(10)]], [[backstab()]]];
+    var me = who(b, slot(0, 0));
+    var baseline = danger(b, me, kits);
+    assert(purify_heal() > 5, "enough to survive the Backstab");
+    assert(rescue(b, slot(0, 0), purify(), at(slot(0, 1)), kits, baseline) > 0, "the frail ally is saved");
+    assert(rescue(b, slot(0, 0), purify(), at(slot(0, 2)), kits, baseline) == 0, "nothing for an ally in no danger");
+}
