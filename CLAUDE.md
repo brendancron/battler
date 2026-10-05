@@ -45,7 +45,7 @@ characters, speed tiers, targeting, effects and draft. The design lives in `docs
 - **Design in `docs/` before building.** When the user describes a mechanic or
   character, write it into the matching doc (`characters.md`, `effects.md`,
   `speed.md`, `targeting.md`, `events.md`, `moves.md`, `draft.md`, `fatigue.md`,
-  `balance.md`, ...). Build it when asked, with tests.
+  `balance.md`, `web.md`, ...). Build it when asked, with tests.
 
 ## Commands
 

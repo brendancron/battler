@@ -5,6 +5,12 @@ from, and the question is removed from here.
 
 ## Open
 
+- **Move and passive descriptions in the web UI** ([web.md](web.md#the-page)).
+  The draft cards and move buttons would show what each move does, but that
+  text lives only in `characters.md`; the code has names, cooldowns and
+  shapes. Should the page show names only, should each `MoveDef` and passive
+  get a short description in the code, or should the page pull the text from
+  the docs?
 - **More ways to remove corpses** ([fainting.md](fainting.md#removing-corpses)).
   The Cleric's Resurrection (v0.0.3) made bringing allies back common, and
   only the Grim Reaper's Soul Harvest, the Necromancer's Wither and Raise
