@@ -5,7 +5,7 @@ import { MoveDef, use_move, damage } from "battler/core/move";
 import { Choice, has_targets } from "battler/core/target";
 import { start_round, begin_phase, next_actor } from "battler/core/order";
 import { sanguine, heal_block, shield, vigil } from "battler/content/effects";
-import { wither, raise_dead, puppeteer, final_offering, bite, hemorrhage, ancestral_call } from "battler/content/moves";
+import { wither, raise_dead, puppeteer, final_offering, bite, hemorrhage, resurrection } from "battler/content/moves";
 import { Fighter, jester, cleric } from "battler/content/roster";
 import { moves_at } from "battler/game/game";
 import {
@@ -61,7 +61,7 @@ fn a_raised_corpse_cant_be_resurrected() {
     var b = duel(["Necromancer", "Ally", "Shaman"], ["Foe"]);
     add(b, [Action.KnockOut(who(b, slot(0, 1)))]);
     use_move(engine(), b, slot(0, 0), raise_dead(), at(slot(0, 1)));
-    assert(!use_move(engine(), b, slot(0, 2), ancestral_call(), at(slot(0, 1))), "nothing to bring back");
+    assert(!use_move(engine(), b, slot(0, 2), resurrection(), at(slot(0, 1))), "nothing to bring back");
 }
 
 @test

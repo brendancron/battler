@@ -1,6 +1,6 @@
 import {
     Pool, Rating, new_pool, rating, expected, k_factor, side_elo, record, recenter,
-    Mixes, new_mixes, mix, credit, score, mix_name, count_name, fixed, pool_table, mix_table, ranked, pair_name, pairs_of, ai_name, length_name, ends_table,
+    Mixes, new_mixes, mix, credit, score, mix_name, count_name, fixed, pool_table, mix_table, ranked, pair_name, pairs_of, ai_name, length_name, credit_matchup, ends_table,
     Ledger, new_ledger, ledger_data, ledger_from
 } from "battler/balance/ratings";
 import { write_json, parse_json } from "std/encoding/Json";
@@ -110,6 +110,7 @@ fn a_ledger_survives_a_round_trip_through_json() {
     credit(l.pairs, "Fairy + Warlock", false, 0.25);
     credit(l.by_ai, ai_name("Fairy", "Guardian"), true, 0.5);
     credit(l.lengths, length_name("Fairy", 7), false, 0.5);
+    credit_matchup(l.counters, "Fairy", "Assassin", true, 0.5);
     var back = ledger_from(parse_json(write_json(ledger_data(l))));
     assert(near(score(mix(back.pairs, "Fairy + Warlock")), -25.0, 0.001), "pair score");
     assert(back.games == 8 && back.draws == 1, "totals");
@@ -118,6 +119,7 @@ fn a_ledger_survives_a_round_trip_through_json() {
     assert(near(score(mix(back.mixes, "Tank, Warrior")), 60.0, 0.001), "mix score");
     assert(mix(back.by_ai, "Fairy · Guardian").wins == 1, "characters by AI");
     assert(mix(back.lengths, "Fairy @ 7").games == 1, "game lengths");
+    assert(mix(back.counters, "Assassin vs Fairy").games == 1, "counters");
     assert(back.sides.ratings.len() == 0 && back.counts.mixes.len() == 0, "empty parts stay empty");
 }
 
@@ -208,4 +210,22 @@ fn a_character_under_an_ai_reads_as_one_name() {
 @test
 fn a_name_at_a_game_length_reads_as_one_name() {
     assert(length_name("Fairy", 7) == "Fairy @ 7" && length_name("All", 12) == "All @ 12", "name, then rounds");
+}
+
+@test
+fn a_matchup_is_kept_once_from_the_first_characters_side() {
+    var all = new_mixes();
+    credit_matchup(all, "Fairy", "Assassin", true, 0.25);
+    credit_matchup(all, "Assassin", "Fairy", true, 0.5);
+    var m = mix(all, "Assassin vs Fairy");
+    assert(m.games == 2 && m.wins == 1, "both games, one Assassin win");
+    assert(near(score(m), 100.0 * ((0.0 - 0.75) + (1.0 - 0.5)) / 2.0, 0.001), "the Assassin's actual less expected");
+    assert(all.mixes.len() == 1, "one entry for the pair");
+}
+
+@test
+fn a_character_against_itself_isnt_a_matchup() {
+    var all = new_mixes();
+    credit_matchup(all, "Fairy", "Fairy", true, 0.5);
+    assert(all.mixes.len() == 0, "nothing counted");
 }

@@ -3,17 +3,17 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { Choice } from "battler/core/target";
 import { use_move, damage, hit } from "battler/core/move";
-import { energize, taunt, keen_eye, regen, heal_block, predator, predator_multiplier, shield, barrier, poison } from "battler/content/effects";
+import { energize, taunt, keen_eye, regen, heal_block, predator, predator_multiplier, shield, barrier, poison, panacea } from "battler/content/effects";
 import {
     cleave, aimed_shot, hunters_mark, smite, guard, lay_on_hands, prayer, purify, sanctuary, brimstone, hex_move,
-    acid_flask, greater_health_potion_move, energize_move, disarming_palm, crippling_blow, flurry_of_blows, reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, backstab, execution, ancestral_call
+    acid_flask, greater_health_potion_move, energize_move, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows, reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, backstab, execution, resurrection
 } from "battler/content/moves";
 import {
     cleave_power, aimed_shot_power, smite_power, guard_rounds, lay_on_hands_heal, prayer_heal, purify_heal, sanctuary_heal,
-    brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, disarming_palm_power,
+    brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, panacea_mist_heal, disarming_palm_power,
     crippling_blow_power, crippling_blow_turns, flurry_power, flurry_picks, reap_power, reap_wound_divisor,
     soul_siphon_power, soul_siphon_drain_percent, writhing_depths_power, shield_bash_power, bulwark_shield,
-    healing_rain_regen, healing_rain_rounds, backstab_power, execution_power, ancestral_call_percent, predator_line_percent
+    healing_rain_regen, healing_rain_rounds, backstab_power, execution_power, resurrection_percent, predator_line_percent
 } from "battler/content/tuning";
 import { duel, who, slot, logged, has_effect, sturdy } from "support";
 
@@ -49,7 +49,7 @@ fn use(b: Battle, user: Slot, move: string, choice: Choice): bool {
     if (move == "healing_rain") { m = healing_rain(); }
     if (move == "backstab") { m = backstab(); }
     if (move == "execution") { m = execution(); }
-    if (move == "ancestral_call") { m = ancestral_call(); }
+    if (move == "resurrection") { m = resurrection(); }
     return use_move(engine(), b, user, m, choice);
 }
 
@@ -536,12 +536,12 @@ fn healing_rain_regens_the_team_for_its_rounds() {
 }
 
 @test
-fn ancestral_call_brings_a_fallen_ally_back() {
+fn resurrection_brings_a_fallen_ally_back() {
     var b = duel(["Shaman", "B"], ["C"]);
     perform(engine(), b, "test", [Action.Damage(who(b, slot(0, 1)), Option.None, 200, false)]);
-    assert(use(b, slot(0, 0), "ancestral_call", at(slot(0, 1))), "used");
-    assert(!who(b, slot(0, 1)).fainted() && who(b, slot(0, 1)).hp == ancestral_call_percent(), "its percent of 100 max HP");
-    assert(logged(b, "Shaman used Ancestral Call on B!"), "names who it called back");
+    assert(use(b, slot(0, 0), "resurrection", at(slot(0, 1))), "used");
+    assert(!who(b, slot(0, 1)).fainted() && who(b, slot(0, 1)).hp == resurrection_percent(), "its percent of 100 max HP");
+    assert(logged(b, "Shaman used Resurrection on B!"), "names who it called back");
 }
 
 // Assassin
@@ -633,4 +633,24 @@ fn predator_makes_execution_chains_likelier() {
     assert(boosted > d, "Predator applies at this HP");
     use(b, slot(0, 0), "execution", Choice.NoTarget);
     assert(who(b, slot(1, 0)).hp == 0 && who(b, slot(1, 1)).hp == 0, "both knocked out, where plain hits would stop at the first");
+}
+
+@test
+fn panacea_mist_heals_every_ally_and_hands_out_a_panacea() {
+    var b = duel(["Alchemist", "Ally"], ["Foe"]);
+    var alchemist = who(b, slot(0, 0));
+    var ally = who(b, slot(0, 1));
+    ally.take(50);
+    perform(engine(), b, "test", [Action.AddEffect(alchemist, panacea())]);
+    assert(use_move(engine(), b, slot(0, 0), panacea_mist(), Choice.NoTarget), "used");
+    assert(ally.hp == 50 + panacea_mist_heal(), "healed");
+    match ally.find_effect("Panacea") {
+        Option.Some(e) => { assert(e.charges == 1, "one Panacea"); }
+        Option.None => { assert(false, "a Panacea"); }
+    }
+    match alchemist.find_effect("Panacea") {
+        Option.Some(e) => { assert(e.charges == 2, "on top of the one it held"); }
+        Option.None => { assert(false, "still holding"); }
+    }
+    assert(!has_effect(who(b, slot(1, 0)), "Panacea"), "not the foe");
 }

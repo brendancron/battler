@@ -35,8 +35,8 @@ Set aside on purpose; can be added without changing what exists.
 - **Warlock passive and third move** ([characters.md](characters.md#warlock)).
   It has Writhing Depths (it was the Pyromancer's Inferno) and The Final
   Offering.
-- **Shaman passive and third move** ([characters.md](characters.md)). It has
-  Healing Rain and Ancestral Call for now.
+- **Shaman passive** ([characters.md](characters.md)). It has Healing Rain,
+  Spirit Link and Totem.
 - **Arranging slots after the draft** ([draft.md](draft.md#slots)). For now a
   team's slots follow its pick order.
 - **Choosing home or away** ([draft.md](draft.md#home-and-away)). For now a coin
@@ -44,8 +44,6 @@ Set aside on purpose; can be added without changing what exists.
 - **Balance checker progress back on stdout** (src/balance.cx). Its progress
   lines use `printerr` because `print` isn't flushed until exit
   (CronyxLang#138). Once that's fixed, change `progress()` back to `print`.
-- **Bard passive** ([characters.md](characters.md#bard)). It has Allegro,
-  Largo and Crescendo.
 - **Fairy third move** ([characters.md](characters.md#fairy)). It has Fairy
   Ring and Pixie Dust.
 - **Necromancer passive and third move** ([characters.md](characters.md#necromancer)).
@@ -58,8 +56,6 @@ Set aside on purpose; can be added without changing what exists.
   It has Thunderstorm and Chain Lightning, and no passive for now.
 - **Ninja second and third moves** ([characters.md](characters.md#ninja)). It
   has Shuriken for now. Ideas: Smoke Bomb, Shadow Strike, Caltrops.
-- **Swashbuckler passive, second and third moves** ([characters.md](characters.md#swashbuckler)).
-  It has Plunder for now.
 - **Jester passive and third move** ([characters.md](characters.md#jester)). It
   has Trick Blade and Puppeteer for now.
 - **Assassin third move** ([characters.md](characters.md#assassin)). It has

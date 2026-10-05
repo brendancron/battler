@@ -44,6 +44,8 @@ type Character {
     cooldowns: List<Cooldown>,
     /** Whether a fainted character's corpse is still on the field, so it can be resurrected. See docs/fainting.md. */
     corpse: bool,
+    /** Everyone on its side, itself included: the battle's own list, shared, so auras reach whoever joins. Set by `place` and Summon. */
+    allies: List<Character>,
 }
 
 type Cooldown { move: string, turns: int }
@@ -79,7 +81,16 @@ type Cooldown { move: string, turns: int }
  * and lose no max HP (Invincible). `hit_cap` caps any one instance of damage
  * on the owner at that percent of its max HP (0 for none). An `unstealable`
  * buff can still be dispelled but not stolen. `passive` marks a character's
- * passive, which a puppet keeps (docs/summons.md).
+ * passive, which a puppet keeps (docs/summons.md). An `aura` effect isn't
+ * a buff on its owner: its `scale_attack` and `scale_defense` reach every
+ * standing character on the owner's side, the owner included, while the
+ * owner stands (docs/effects.md#auras). A `takes_the_fall` effect makes
+ * its owner fall in place of the first ally a hit would knock out, the ally
+ * keeping the owner's HP (the Fairy's Fae Bargain). `partner` is the
+ * character a link ties the owner to (the Shaman's Spirit Link): a
+ * `redirect_damage` percent of the owner's damage goes to the partner
+ * instead, and a `redirect_healing` percent of its healing, while the partner
+ * holds the other end (an effect of the same kind).
  */
 type Effect {
     kind: string,
@@ -105,6 +116,11 @@ type Effect {
     hit_cap: int,
     unstealable: bool,
     passive: bool,
+    aura: bool,
+    takes_the_fall: bool,
+    partner: List<Character>,
+    redirect_damage: int,
+    redirect_healing: int,
     should: (Character, Effect, Event) -> bool,
     react: (Character, Effect, Event) -> List<Action>,
     merge: (Effect, Effect) -> unit,
@@ -188,7 +204,7 @@ type Action {
 }
 
 fn character(name: string, attack: int, defense: int, tier: Tier): Character {
-    return Character { name: name, team: -1, hp: max_hp(), base_max_hp: max_hp(), lost_max_hp: 0, attack: attack, defense: defense, tier: tier, acted: false, effects: [], cooldowns: [], corpse: false };
+    return Character { name: name, team: -1, hp: max_hp(), base_max_hp: max_hp(), lost_max_hp: 0, attack: attack, defense: defense, tier: tier, acted: false, effects: [], cooldowns: [], corpse: false, allies: [] };
 }
 
 /** The value after `steps` ups (× 1.5 each) or downs (÷ 1.5 each). */
@@ -244,9 +260,33 @@ impl Character {
         for (e in self.effects) { steps = steps + e.attack_steps; }
         var out = stepped(self.attack, steps);
         for (e in self.effects) {
-            if (!(follow_up && e.first_hit_only)) {
+            if (!e.aura && !(follow_up && e.first_hit_only)) {
                 var scale = e.scale_attack;
                 out = scale(self, e, out);
+            }
+        }
+        for (e in self.team_auras()) {
+            var scale = e.scale_attack;
+            out = scale(self, e, out);
+        }
+        return out;
+    }
+
+    /**
+     * The auras that reach it: those on standing characters of its side,
+     * itself included, one of each kind (a second totem's doesn't stack).
+     */
+    fn team_auras(self): List<Effect> {
+        var out: List<Effect> = [];
+        for (a in self.allies) {
+            if (a.fainted()) { continue; }
+            for (e in a.effects) {
+                if (!e.aura) { continue; }
+                var seen = false;
+                for (o in out) {
+                    if (o.kind == e.kind) { seen = true; }
+                }
+                if (!seen) { out.push(e); }
             }
         }
         return out;
@@ -257,6 +297,11 @@ impl Character {
         for (e in self.effects) { steps = steps + e.defense_steps; }
         var out = stepped(self.defense, steps);
         for (e in self.effects) {
+            if (e.aura) { continue; }
+            var scale = e.scale_defense;
+            out = scale(self, e, out);
+        }
+        for (e in self.team_auras()) {
             var scale = e.scale_defense;
             out = scale(self, e, out);
         }

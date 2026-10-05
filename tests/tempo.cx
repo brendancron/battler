@@ -4,9 +4,9 @@ import { engine, perform, announce } from "battler/core/engine";
 import { use_move } from "battler/core/move";
 import { Choice } from "battler/core/target";
 import { start_round, begin_phase, next_actor } from "battler/core/order";
-import { speed_up, speed_down } from "battler/content/effects";
-import { allegro, largo, crescendo_move } from "battler/content/moves";
-import { crescendo_bonus_percent, crescendo_rounds, largo_rounds } from "battler/content/tuning";
+import { speed_up, speed_down, crescendo, minion_marker } from "battler/content/effects";
+import { allegro, largo } from "battler/content/moves";
+import { crescendo_bonus_percent, largo_rounds } from "battler/content/tuning";
 import { duel, who, slot, has_effect } from "support";
 
 // The Bard: speed up and speed down, Allegro, Largo and Crescendo (docs/characters.md#bard).
@@ -98,19 +98,51 @@ fn largo_slows_a_foe_for_its_next_turn_and_lowers_its_attack() {
     assert(!has_effect(foe, "Attack down"), "then it's gone");
 }
 
+/** A Bard with Crescendo and an ally, against two foes and a foe minion. */
+fn with_crescendo(): Battle {
+    var b = duel(["Bard", "Ally"], ["Foe", "Other", "Minion"]);
+    who(b, slot(0, 0)).effects.push(crescendo());
+    who(b, slot(1, 2)).effects.push(minion_marker(true));
+    return b;
+}
+
+fn knock_out(b: Battle, s: Slot) { add(b, [Action.Damage(who(b, s), Option.None, 1000, false)]); }
+
+fn raised(stacks: int): int { return 100 * (100 + crescendo_bonus_percent() * stacks) / 100; }
+
 @test
-fn crescendo_raises_every_allys_attack_and_defense_for_its_rounds() {
-    var b = duel(["Bard", "Ally"], ["Foe"]);
-    use_move(engine(), b, slot(0, 0), crescendo_move(), Choice.NoTarget);
-    var raised = 100 * (100 + crescendo_bonus_percent()) / 100;
+fn crescendo_starts_with_no_stacks() {
+    var b = with_crescendo();
+    assert(who(b, slot(0, 1)).current_attack() == 100, "nothing yet");
+}
+
+@test
+fn each_fallen_foe_adds_a_stack_to_the_whole_team() {
+    var b = with_crescendo();
+    knock_out(b, slot(1, 0));
     for (s in [slot(0, 0), slot(0, 1)]) {
-        assert(who(b, s).current_attack() == raised && who(b, s).current_defense() == raised, "attack and defense up");
+        assert(who(b, s).current_attack() == raised(1) && who(b, s).current_defense() == raised(1), "one stack, attack and defense");
     }
-    assert(who(b, slot(1, 0)).current_attack() == 100, "not the foe");
-    var n = 0;
-    while (n < crescendo_rounds()) {
-        announce(engine(), b, EventKind.RoundEnded);
-        n = n + 1;
-    }
-    assert(who(b, slot(0, 1)).current_attack() == 100, "it ends");
+    assert(who(b, slot(1, 1)).current_attack() == 100, "not the foes");
+    knock_out(b, slot(1, 1));
+    assert(who(b, slot(0, 1)).current_attack() == raised(2), "two stacks");
+}
+
+@test
+fn fallen_minions_and_allies_add_no_stack() {
+    var b = with_crescendo();
+    knock_out(b, slot(1, 2));
+    assert(who(b, slot(0, 1)).current_attack() == 100, "a minion isn't a kill");
+    var c = duel(["Bard", "Ally", "Third"], ["Foe"]);
+    who(c, slot(0, 0)).effects.push(crescendo());
+    knock_out(c, slot(0, 1));
+    assert(who(c, slot(0, 2)).current_attack() == 100, "nor is an ally");
+}
+
+@test
+fn crescendo_stops_while_the_bard_is_down() {
+    var b = with_crescendo();
+    knock_out(b, slot(1, 0));
+    knock_out(b, slot(0, 0));
+    assert(who(b, slot(0, 1)).current_attack() == 100, "the aura is gone with the Bard");
 }

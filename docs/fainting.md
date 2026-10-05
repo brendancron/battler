@@ -16,7 +16,7 @@ there. It comes back standing at a percentage of its max HP that depends on
 what resurrected it, and its corpse is gone, since the character is using it
 again.
 
-Resurrection comes from a move (the Shaman's Ancestral Call) or from the
+Resurrection comes from a move (the Cleric's Resurrection) or from the
 Paladin's Last Rites when it falls ([characters.md](characters.md#paladin)).
 
 What it comes back with:

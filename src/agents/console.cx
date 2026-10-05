@@ -48,6 +48,7 @@ fn pick_slot(battle: Battle, slots: List<Slot>, question: string): Option<Choice
 fn pick_choice(battle: Battle, user: Slot, move: MoveDef): Option<Choice> {
     match move.shape {
         TargetShape.SingleFoe => { return pick_slot(battle, battle.targetable_foes(user), move.name + " which foe?"); }
+        TargetShape.AnyFoe => { return pick_slot(battle, battle.foe_slots(user), move.name + " which foe?"); }
         TargetShape.SingleAlly => { return pick_slot(battle, battle.ally_slots(user), move.name + " which ally?"); }
         TargetShape.AllyCorpse => { return pick_slot(battle, battle.corpse_slots(user.side), move.name + " which fallen ally?"); }
         TargetShape.FoeCorpse => { return pick_slot(battle, battle.corpse_slots(1 - user.side), move.name + " which fallen foe?"); }

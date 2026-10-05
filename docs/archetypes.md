@@ -62,5 +62,5 @@ Each character is listed under its primary archetype only.
 | Construct   | Tank      | Fast     |
 | Stormbringer | Mage     | Fast     |
 | Ninja       | Rogue     | Fast     |
-| Swashbuckler | Rogue    | Fast     |
+| Swashbuckler | Warrior  | Fast     |
 | Jester      | Rogue     | Fast     |

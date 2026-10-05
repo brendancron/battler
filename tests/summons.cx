@@ -4,7 +4,7 @@ import { engine, perform, announce } from "battler/core/engine";
 import { MoveDef, use_move, usable, turn_over } from "battler/core/move";
 import { Choice, has_targets } from "battler/core/target";
 import { phases, start_round, begin_phase, next_actor } from "battler/core/order";
-import { totem_move, brimstone, prayer, cleave } from "battler/content/moves";
+import { totem_move, new_totem, brimstone, prayer, cleave } from "battler/content/moves";
 import { totem_hp, totem_bonus_percent, totem_cooldown } from "battler/content/tuning";
 import { duel, who, slot, logged, has_effect } from "support";
 
@@ -34,8 +34,38 @@ fn the_team_gets_more_attack_and_defense() {
     var ally = who(b, slot(0, 1));
     var blessed = 100 * (100 + totem_bonus_percent()) / 100;
     assert(ally.current_attack() == blessed && ally.current_defense() == blessed, "the bonus on both");
-    assert(has_effect(shaman, "Totem's Blessing"), "the Shaman too");
-    assert(!has_effect(who(b, slot(1, 0)), "Totem's Blessing"), "not the foe");
+    assert(shaman.current_attack() == blessed, "the Shaman too");
+    assert(who(b, slot(1, 0)).current_attack() == 100, "not the foe");
+}
+
+@test
+fn the_blessing_is_an_aura_on_the_totem_not_a_buff_on_each_ally() {
+    var b = with_totem();
+    assert(has_effect(totem(b), "Totem's Blessing"), "on the totem");
+    assert(!has_effect(who(b, slot(0, 0)), "Totem's Blessing") && !has_effect(who(b, slot(0, 1)), "Totem's Blessing"), "not on the allies");
+}
+
+@test
+fn the_aura_reaches_a_minion_summoned_after_the_totem() {
+    var b = with_totem();
+    perform(engine(), b, "test", [Action.Summon(who(b, slot(0, 1)), character("Late", 100, 100, Tier.Normal))]);
+    var late = who(b, slot(0, 3));
+    assert(late.current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "blessed on arrival");
+}
+
+@test
+fn the_aura_cant_be_dispelled_or_stolen() {
+    var b = with_totem();
+    perform(engine(), b, "test", [Action.Dispel(totem(b)), Action.Steal(totem(b), who(b, slot(1, 0)))]);
+    assert(who(b, slot(0, 1)).current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "still blessed");
+    assert(who(b, slot(1, 0)).current_attack() == 100, "the foe took nothing");
+}
+
+@test
+fn two_of_the_same_aura_dont_stack() {
+    var b = with_totem();
+    perform(engine(), b, "test", [Action.Summon(who(b, slot(0, 1)), new_totem(who(b, slot(0, 1))))]);
+    assert(who(b, slot(0, 1)).current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "one blessing");
 }
 
 @test
@@ -121,5 +151,5 @@ fn an_ally_resurrected_while_the_totem_stands_gets_the_blessing() {
     var b = with_totem();
     var ally = who(b, slot(0, 1));
     perform(engine(), b, "test", [Action.Damage(ally, Option.None, 200, false), Action.Resurrect(ally, 50)]);
-    assert(!ally.fainted() && has_effect(ally, "Totem's Blessing"), "blessed again");
+    assert(!ally.fainted() && ally.current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "blessed again");
 }

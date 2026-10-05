@@ -222,6 +222,31 @@ Moves can act on the effects themselves:
 Some effects won't make sense to cleanse, dispel or steal, so effects will need
 a way to opt out of some or all of these.
 
+## Auras
+
+An **aura** is an effect on one character that changes the stats of its whole
+side. Nobody else gets a buff: each character's attack and defense are worked
+out from its own effects, then from every aura on a standing character of
+its side, itself included. Totem's Blessing is an aura on the Shaman's totem
+([summons.md](summons.md#the-shamans-totem)), and the Bard's Crescendo one on
+the Bard ([characters.md](characters.md#bard)).
+
+- **It lives and ends with its owner.** While the owner stands, the aura
+  reaches everyone on its side, including anyone who joins later (a
+  resurrected ally, a skeleton, a puppet). When the owner falls, it stops,
+  with nothing to take off anyone.
+- **It isn't a buff on the allies,** so nothing done to an ally touches it:
+  dispelling or stealing an ally's buffs leaves the aura, and a cleanse has
+  nothing to do with it. To end it, deal with its owner.
+- **The aura itself is immune** on its owner: it can't be dispelled or
+  stolen. A Swashbuckler can't Plunder the blessing off the totem.
+- **The same aura doesn't stack.** Two totems on one side give the bonus
+  once. Different auras would multiply, like other multipliers.
+- It applies after the stat steps and the owner's own multipliers, and
+  multiplies with them, as the blessing always has.
+
+It shows on its owner as "Totem's Blessing (aura)".
+
 ## Passives
 
 A character's passive ([characters.md](characters.md)) is a buff on it from

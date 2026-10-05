@@ -23,7 +23,7 @@ import {
 } from "balance/logs";
 import {
     Pool, Rating, new_pool, side_elo, expected, record, ranked, fixed, Mixes, new_mixes, credit, mix_name, count_name,
-    pool_table, ends_table, pairs_of, ai_name, length_name, Ledger, new_ledger, ledger_data, ledger_from
+    pool_table, ends_table, pairs_of, ai_name, length_name, credit_matchup, Ledger, new_ledger, ledger_data, ledger_from
 } from "balance/ratings";
 import { versions_root, version_file, compare_template, compare_page, versions_path, versions_script, compare_table } from "balance/versions";
 
@@ -563,6 +563,9 @@ fn tally(r: Run, g: Game) {
         for (p in pairs_of(g.away)) { credit(l.pairs, p, !home_won, 1.0 - home_expected); }
         for (c in g.home) { credit(l.by_ai, ai_name(c, g.home_ai), home_won, home_expected); }
         for (c in g.away) { credit(l.by_ai, ai_name(c, g.away_ai), !home_won, 1.0 - home_expected); }
+        for (h in g.home) {
+            for (a in g.away) { credit_matchup(l.counters, h, a, home_won, home_expected); }
+        }
         for (c in g.home) { credit(l.lengths, length_name(c, g.rounds), home_won, home_expected); }
         for (c in g.away) { credit(l.lengths, length_name(c, g.rounds), !home_won, 1.0 - home_expected); }
     }
@@ -677,6 +680,8 @@ fn report(r: Run) {
     for (line in pool_table("SIDES", l.sides)) { print(line); }
     print("");
     for (line in ends_table("CHARACTER PAIRS WITH " + str(pair_min_games()) + "+ GAMES (best and worst " + str(pair_ends()) + ")", l.pairs, pair_min_games(), pair_ends())) { print(line); }
+    print("");
+    for (line in ends_table("COUNTERS WITH " + str(pair_min_games()) + "+ GAMES (the first character's score against the second)", l.counters, pair_min_games(), pair_ends())) { print(line); }
     if (l.agents.ratings.len() > 0) {
         print("");
         for (line in pool_table("AGENTS", l.agents)) { print(line); }

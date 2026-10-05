@@ -1,9 +1,10 @@
 import { Character, Effect, Event, EventKind, Action, trigger_id, in_chain, max_hp } from "../core/creature";
 import { pow } from "../core/maths";
+import { damage } from "../core/move";
 import {
     rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, totem_bonus_percent, totem_cooldown,
-    predator_bonus_percent, predator_line_percent, shield_decay, crescendo_bonus_percent, faerie_light_heal, sanguine_percent, chill_rounds, ironclad_cap_percent,
-    puppeteer_cooldown
+    predator_bonus_percent, predator_line_percent, shield_decay, crescendo_bonus_percent, sanguine_percent, chill_rounds, ironclad_cap_percent,
+    puppeteer_cooldown, riposte_power, spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds
 } from "tuning";
 
 fn never(owner: Character, fx: Effect, event: Event): bool { return false; }
@@ -25,7 +26,7 @@ fn unscaled_hit(owner: Character, fx: Effect, target: Character, amount: int): i
 fn base(kind: string, buff: bool): Effect {
     return Effect {
         kind: kind, buff: buff, immune: false, power: 0, rounds: 0, attack_steps: 0, defense_steps: 0, targeting: 0, unrestricted: false, charges: 0, skips: false, first_hit_only: false, absorbs: false, blocks_hits: false, silences: false, blocks_healing: false, minion: false, idle: false,
-        tier_shift: 0, prevents_damage: false, hit_cap: 0, unstealable: false, passive: false,
+        tier_shift: 0, prevents_damage: false, hit_cap: 0, unstealable: false, passive: false, aura: false, takes_the_fall: false, partner: [], redirect_damage: 0, redirect_healing: 0,
         should: never, react: nothing, merge: keep, scale_attack: unscaled, scale_defense: unscaled, scale_hit: unscaled_hit, label: plain_label,
         intercept: let_through
     };
@@ -199,6 +200,128 @@ fn retaliate(damage: int): Effect {
     e.should = retaliate_should;
     e.react = retaliate_react;
     e.label = retaliate_label;
+    return e;
+}
+
+// Shaman, Spirit Link: a buff on the Shaman and a debuff on a foe, each naming the other. While both
+// hold, part of the Shaman's damage goes to the foe and part of the foe's healing to the Shaman (the
+// engine does the sharing). When either end goes (dispelled, cleansed, worn off), the other goes too.
+
+/** It counts down its rounds like any timed effect, and ends when the partner's end goes. */
+fn link_end_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.EffectRemoved(c, e) => { return fx.partner.len() > 0 && same(c, fx.partner[0]) && e.kind == fx.kind && fresh(owner, fx, event); }
+        _ => { return at_round_end(owner, fx, event); }
+    }
+    return false;
+}
+
+fn link_end_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    match event.kind {
+        EventKind.EffectRemoved(_, _) => { return [Action.RemoveEffect(owner, fx.kind)]; }
+        _ => { return countdown_react(owner, fx, event); }
+    }
+    return [];
+}
+
+fn link_label(owner: Character, fx: Effect): string {
+    var who = "";
+    if (fx.partner.len() > 0) { who = " with " + fx.partner[0].name; }
+    return fx.kind + who + " (" + str(fx.rounds) + ")";
+}
+
+fn spirit_link_end(buff: bool, partner: Character): Effect {
+    var e = timed(base("Spirit Link", buff), spirit_link_rounds());
+    e.partner = [partner];
+    e.should = link_end_should;
+    e.react = link_end_react;
+    e.label = link_label;
+    return e;
+}
+
+/** The Shaman's end: part of its damage goes to the foe. It can be dispelled, but not stolen. */
+fn spirit_link_buff(foe: Character): Effect {
+    var e = spirit_link_end(true, foe);
+    e.unstealable = true;
+    e.redirect_damage = spirit_link_damage_percent();
+    return e;
+}
+
+/** The foe's end: part of its healing goes to the Shaman. It can be cleansed. */
+fn spirit_link_debuff(shaman: Character): Effect {
+    var e = spirit_link_end(false, shaman);
+    e.redirect_healing = spirit_link_heal_percent();
+    return e;
+}
+
+// Swashbuckler, Parry: blocks the next direct hit from a foe, however long that takes, and hits the
+// attacker back (docs/characters.md#swashbuckler).
+
+/** The foe that dealt a direct hit or drain, if the action is one. */
+fn direct_attacker(owner: Character, action: Action): Option<Character> {
+    match action {
+        Action.Damage(_, source, _, direct) => {
+            if (!direct) { return Option.None; }
+            match source {
+                Option.Some(attacker) => {
+                    if (attacker.team != owner.team && !attacker.fainted()) { return Option.Some(attacker); }
+                }
+                Option.None => {}
+            }
+        }
+        Action.Drain(_, attacker, _, _) => {
+            if (attacker.team != owner.team && !attacker.fainted()) { return Option.Some(attacker); }
+        }
+        _ => {}
+    }
+    return Option.None;
+}
+
+fn riposte(owner: Character, attacker: Character): Action {
+    return Action.Damage(attacker, Option.Some(owner), damage(owner, attacker, riposte_power()), true);
+}
+
+fn parry_intercept(owner: Character, fx: Effect, action: Action): Option<List<Action>> {
+    match direct_attacker(owner, action) {
+        Option.Some(attacker) => { return Option.Some([Action.RemoveEffect(owner, fx.kind), riposte(owner, attacker)]); }
+        Option.None => {}
+    }
+    return Option.None;
+}
+
+/** Blocks the next direct hit from a foe and ripostes. It lasts until it's used. */
+fn parry(): Effect {
+    var e = base("Parry", true);
+    e.intercept = parry_intercept;
+    return e;
+}
+
+// Swashbuckler, On Guard: it starts every battle with a parry ready. The passive is that first
+// parry: once it's used, it does nothing more (it's a passive, so it isn't removed).
+
+fn on_guard_intercept(owner: Character, fx: Effect, action: Action): Option<List<Action>> {
+    if (fx.charges <= 0) { return Option.None; }
+    match direct_attacker(owner, action) {
+        Option.Some(attacker) => {
+            fx.charges = 0;
+            return Option.Some([riposte(owner, attacker)]);
+        }
+        Option.None => {}
+    }
+    return Option.None;
+}
+
+fn on_guard_label(owner: Character, fx: Effect): string {
+    if (fx.charges > 0) { return "On Guard (parry ready)"; }
+    return "On Guard";
+}
+
+fn on_guard(): Effect {
+    var e = base("On Guard", true);
+    e.immune = true;
+    e.charges = 1;
+    e.intercept = on_guard_intercept;
+    e.label = on_guard_label;
     return e;
 }
 
@@ -425,8 +548,8 @@ fn energize(): Effect {
     return e;
 }
 
-// Alchemist, Panacea Supply: at the start of each round, every standing teammate
-// without a Panacea gets one. It stops while the Alchemist is down.
+// Alchemist, Panacea Supply: at the start of the battle (the first round), every standing teammate
+// gets a Panacea. Only once; Panacea Mist hands out more.
 
 fn at_round_start(owner: Character, fx: Effect, event: Event): bool {
     match event.kind {
@@ -436,14 +559,18 @@ fn at_round_start(owner: Character, fx: Effect, event: Event): bool {
     return false;
 }
 
+/** Its `power` is 1 once it has handed out the Panaceas. */
+fn panacea_supply_should(owner: Character, fx: Effect, event: Event): bool { return fx.power == 0 && !owner.fainted() && at_round_start(owner, fx, event); }
+
 fn panacea_supply_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.power = 1;
     return [Action.AddToTeam(owner, panacea)];
 }
 
 fn panacea_supply(): Effect {
     var e = base("Panacea Supply", true);
     e.immune = true;
-    e.should = at_round_start;
+    e.should = panacea_supply_should;
     e.react = panacea_supply_react;
     return e;
 }
@@ -610,34 +737,36 @@ fn minion_marker(idle: bool): Effect {
 fn blessing_attack(owner: Character, fx: Effect, attack: int): int { return attack * (100 + totem_bonus_percent()) / 100; }
 fn blessing_defense(owner: Character, fx: Effect, defense: int): int { return defense * (100 + totem_bonus_percent()) / 100; }
 
-/** More attack and defense while the team's totem stands. It can't be removed; the totem takes it away when it falls. */
+fn aura_label(owner: Character, fx: Effect): string { return fx.kind + " (aura)"; }
+
+/**
+ * The totem's aura: more attack and defense for everyone on its side, the
+ * totem too, while it stands. It's on the totem, not on each ally, and can't
+ * be removed: it ends when the totem falls.
+ */
 fn totems_blessing(): Effect {
     var e = base("Totem's Blessing", true);
     e.immune = true;
+    e.aura = true;
+    e.label = aura_label;
     e.scale_attack = blessing_attack;
     e.scale_defense = blessing_defense;
     return e;
 }
 
-/**
- * The totem's own effect. When the totem falls, the blessing leaves its team
- * and the summoner's Totem move starts its cooldown; while it stands, an ally
- * resurrected on its team gets the blessing too.
- */
+/** The totem's own effect: when the totem falls, the summoner's Totem move starts its cooldown. */
 fn totem_spirit(summoner: Character): Effect {
     fn should(owner: Character, fx: Effect, event: Event): bool {
         if (!fresh(owner, fx, event)) { return false; }
         match event.kind {
             EventKind.Fainted(c) => { return same(c, owner); }
-            EventKind.Resurrected(c) => { return c.team == owner.team && !owner.fainted(); }
             _ => { return false; }
         }
         return false;
     }
     fn react(owner: Character, fx: Effect, event: Event): List<Action> {
         match event.kind {
-            EventKind.Fainted(_) => { return [Action.RemoveFromTeam(owner, "Totem's Blessing"), Action.StartCooldown(summoner, "Totem", totem_cooldown())]; }
-            EventKind.Resurrected(c) => { return [Action.AddEffect(c, totems_blessing())]; }
+            EventKind.Fainted(_) => { return [Action.StartCooldown(summoner, "Totem", totem_cooldown())]; }
             _ => { return []; }
         }
         return [];
@@ -653,7 +782,7 @@ fn totem_spirit(summoner: Character): Effect {
 fn copy_effect(e: Effect): Effect {
     return Effect {
         kind: e.kind, buff: e.buff, immune: e.immune, power: e.power, rounds: e.rounds, attack_steps: e.attack_steps, defense_steps: e.defense_steps, targeting: e.targeting, unrestricted: e.unrestricted, charges: e.charges, skips: e.skips, first_hit_only: e.first_hit_only, absorbs: e.absorbs, blocks_hits: e.blocks_hits, silences: e.silences, blocks_healing: e.blocks_healing, minion: e.minion, idle: e.idle,
-        tier_shift: e.tier_shift, prevents_damage: e.prevents_damage, hit_cap: e.hit_cap, unstealable: e.unstealable, passive: e.passive,
+        tier_shift: e.tier_shift, prevents_damage: e.prevents_damage, hit_cap: e.hit_cap, unstealable: e.unstealable, passive: e.passive, aura: e.aura, takes_the_fall: e.takes_the_fall, partner: e.partner, redirect_damage: e.redirect_damage, redirect_healing: e.redirect_healing,
         should: e.should, react: e.react, merge: e.merge, scale_attack: e.scale_attack, scale_defense: e.scale_defense, scale_hit: e.scale_hit, label: e.label,
         intercept: e.intercept
     };
@@ -687,16 +816,44 @@ fn attack_up_next_turn(): Effect {
     return e;
 }
 
-// Bard, Crescendo: attack and defense up by a percent, its own multiplier.
+// Bard, Crescendo: a team aura that builds a stack for every foe character that falls, each
+// adding a percent to attack and defense (docs/characters.md#bard).
 
-fn crescendo_attack(owner: Character, fx: Effect, attack: int): int { return attack * (100 + crescendo_bonus_percent()) / 100; }
-fn crescendo_defense(owner: Character, fx: Effect, defense: int): int { return defense * (100 + crescendo_bonus_percent()) / 100; }
+fn crescendo_percent(fx: Effect): int { return 100 + crescendo_bonus_percent() * fx.power; }
+fn crescendo_attack(owner: Character, fx: Effect, attack: int): int { return attack * crescendo_percent(fx) / 100; }
+fn crescendo_defense(owner: Character, fx: Effect, defense: int): int { return defense * crescendo_percent(fx) / 100; }
 
-fn crescendo(rounds: int): Effect {
+fn crescendo_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Fainted(c) => { return c.team != owner.team && c.team >= 0 && !c.is_minion() && !owner.fainted() && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn crescendo_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.power = fx.power + 1;
+    return [];
+}
+
+fn crescendo_label(owner: Character, fx: Effect): string {
+    var hundredths = crescendo_percent(fx);
+    var cents = str(hundredths % 100);
+    if (hundredths % 100 < 10) { cents = "0" + cents; }
+    return "Crescendo ×" + str(hundredths / 100) + "." + cents + " (aura)";
+}
+
+/** The Bard's passive: no stacks to start, one for each foe character that falls while it stands. */
+fn crescendo(): Effect {
     var e = base("Crescendo", true);
+    e.immune = true;
+    e.aura = true;
     e.scale_attack = crescendo_attack;
     e.scale_defense = crescendo_defense;
-    return timed(e, rounds);
+    e.should = crescendo_should;
+    e.react = crescendo_react;
+    e.label = crescendo_label;
+    return e;
 }
 
 // Fairy, Fairy Ring: Invincible until the round is over. It goes at the start of the next round,
@@ -712,16 +869,13 @@ fn invincible(): Effect {
     return e;
 }
 
-// Fairy, Faerie Light: at the end of each round, every standing ally heals.
+// Fairy, Fae Bargain: the first ally a hit would knock out stands instead, with the Fairy's HP,
+// and the Fairy falls. The engine does the swap (`fall_instead` in engine.cx).
 
-fn faerie_light_react(owner: Character, fx: Effect, event: Event): List<Action> { return [Action.HealTeam(owner, fx.power)]; }
-
-fn faerie_light(): Effect {
-    var e = base("Faerie Light", true);
+fn fae_bargain(): Effect {
+    var e = base("Fae Bargain", true);
     e.immune = true;
-    e.power = faerie_light_heal();
-    e.should = at_round_end;
-    e.react = faerie_light_react;
+    e.takes_the_fall = true;
     return e;
 }
 

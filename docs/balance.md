@@ -121,7 +121,9 @@ without playing.
   character pairs), each with a bar showing how far above or below the
   middle (1000 Elo, 50%, a score of 0) each row is.
 - **Game length** and **Short and long games** show how long games last and
-  each character's win rate in short and long ones ([below](#game-length)).
+  how each character's games end, short or long ([below](#game-length)).
+- **Counters** shows how each character does against each one on the other
+  team ([below](#counters)).
 - **Characters by AI** shows each character's win rate under each AI that
   played it ([below](#characters-by-ai)).
 - The characters table has **Off 50**, how far each win rate is from 50%
@@ -359,8 +361,33 @@ The report page shows two tables from them:
   longest, the middle half (25th to 75th percentile) and the middle 80%,
   over a chart of how many games lasted each number of rounds with the
   median, the mean and the Short ≤ line marked.
-- **Short and long games**: each character's win rate in short games and
-  in long ones, and long − short (above 0, it gets better as a game goes
-  on). **Short ≤** in the toolbar sets where short games end; empty, it's
-  the median length. The lengths are kept round by round, so the line can
-  move without rerunning anything.
+- **Short and long games**: each character's games split four ways, as
+  shares of all its games that add up to 100: **won short**, **lost short**,
+  **won long**, **lost long**. A character built to protect early (the
+  Fairy) should rarely lose short; one built to snowball (the Bard) should
+  win short. **Short ≤** in the toolbar sets where short games end; empty,
+  it's the median length. The lengths are kept round by round, so the line
+  can move without rerunning anything.
+
+## Counters
+
+Pairs show synergy between teammates; **counters** show the same thing
+across the table: how a character does against a particular foe. Before
+each game the character ratings give each team an expected score, as for
+pairs; after it, every character on one team is credited against every
+character on the other (16 matchups a game) with actual − expected from its
+side. A matchup's score is the average: positive means the first character
+does better against the second than the ratings explain, so it counters it.
+
+Each matchup is kept once, in alphabetical order and from the first
+character's side, under `counters` in the totals file ("Assassin vs Fairy";
+the Fairy's view is the same numbers turned round). A character against
+itself, when both teams drafted it, isn't counted. The report page's
+**Counters** table shows every matchup both ways round, and its filter
+looks at the first name, so filtering for "Fairy" lists the Fairy's
+matchups from its side. The printed report lists the best and worst 10 with
+30+ games, and the compare page compares their scores.
+
+With 253 matchups and 16 credited a game, a matchup turns up in about 1 game
+in 16, so 100+ games in a matchup takes 1,600+ games, and telling a real
++8% from noise takes several thousand.

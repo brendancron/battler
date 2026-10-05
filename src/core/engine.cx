@@ -239,6 +239,30 @@ fn faint(battle: Battle, target: Character, how: string): EventKind {
     return EventKind.Fainted(target);
 }
 
+/** The character a link on `owner` ties it to, while that character stands and holds the other end. */
+fn linked(fx: Effect): Option<Character> {
+    if (fx.partner.len() == 0) { return Option.None; }
+    var p = fx.partner[0];
+    if (p.fainted() || !has_kind(p, fx.kind)) { return Option.None; }
+    return Option.Some(p);
+}
+
+/**
+ * Who falls in place of a character a hit has just knocked out: a standing
+ * ally of its side with a `takes_the_fall` effect (the Fairy's Fae Bargain).
+ * Minions aren't saved, and nobody falls for itself.
+ */
+fn fall_instead(target: Character): Option<Character> {
+    if (target.is_minion()) { return Option.None; }
+    for (a in target.allies) {
+        if (same(a, target) || a.fainted()) { continue; }
+        for (e in a.effects) {
+            if (e.takes_the_fall) { return Option.Some(a); }
+        }
+    }
+    return Option.None;
+}
+
 /**
  * Uses up one charge of a barrier on the target, if it has one: the hit is
  * blocked. Answers whether it was.
@@ -277,9 +301,42 @@ fn execute(battle: Battle, action: Action): List<EventKind> {
             if (direct && blocked(battle, target)) { return out; }
             // A cap on one instance of damage comes before shields.
             var amount = target.capped(requested);
+            // A Spirit Link passes a share to the linked foe, as indirect damage from the target.
+            for (e in target.effects) {
+                if (e.redirect_damage > 0 && amount > 0) {
+                    match linked(e) {
+                        Option.Some(partner) => {
+                            var passed = amount * e.redirect_damage / 100;
+                            if (passed > 0) {
+                                amount = amount - passed;
+                                battle.say(target.name + "'s " + e.kind + " passed " + str(passed) + " to " + partner.name + ".");
+                                for (k in execute(battle, Action.Damage(partner, Option.Some(target), passed, false))) { out.push(k); }
+                            }
+                        }
+                        Option.None => {}
+                    }
+                }
+            }
             var rest = soak(battle, target, amount);
             var before = target.hp;
             target.take(rest);
+            // A Fae Bargain: the ally falls instead, and the target stands with its HP. Nothing
+            // that keys off the target falling happens; the ally's fall is a fall like any other.
+            if (target.fainted()) {
+                match fall_instead(target) {
+                    Option.Some(saviour) => {
+                        battle.say(target.name + " took " + str(rest) + " (0/" + str(target.max_health()) + ").");
+                        out.push(EventKind.Damaged(target, source, amount, direct, before));
+                        target.hp = saviour.hp;
+                        if (target.hp > target.max_health()) { target.hp = target.max_health(); }
+                        saviour.hp = 0;
+                        battle.say(saviour.name + " gave its life for " + target.name + " (" + str(target.hp) + "/" + str(target.max_health()) + ").");
+                        out.push(faint(battle, saviour, " fell in " + target.name + "'s place!"));
+                        return out;
+                    }
+                    Option.None => {}
+                }
+            }
             // Leave the corpse before the line is logged, so the screen never shows a fallen character as gone.
             if (target.fainted()) { target.corpse = target.max_health() > 0 && !target.is_minion(); }
             battle.say(target.name + " took " + str(rest) + " (" + str(target.hp) + "/" + str(target.max_health()) + ").");
@@ -292,8 +349,26 @@ fn execute(battle: Battle, action: Action): List<EventKind> {
                 battle.say(target.name + " can't be healed (" + healing_blocker(target) + ").");
                 return out;
             }
+            // A Spirit Link on the target sends a share of the healing it would take to the Shaman.
+            var taken = amount;
+            if (taken > target.max_health() - target.hp) { taken = target.max_health() - target.hp; }
+            for (e in target.effects) {
+                if (e.redirect_healing > 0 && taken > 0) {
+                    match linked(e) {
+                        Option.Some(partner) => {
+                            var passed = taken * e.redirect_healing / 100;
+                            if (passed > 0) {
+                                taken = taken - passed;
+                                battle.say(target.name + "'s " + e.kind + " sent " + str(passed) + " of its healing to " + partner.name + ".");
+                                for (k in execute(battle, Action.Heal(partner, passed))) { out.push(k); }
+                            }
+                        }
+                        Option.None => {}
+                    }
+                }
+            }
             var before = target.hp;
-            target.heal(amount);
+            target.heal(taken);
             // Healing a character already at full is a non-event.
             if (target.hp == before) { return out; }
             battle.say(target.name + " healed " + str(target.hp - before) + " (" + str(target.hp) + "/" + str(target.max_health()) + ").");
@@ -361,6 +436,7 @@ fn execute(battle: Battle, action: Action): List<EventKind> {
             if (summoner.fainted() || summoner.team < 0) { return out; }
             var side = battle.sides[summoner.team];
             minion.team = summoner.team;
+            minion.allies = side.active;
             // Take the slot of a destroyed minion of the same name, so slots don't pile up.
             var placed = false;
             var i = 0;

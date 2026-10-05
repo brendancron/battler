@@ -39,6 +39,10 @@ always shrouded, by its passive ([characters.md](characters.md#ninja)).
 A buff can let a character ignore targeting tiers. While it has the buff, it
 may pick any foe still standing.
 
+A move can too: the Swashbuckler's Pistol Shot may pick any foe standing,
+whatever their tiers ([characters.md](characters.md#swashbuckler)). Area
+moves and the Assassin's Execution ignore tiers as well, but don't pick.
+
 ## Examples
 
 Foes F1, F2, F3.

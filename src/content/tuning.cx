@@ -16,7 +16,7 @@
  * with every balance change, here or in roster.cx: the balance checker keeps
  * each version's games apart, in balance-data/<version>/.
  */
-fn balance_version(): string { return "v0.0.2"; }
+fn balance_version(): string { return "v0.0.3"; }
 
 // Barbarian
 
@@ -56,6 +56,8 @@ fn purify_heal(): int { return 40; }
 fn purify_cooldown(): int { return 3; }
 fn sanctuary_heal(): int { return 20; }
 fn sanctuary_cooldown(): int { return 3; }
+fn resurrection_percent(): int { return 40; }
+fn resurrection_cooldown(): int { return 7; }
 /** Vigil: heals the lowest ally this much at round end. */
 fn vigil_heal(): int { return 10; }
 
@@ -69,6 +71,9 @@ fn hex_cooldown(): int { return 4; }
 
 // Alchemist
 
+/** Panacea Mist: every ally heals this much, and gets a Panacea. */
+fn panacea_mist_heal(): int { return 15; }
+fn panacea_mist_cooldown(): int { return 3; }
 /** Poison on each foe. */
 fn acid_flask_poison(): int { return 6; }
 fn acid_flask_cooldown(): int { return 3; }
@@ -124,13 +129,16 @@ fn bulwark_cooldown(): int { return 3; }
 // Shaman
 
 /** Regen per round, and for how many rounds. */
-fn healing_rain_regen(): int { return 18; }
+fn healing_rain_regen(): int { return 24; }
 fn healing_rain_rounds(): int { return 3; }
 fn healing_rain_cooldown(): int { return 5; }
-fn ancestral_call_percent(): int { return 40; }
-fn ancestral_call_cooldown(): int { return 7; }
+/** Spirit Link: the share of the Shaman's damage that goes to the linked foe, and of the foe's healing that goes to the Shaman. */
+fn spirit_link_damage_percent(): int { return 50; }
+fn spirit_link_heal_percent(): int { return 75; }
+fn spirit_link_rounds(): int { return 2; }
+fn spirit_link_cooldown(): int { return 3; }
 fn totem_hp(): int { return 20; }
-fn totem_defense(): int { return 40; }
+fn totem_defense(): int { return 32; }
 /** The team's attack and defense go up this percent while the totem stands. */
 fn totem_bonus_percent(): int { return 25; }
 /** Rounds the Totem move cools down once the totem is destroyed. */
@@ -152,19 +160,15 @@ fn allegro_cooldown(): int { return 3; }
 /** Rounds of Largo's attack down. */
 fn largo_rounds(): int { return 2; }
 fn largo_cooldown(): int { return 3; }
-/** Crescendo: the team's attack and defense go up this percent, for this many rounds. */
+/** Crescendo: each stack (a foe character fallen) adds this percent to the team's attack and defense. */
 fn crescendo_bonus_percent(): int { return 20; }
-fn crescendo_rounds(): int { return 2; }
-fn crescendo_cooldown(): int { return 4; }
 
 // Fairy
 
-fn fairy_ring_cooldown(): int { return 4; }
+fn fairy_ring_cooldown(): int { return 7; }
 /** Pixie Dust: a shield this big on every ally. */
-fn pixie_dust_shield(): int { return 22; }
+fn pixie_dust_shield(): int { return 30; }
 fn pixie_dust_cooldown(): int { return 4; }
-/** Faerie Light: every ally heals this much at round end. */
-fn faerie_light_heal(): int { return 5; }
 
 // Necromancer
 
@@ -209,15 +213,15 @@ fn cryosleep_cooldown(): int { return 4; }
 // Construct
 
 fn piston_slam_power(): int { return 20; }
-fn piston_slam_cooldown(): int { return 2; }
+fn piston_slam_cooldown(): int { return 3; }
 /** Rounds of attack down Piston Slam puts on the foe. */
 fn piston_slam_rounds(): int { return 2; }
 /** Rounds of taunt. */
-fn lockdown_rounds(): int { return 2; }
-fn lockdown_cooldown(): int { return 3; }
+fn lockdown_rounds(): int { return 1; }
+fn lockdown_cooldown(): int { return 4; }
 /** Overclock takes this many turns off every running cooldown of the Construct's team. */
 fn overclock_cut(): int { return 2; }
-fn overclock_cooldown(): int { return 5; }
+fn overclock_cooldown(): int { return 6; }
 /** Ironclad: no one instance of damage takes more than this percent of its max HP. */
 fn ironclad_cap_percent(): int { return 25; }
 
@@ -236,15 +240,22 @@ fn shuriken_cooldown(): int { return 2; }
 
 // Swashbuckler
 
+fn pistol_shot_power(): int { return 30; }
+fn pistol_shot_cooldown(): int { return 2; }
 fn plunder_power(): int { return 20; }
 fn plunder_cooldown(): int { return 3; }
+fn en_garde_cooldown(): int { return 3; }
+/** Parry: the power of the riposte when it blocks a hit. */
+fn riposte_power(): int { return 20; }
 
 // Jester
 
 fn trick_blade_power(): int { return 20; }
 fn trick_blade_cooldown(): int { return 2; }
+/** The foe's own turns of Silence from Trick Blade. */
+fn trick_blade_silence_turns(): int { return 1; }
 /** A puppet rises at this percent of its max HP. */
-fn puppet_percent(): int { return 25; }
+fn puppet_percent(): int { return 33; }
 /** Turns Puppeteer cools down once the puppet falls. */
 fn puppeteer_cooldown(): int { return 5; }
 

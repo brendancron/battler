@@ -183,11 +183,14 @@ HP for 10. The Cleric counts as an ally, and a tie goes to the lowest slot.
 |---------|-------------------------|--------|
 | Prayer  | all allies, itself too  | Heals 20 each. |
 | Purify  | one ally, or itself     | Cleanses the ally of debuffs ([effects.md](effects.md)), then heals it 40. Cleansing first means a Heal Block is gone before the heal lands. |
-| Sanctuary | one ally, or itself   | Heals the ally 20 and gives it a barrier, which blocks the next direct hit completely ([effects.md](effects.md#barrier)). Cooldown 3. |
+| Resurrection | a fallen ally        | Resurrects it at 40% of its max HP ([fainting.md](fainting.md)). Cooldown 7. |
 
 Purify is meant to heal more than the Paladin's Lay on Hands: the Cleric is the
 healer, and the Paladin isn't picked for its heal. 40 is a placeholder.
-Sanctuary's name, its 20 heal and its cooldown are placeholders too.
+
+Resurrection was the Shaman's Ancestral Call until v0.0.3; bringing allies
+back suits the healer. It replaced Sanctuary (heal 20 and a barrier against
+the next direct hit, cooldown 3).
 
 ### Witch
 
@@ -233,21 +236,21 @@ timing: its potions act mid-round, the moment they're needed, where the Cleric
 heals on its turn and the Shaman's regen pays out at round end. Its acid goes
 on the foes.
 
-**Passive: Panacea Supply.** At the start of each round, every standing
-teammate (the Alchemist included) that doesn't hold a Panacea gets one. A
-Panacea blocks the next debuff that would be put on its holder. Holders never
-get more than one this way, and none are handed out while the Alchemist is
-down.
+**Passive: Panacea Supply.** At the start of the battle, every teammate (the
+Alchemist included) gets a Panacea, which blocks the next debuff that would
+be put on its holder. It happens once; after that, Panacea Mist hands out
+more. (Until v0.0.3 it topped up every round, to one each.)
 
 **Moves**
 
 | Move                  | Target   | Potion |
 |-----------------------|----------|--------|
-| Acid Flask            | all foes | 5 poison on every foe standing ([effects.md](effects.md#poison)): 15 damage each over five rounds. Cooldown 3. |
+| Panacea Mist          | all allies, itself too | Heals each ally 15 and gives it a Panacea, on top of any it holds. Cooldown 3. |
 | Greater Health Potion | one ally | When damage takes the ally below 65% of its max HP, heals it 45 at once. Healing past max HP is lost. Cooldown 3. |
-| Energize              | one ally | The ally's next attack deals 75% more damage. Cooldown 3. |
+| Acid Flask            | all foes | 6 poison on every foe standing ([effects.md](effects.md#poison)): 21 damage each over six rounds. Cooldown 3. |
 
-The 65%, 45, 75%, 5 poison and cooldowns are placeholders. Acid Flask is
+Its basic attack is Bottle Bash (power 8). The 65%, 45, 15, 6 poison and
+cooldowns are placeholders. Acid Flask is
 the exception to single-target moves: it's the Alchemist's way to pressure
 the whole foe team, slowly.
 
@@ -269,14 +272,17 @@ ally at +75%, and the defense went from 60 to 80 after the Alchemist won only
 won only 34% of 2,000 games, so it became the single-target Greater Health
 Potion.
 
+- **Potions stack, with no limit.** The Mist adds a Panacea to whatever each
+  ally holds, so a team can hold one, two or many and go into a debuff-heavy
+  fight (a Monk, a Witch's Hex, a Jester's Silence) blocking several each.
+- Until v0.0.3 the third move was Energize (the ally's next attack +75%), and
+  the basic attack was Acid Splash. Energize gave way to Panacea Mist, which
+  fits a support built on timing and debuff protection better.
 - Panacea never acts straight away: it doesn't remove debuffs the holder
   already has, only blocks the next one put on it.
-- Energize boosts the ally's next move that deals damage. An area move gets the
-  boost on every target it hits. A move that hits more than once gets it only
-  on its first hit (on each target, for an area move that hits more than once).
 - Potions stack as charges. Tossing a potion an ally already holds adds a
   charge, and each time the potion does its job it uses one. Two Greater
-  Health Potions heal twice, and two Energizes boost the next two attacks.
+  Health Potions heal twice, and two Panaceas block the next two debuffs.
 
 ### Monk
 
@@ -375,7 +381,7 @@ The Final Offering details:
 - **The fall isn't damage.** The Warlock simply faints, so shields,
   barriers, Invincible and Cryosleep don't stop it.
 - **It leaves a corpse on purpose,** like any fall, so it can be
-  resurrected: Ancestral Call, or Last Rites when the Paladin later falls,
+  resurrected: Resurrection, or Last Rites when the Paladin later falls,
   can bring the Warlock back for another go. That combo is intended. Cooldowns survive resurrection
   ([fainting.md](fainting.md#resurrection)), so the 5-turn cooldown keeps a
   revived Warlock from offering itself again straight away.
@@ -386,6 +392,7 @@ The Final Offering details:
 ### Shaman
 
 Support ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md)).
+Stats (placeholders): attack 65, defense 70 (75 until v0.0.3).
 
 **Passive:** to be designed.
 
@@ -393,8 +400,8 @@ Support ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md)).
 
 | Move           | Target        | Effect |
 |----------------|---------------|--------|
-| Healing Rain   | all allies    | Regen 18 for 3 rounds on each ([effects.md](effects.md)): 54 HP each over the rounds. |
-| Ancestral Call | a fallen ally | Resurrects it at 40% of its max HP ([fainting.md](fainting.md)). |
+| Healing Rain   | all allies    | Regen 24 for 3 rounds on each ([effects.md](effects.md)): 72 HP each over the rounds (18 a round until v0.0.3). |
+| Spirit Link    | one foe       | Links the Shaman to the foe for 2 rounds: 50% of the damage the Shaman takes goes to the foe instead, and 75% of the healing the foe takes goes to the Shaman. Cooldown 3. |
 | Totem          | —             | Summons a totem with its own small HP pool ([summons.md](summons.md)). While it stands, the whole team has +25% attack and +25% defense. |
 
 Regen heals at the end of each round and doesn't stack: casting it again resets
@@ -402,6 +409,21 @@ it to 3 rounds rather than doubling the healing.
 
 The total is high on purpose: the Shaman is Slow, and regen pays out over
 several rounds, so the healing arrives late.
+
+- **Spirit Link is two ends,** a buff on the Shaman and a debuff on the foe.
+  The link holds only while both do: dispelling the Shaman's end or
+  cleansing the foe's ends the whole link, and so does either wearing off. A
+  Panacea on the foe blocks its end, so the link never holds. The Shaman's
+  end can't be stolen.
+- **The damage share** is taken after any cap and before shields, and reaches
+  the foe as indirect damage from the Shaman (so barriers and parries don't
+  stop it). It's lost if the foe has fallen.
+- **The healing share** is of the healing the foe could take: healing past
+  its max HP isn't shared. Heal Block on the foe stops the heal, and so the
+  share; healing past the Shaman's max HP is lost.
+- Until v0.0.3 the Shaman's second move was Ancestral Call, now the
+  Cleric's Resurrection. The 50%, 75%, 2 rounds and cooldown are
+  placeholders.
 
 ### Knight
 
@@ -467,7 +489,24 @@ Warlock's Writhing Depths, a Reaper's Reap) so its team gets a quick kill
 and rolls on from there. It should be strongest early and fall off in long
 games.
 
-**Passive:** to be designed.
+**Passive: Crescendo.** A team aura ([effects.md](effects.md#auras)) that
+builds with every kill. It starts with no stacks; each foe character that
+falls while the Bard stands adds one, and each stack gives the whole team,
+the Bard included, × 0.2 more attack and defense: × 1.2 after one kill,
+× 1.4 after two, × 1.6 after three. The 0.2 is a placeholder.
+
+- **Any foe character counts,** whatever knocked it out: a hit, poison (which
+  the engine doesn't tie to who applied it), fatigue, or a Warlock's Final
+  Offering. Minions (totems, skeletons, puppets) don't.
+- **It's an aura, so it lives with the Bard.** While the Bard is down the
+  bonus stops; its stacks stay, and come back if it's resurrected. Nothing
+  done to the allies touches it, and it can't be dispelled or stolen.
+- **It's the snowball.** The first kill makes the next one easier, and
+  Allegro is how the Bard gets that first kill early.
+- It's its own multiplier, separate from the × 1.5 stat ups and the totem's
+  aura, and multiplies with them.
+- Until v0.0.3 Crescendo was a move: × 1.2 attack and defense on every ally
+  for 2 rounds, cooldown 4.
 
 **Moves** (names, durations and cooldowns are placeholders)
 
@@ -475,7 +514,6 @@ games.
 |---------|----------|--------|
 | Allegro | one ally | Speed up and attack up (× 1.5, [effects.md](effects.md)) for the ally's next turn ([effects.md](effects.md#speed-up-and-speed-down)): it moves one tier faster and hits harder, then both go away. Cooldown 3. |
 | Largo   | one foe  | Speed down for the foe's next turn: it moves one tier slower. Also attack down for 2 rounds ([effects.md](effects.md)). Cooldown 3. |
-| Crescendo | all allies, itself too | Attack and defense × 1.2 for 2 rounds on each. Cooldown 4. |
 
 - **One tier only.** Allegro takes Slow to Normal or Normal to Fast, never
   Slow to Fast. Largo likewise moves a foe down one tier.
@@ -497,15 +535,6 @@ games.
   of the Bard's niche; cooldown cutting is now the Construct's Overclock.
 - Allegro can't target the Bard. It's already Fast, so the speed up would do
   nothing.
-- **Crescendo is a song version of the Shaman's totem**
-  ([summons.md](summons.md#the-shamans-totem)): a team-wide attack and defense
-  bonus, smaller than the totem's × 1.25 and lasting a set time instead of
-  until something is killed. Each ally gets its own buff, so a dispel takes it
-  off one ally only. It's its own multiplier, separate from the × 1.5 stat ups
-  and the totem, and multiplies with them. Singing it again refreshes it to 2
-  rounds; it doesn't stack. The × 1.2 and 2 rounds are placeholders.
-- Crescendo is flat for now. A version that builds up each round (× 1.1,
-  then × 1.2, then × 1.3) was considered and set aside.
 - Largo's two debuffs are separate effects, so a cleanse can take off one
   and leave the other. The attack down is the usual one, as from Disarming
   Palm.
@@ -518,33 +547,60 @@ Stats (placeholders): attack 65, defense 70.
 The Fairy protects. Being Fast, it acts before nearly everyone, so its
 protection is in place before the foes swing.
 
-**Passive: Faerie Light.** At the end of each round, every ally standing,
-the Fairy included, heals 5. (The name and the 5 are placeholders.)
+Its niche is **getting the team through the opening** so it can scale into
+a longer fight: Fairy Ring answers a Rogue rush on one ally, Pixie Dust
+answers a team of Mages. It runs out of steam after its first couple of
+turns on purpose; the team it kept alive wins from there. (Whether that's a
+niche worth a slot may need changes elsewhere, such as characters that
+scale into long fights.)
 
-- Like any team-wide heal, it reaches minions such as the Shaman's totem.
-- Heal Block stops it on the ally that has it, and healing past max HP is
-  lost.
-- Where the Cleric's Vigil heals the one ally with the lowest HP for 10,
-  Faerie Light spreads a smaller heal over the whole team.
-- It stops while the Fairy is down.
+**Passive: Fae Bargain.** The first time a hit would knock out one of the
+Fairy's allies, the Fairy falls instead: the ally stays standing with the
+Fairy's remaining HP (no more than its own max HP), and the Fairy faints.
+(The name is a placeholder.)
+
+- **Instead, not after.** The ally never falls, so nothing that keys off a
+  fall happens to it: no Soul Harvest on its corpse, no Crescendo stack for
+  the foe's Bard, no Last Rites. The Fairy's fall is a fall like any other
+  (it counts for a foe's Crescendo), but it isn't the hitter's kill, so the
+  Fairy keeps its corpse even against the Grim Reaper.
+- **The Fairy's HP is the price and the prize.** A healthy Fairy saves an
+  ally with a lot of HP; a Fairy chipped down saves one with little. Foes
+  that want to get past it hit the Fairy first.
+- **Once, while the Fairy stands.** Not for the Fairy itself, and not for
+  minions. If one hit would knock out several allies (an area move), the
+  first one in slot order is saved. It leaves a corpse, so Last Rites or
+  Resurrection can bring the Fairy back, and with it the bargain.
+- Any damage counts: a hit, poison, bleed. It isn't healing, so Heal Block
+  doesn't stop it, and a Construct is saved like anyone.
+- Until v0.0.3 the passive was Faerie Light: every ally healed 5 at the end
+  of every round, all game, which rewarded long games more than it got the
+  team through the opening.
 
 **Moves** (names, durations and cooldowns are placeholders)
 
 | Move       | Target              | Effect |
 |------------|---------------------|--------|
-| Fairy Ring | one ally, or itself | Invincible until the end of the round ([effects.md](effects.md#invincible)): the ally takes no damage for the rest of the round. Cooldown 4. |
-| Pixie Dust | all allies, itself too | A 22 shield on each ([effects.md](effects.md#shield)). Cooldown 4. |
+| Fairy Ring | one ally, or itself | Cleanses the ally's debuffs, heals it to full, then Invincible until the end of the round ([effects.md](effects.md#invincible)): the ally takes no damage for the rest of the round. Cooldown 7. |
+| Pixie Dust | all allies, itself too | A 30 shield on each ([effects.md](effects.md#shield)). Cooldown 4. |
 | —          |                     | To be designed. |
 
 - Cast in the Fast phase, Fairy Ring covers the ally against everything the
   foes do that round. Cast later, it covers only what's left of the round.
 - It ends at the end of the round, after the end-of-round damage (poison,
   fatigue), so it covers that too.
-- Pixie Dust spreads a small shield over the whole team, where the Knight's
-  Bulwark puts 30 on one ally. Shields add up and decay 20 a round, so a 22
-  shield on its own is down to 2 at the next round end; it's for soaking the
-  round's hits. It reaches minions, like any team-wide move. (15 until
-  v0.0.2.)
+- **The cleanse and full heal make Ring a turn-2 move as well as a turn-1
+  one:** after the first exchange, it resets the ally who took the burst. The
+  cleanse goes first, so a Heal Block can't stop the heal (the Construct,
+  which can never be healed, gets only the cleanse and Invincible). For that
+  it has a long cooldown, 7: once a game, or twice in a long one. Until
+  v0.0.3 Ring was Invincible alone, cooldown 4.
+- Pixie Dust puts a shield on the whole team as big as the Knight's Bulwark
+  puts on one ally. It's the answer to Mages: a 30 shield soaks most of an
+  area hit on every ally (Writhing Depths deals about 35-55 a target).
+  Shields add up and decay 20 a round, so it's down to 10 at the next round
+  end. It reaches minions, like any team-wide move. (15 until v0.0.2, 22
+  until v0.0.3.)
 
 ### Necromancer
 
@@ -569,7 +625,7 @@ Stats (placeholders): attack 110, defense 60.
 - Its power is below Brimstone's 25 and Writhing Depths' 35: the corpse removal is
   the extra.
 - **Raise Dead works against resurrection on purpose.** The corpse it uses is
-  gone, so that ally can't be brought back by Ancestral Call or Last Rites.
+  gone, so that ally can't be brought back by Resurrection or Last Rites.
   A Necromancer team trades a possible revival for a skeleton now.
 - Raise Dead takes only the corpses of the Necromancer's own team's
   characters. Minions leave no corpse, so a skeleton can't be raised again.
@@ -713,12 +769,12 @@ so its taunt and protection are up before their first hits land. (Normal
 until v0.0.2.) It's a **transient tank built to counter single-target
 burst**: Ironclad blunts the big hits its taunt draws, but it can't be
 healed, so it doesn't last. That's niche on purpose.
-Stats (placeholders): attack 85, defense 120.
+Stats (placeholders): attack 75, defense 110 (85 and 120 until v0.0.3).
 
 **Passive: Ironclad.** Two parts. (The name and the 25% are placeholders.)
 
 - **It can't be healed.** No healing of any kind restores its HP: heals from
-  moves, regen, Vigil, Faerie Light, Health Potions, drains, Cryosleep's heal.
+  moves, regen, Vigil, Health Potions, drains, Cryosleep's heal.
   It's like a Heal Block that never ends and can't be cleansed.
 - **No hit takes more than 25% of its max HP.** Any single instance of damage
   is capped at a quarter of its current max HP, rounded down: 25 at 100 max
@@ -739,16 +795,16 @@ Details:
   max HP loss is a third of the damage dealt, so it's a third of the capped
   hit. Max HP lost also lowers the cap: at 80 max HP it's 20.
 - **It can be revived.** It leaves a corpse like any character, and
-  resurrection isn't healing: Ancestral Call and Last Rites bring it back at
+  resurrection isn't healing: Resurrection and Last Rites bring it back at
   their usual percentage. A Necromancer can raise its corpse too.
 
 **Moves** (names, powers and cooldowns are placeholders)
 
 | Move        | Target   | Effect |
 |-------------|----------|--------|
-| Piston Slam | one foe  | A direct hit, power 20 ([damage.md](damage.md)), and attack down for 2 rounds ([effects.md](effects.md)). Cooldown 2. |
-| Lockdown    | the user | Taunt for 2 rounds ([targeting.md](targeting.md#taunt)). Cooldown 3. |
-| Overclock   | the whole team | Takes 2 off every running cooldown of every ally standing, the Construct included ([moves.md](moves.md#cooldowns)). Cooldown 5. |
+| Piston Slam | one foe  | A direct hit, power 20 ([damage.md](damage.md)), and attack down for 2 rounds ([effects.md](effects.md)). Cooldown 3. |
+| Lockdown    | the user | Taunt for 1 round ([targeting.md](targeting.md#taunt)). Cooldown 4. |
+| Overclock   | the whole team | Takes 2 off every running cooldown of every ally standing, the Construct included ([moves.md](moves.md#cooldowns)). Cooldown 6. |
 
 - Piston Slam is modest, as a Tank's hit should be: below the Warriors' 30.
   Its attack down is the protection: the Construct is Fast, so it usually
@@ -758,11 +814,16 @@ Details:
   the cut, so it doesn't shorten itself; its other moves (Lockdown, Piston
   Slam) do get the cut. The Shaman's Totem is cut only once its cooldown has
   started, after the totem is destroyed ([summons.md](summons.md)). The 2 and
-  the cooldown are placeholders.
+  the cooldown are placeholders. Since Overclock cuts the Construct's own
+  moves too, its cooldowns are each 1 longer than they'd otherwise be (from
+  v0.0.3: Piston Slam 3, Lockdown 4, Overclock 6).
 - Lockdown pulls the foes' single-target hits onto the Construct, where the
   cap blunts the biggest of them. It can't heal, so a taunting Construct
   slowly runs down unless allies shield it. Like the Knight's and the Frost
   Giant's taunts, it doesn't raise defense.
+- Lockdown lasts 1 round (2 until v0.0.3): an immediate answer, not a
+  standing wall. The Construct is Fast, so it's up before most foes act that
+  round and gone at the round's end.
 
 ### Stormbringer
 
@@ -832,20 +893,40 @@ Ninja's safety behind its shroud is worth something. More moves later.
 
 ### Swashbuckler
 
-Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
-Stats (placeholders): attack 110, defense 55.
+Warrior ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
+Stats (placeholders): attack 110, defense 68.
+
+The only **Fast Warrior**: it wins the war of attrition rather than picking
+foes off. Parry and riposte punish the foe for hitting it, Plunder strips
+its shields and buffs, and being Fast it has En Garde up before the foes
+act. (A Rogue with defense 55 until v0.0.3.)
 
 A pirate duelist that takes what it wants: the first character that steals
 ([effects.md](effects.md#removing-and-moving-effects)).
 
-**Passive:** to be designed.
+**Passive: On Guard.** It starts every battle with a parry ready: the first
+direct hit a foe lands on it is blocked, and it ripostes (below). Once used,
+the passive does nothing more. (The name is a placeholder.)
 
 **Moves** (names, powers and cooldowns are placeholders)
 
 | Move    | Target  | Effect |
 |---------|---------|--------|
+| Pistol Shot | any foe | A direct hit, power 30 ([damage.md](damage.md)), on any foe standing: taunts and other targeting tiers don't apply. Cooldown 2. |
 | Plunder | one foe | Steals every buff the foe has and puts them on the Swashbuckler, then a direct hit, power 20 ([damage.md](damage.md)). Cooldown 3. |
+| En Garde | the user | Parry: the next direct hit a foe lands on the Swashbuckler is blocked, and it ripostes, a direct hit of power 20 back on the attacker. It lasts until it's used, however many rounds that takes. Cooldown 3. |
 
+- **Pistol Shot reaches the backline.** It ignores targeting tiers like an
+  area move does, but hits one foe of the Swashbuckler's choosing: a Fairy,
+  Bard or Mage behind a taunting tank. It deals more than Plunder and does
+  less.
+- **A parry waits for its hit.** It blocks the next direct hit from a foe
+  (a drain counts), not indirect damage like poison or bleed, which goes
+  through and leaves the parry up. The riposte is a direct hit, so a foe's
+  own parry can answer it. A second En Garde while one is up does nothing.
+  On Guard's starting parry and En Garde's are separate: with both up, the
+  passive's goes first.
+- Until v0.0.3 the Swashbuckler had only Plunder and its basic attack.
 - **Every buff, for now.** Stealing just one (the player's pick, or the
   newest) was considered; it can be revisited after balance testing.
 - **Steal first, then hit,** as Smite dispels first: a shield, barrier or
@@ -856,12 +937,12 @@ A pirate duelist that takes what it wants: the first character that steals
   ([effects.md](effects.md#stacking)): a stolen shield adds to the
   Swashbuckler's shield, a stolen barrier adds a charge.
 - **Some buffs can't be stolen.** Passives never can. Neither can the totem's
-  blessing (it belongs to the totem's team) or Cryosleep (an ally's ice
+  blessing (an aura on the totem, [effects.md](effects.md#auras)) or Cryosleep (an ally's ice
   sleep makes no sense on a foe). Those stay on the foe. Which other buffs
   opt out is an open question ([questions.md](questions.md)).
 - Being Fast, the Swashbuckler usually steals before the foe's team has
   acted, so it takes buffs left over from the previous round, like a
-  Crescendo or a Bulwark shield, before the foe gets to use them.
+  Panacea or a Bulwark shield, before the foe gets to use them.
 - Stealing a taunt makes the Swashbuckler taunt for the rest of it, which
   pulls the foes' single-target hits onto a frail Rogue. The player decides
   whether that's worth it.
@@ -879,8 +960,15 @@ stats are low (placeholder: attack 90, defense 50) and its hit is light.
 
 | Move      | Target          | Effect |
 |-----------|-----------------|--------|
-| Trick Blade | one foe       | A direct hit, power 20 ([damage.md](damage.md)). Cooldown 2. |
-| Puppeteer | a foe's corpse  | Raises the fallen foe as a minion on the Jester's team ([summons.md](summons.md#the-jesters-puppets)), at 25% of its max HP. One puppet at a time; cooldown 5, from when the puppet falls. |
+| Trick Blade | one foe       | A direct hit, power 20 ([damage.md](damage.md)), and Silence for the foe's next turn ([effects.md](effects.md#silence)): only its basic attack. Cooldown 2. |
+| Puppeteer | a foe's corpse  | Raises the fallen foe as a minion on the Jester's team ([summons.md](summons.md#the-jesters-puppets)), at 33% of its max HP. One puppet at a time; cooldown 5, from when the puppet falls. |
+
+- **Trick Blade disables before the first corpse.** The Jester is Fast, so it
+  usually lands before the foe acts that round: a Warlock or Cryomancer
+  silenced in round 1 loses its nuke for that turn. It's the Jester's early
+  job, until Puppeteer has a corpse to work with. The Silence is a debuff,
+  so a cleanse or Panacea answers it. Until v0.0.3 Trick Blade was a plain
+  hit, and puppets rose at 25%.
 
 - **The corpse is used up.** It's gone from the foe's side, so the foe can
   no longer resurrect that character. Like Raise Dead and Soul Harvest, it's

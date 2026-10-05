@@ -4,6 +4,8 @@ import { Battle, Slot } from "battle";
 type TargetShape {
     User,
     SingleFoe,
+    /** One standing foe, any of them: targeting tiers don't apply (the Swashbuckler's Pistol Shot). */
+    AnyFoe,
     /** One character on the user's side, the user included. */
     SingleAlly,
     AllFoes,
@@ -64,6 +66,18 @@ fn bind(shape: TargetShape, choice: Choice, battle: Battle, user: Slot): Option<
             match choice {
                 Choice.Slots(slots) => {
                     if (slots.len() != 1 || !contains(battle.targetable_foes(user), slots[0])) { return Option.None; }
+                    match battle.at(slots[0]) {
+                        Option.Some(p) => { return Option.Some(Target.Single(p)); }
+                        Option.None => { return Option.None; }
+                    }
+                }
+                Choice.NoTarget => { return Option.None; }
+            }
+        }
+        TargetShape.AnyFoe => {
+            match choice {
+                Choice.Slots(slots) => {
+                    if (slots.len() != 1 || !contains(battle.foe_slots(user), slots[0])) { return Option.None; }
                     match battle.at(slots[0]) {
                         Option.Some(p) => { return Option.Some(Target.Single(p)); }
                         Option.None => { return Option.None; }

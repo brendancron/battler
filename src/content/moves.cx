@@ -4,8 +4,8 @@ import { TargetShape, Target } from "../core/target";
 import { MoveDef, hit, follow_up_hit, damage } from "../core/move";
 import { character, Tier, Effect } from "../core/creature";
 import {
-    attack_up, attack_down, defense_down, poison, regen, retaliate, taunt, guarding_taunt, timed, hex, greater_health_potion, energize, barrier, shield, heal_block,
-    minion_marker, totems_blessing, totem_spirit, speed_up, speed_down, attack_up_next_turn, crescendo, invincible, bleed, chill, cryosleep, strings, copy_effect
+    attack_up, attack_down, defense_down, poison, regen, retaliate, taunt, guarding_taunt, timed, hex, greater_health_potion, energize, barrier, shield, heal_block, silence, parry, panacea, spirit_link_buff, spirit_link_debuff,
+    minion_marker, totems_blessing, totem_spirit, speed_up, speed_down, attack_up_next_turn, invincible, bleed, chill, cryosleep, strings, copy_effect
 } from "effects";
 import {
     cleave_power, cleave_cooldown, smite_power, smite_cooldown, guard_rounds,
@@ -13,22 +13,22 @@ import {
     aimed_shot_cooldown, hunters_mark_rounds, hunters_mark_cooldown, prayer_heal,
     prayer_cooldown, purify_heal, purify_cooldown, sanctuary_heal, sanctuary_cooldown,
     brimstone_power, brimstone_drain_percent, brimstone_cooldown, hex_cooldown,
-    acid_flask_poison, acid_flask_cooldown, potion_heal, potion_cooldown, energize_cooldown,
+    acid_flask_poison, acid_flask_cooldown, potion_heal, potion_cooldown, energize_cooldown, panacea_mist_heal, panacea_mist_cooldown,
     disarming_palm_power, disarming_palm_rounds, disarming_palm_cooldown, crippling_blow_power,
     crippling_blow_turns, crippling_blow_cooldown, flurry_power, flurry_picks, flurry_cooldown,
     reap_power, reap_wound_divisor, reap_cooldown, soul_siphon_power, soul_siphon_drain_percent,
     soul_siphon_cooldown, writhing_depths_power, writhing_depths_cooldown, shield_bash_power,
     shield_bash_rounds, shield_bash_cooldown, bulwark_shield, bulwark_cooldown,
-    healing_rain_regen, healing_rain_rounds, healing_rain_cooldown, ancestral_call_percent,
-    ancestral_call_cooldown, totem_hp, totem_defense, backstab_power, backstab_cooldown,
+    healing_rain_regen, healing_rain_rounds, healing_rain_cooldown, resurrection_percent,
+    resurrection_cooldown, spirit_link_cooldown, totem_hp, totem_defense, backstab_power, backstab_cooldown,
     execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown,
-    largo_rounds, largo_cooldown, crescendo_rounds, crescendo_cooldown, fairy_ring_cooldown, wither_power, wither_cooldown,
+    largo_rounds, largo_cooldown, fairy_ring_cooldown, wither_power, wither_cooldown,
     raise_dead_cooldown, skeleton_hp, skeleton_attack, skeleton_defense, bite_power, bite_cooldown, hemorrhage_power,
     hemorrhage_bleed, hemorrhage_rounds, hemorrhage_cooldown, blizzard_power, blizzard_cooldown, frostbite_power,
     frostbite_cooldown, avalanche_power, avalanche_cooldown, glacial_roar_rounds, glacial_roar_cooldown, cryosleep_heal,
     cryosleep_cooldown, piston_slam_power, piston_slam_cooldown, piston_slam_rounds, lockdown_rounds, lockdown_cooldown, overclock_cut, overclock_cooldown, thunderstorm_power,
     thunderstorm_cooldown, chain_lightning_powers, chain_lightning_cooldown, shuriken_power, shuriken_cooldown, plunder_power,
-    plunder_cooldown, trick_blade_power, trick_blade_cooldown, puppet_percent, pixie_dust_shield, pixie_dust_cooldown
+    plunder_cooldown, pistol_shot_power, pistol_shot_cooldown, en_garde_cooldown, trick_blade_power, trick_blade_cooldown, trick_blade_silence_turns, puppet_percent, pixie_dust_shield, pixie_dust_cooldown
 } from "tuning";
 
 // Shapes shared by many moves.
@@ -187,9 +187,22 @@ fn purify(): MoveDef {
     return MoveDef { name: "Purify", shape: TargetShape.SingleAlly, apply: purify_apply, cooldown: purify_cooldown(), basic: false };
 }
 
-/** One ally, or the user: heals it and gives it a barrier against the next direct hit. */
+/** One ally, or the user: heals it and gives it a barrier. No one has it since v0.0.3; tests use it for the AI's barrier values. */
 fn sanctuary(): MoveDef {
     return MoveDef { name: "Sanctuary", shape: TargetShape.SingleAlly, apply: sanctuary_apply, cooldown: sanctuary_cooldown(), basic: false };
+}
+
+fn resurrection_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(fallen) => { return [Action.Resurrect(fallen, resurrection_percent())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** A fallen ally whose corpse is still there: resurrects it at a percent of its max HP. */
+fn resurrection(): MoveDef {
+    return MoveDef { name: "Resurrection", shape: TargetShape.AllyCorpse, apply: resurrection_apply, cooldown: resurrection_cooldown(), basic: false };
 }
 
 // Witch. See docs/characters.md.
@@ -225,6 +238,25 @@ fn hex_move(): MoveDef {
 }
 
 // Alchemist. See docs/characters.md.
+
+fn panacea_mist_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(allies) => {
+            for (a in allies) {
+                out.push(Action.Heal(a, panacea_mist_heal()));
+                out.push(Action.AddEffect(a, panacea()));
+            }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All allies, the Alchemist too: a small heal and a Panacea each, on top of any they hold. */
+fn panacea_mist(): MoveDef {
+    return MoveDef { name: "Panacea Mist", shape: TargetShape.AllAllies, apply: panacea_mist_apply, cooldown: panacea_mist_cooldown(), basic: false };
+}
 
 fn acid_flask_apply(battle: Battle, user: Character, target: Target): List<Action> {
     var out: List<Action> = [];
@@ -263,7 +295,7 @@ fn greater_health_potion_move(): MoveDef {
     return MoveDef { name: "Greater Health Potion", shape: TargetShape.SingleAlly, apply: greater_health_potion_apply, cooldown: potion_cooldown(), basic: false };
 }
 
-/** One ally: its next damaging move gets more attack. */
+/** One ally: its next damaging move gets more attack. No one has it since v0.0.3; tests use it for the AI's buff values. */
 fn energize_move(): MoveDef {
     return MoveDef { name: "Energize", shape: TargetShape.SingleAlly, apply: energize_apply, cooldown: energize_cooldown(), basic: false };
 }
@@ -507,17 +539,19 @@ fn execution(): MoveDef {
     return MoveDef { name: "Execution", shape: TargetShape.Weakest, apply: execution_apply, cooldown: execution_cooldown(), basic: false };
 }
 
-fn ancestral_call_apply(battle: Battle, user: Character, target: Target): List<Action> {
+
+fn spirit_link_apply(battle: Battle, user: Character, target: Target): List<Action> {
     match target {
-        Target.Single(fallen) => { return [Action.Resurrect(fallen, ancestral_call_percent())]; }
+        // The foe's end first: if a Panacea blocks it, the link never holds.
+        Target.Single(foe) => { return [Action.AddEffect(foe, spirit_link_debuff(user)), Action.AddEffect(user, spirit_link_buff(foe))]; }
         _ => { return []; }
     }
     return [];
 }
 
-/** A fallen ally whose corpse is still there: resurrects it at a percent of its max HP. */
-fn ancestral_call(): MoveDef {
-    return MoveDef { name: "Ancestral Call", shape: TargetShape.AllyCorpse, apply: ancestral_call_apply, cooldown: ancestral_call_cooldown(), basic: false };
+/** One foe: linked to the Shaman, which passes it part of its damage and takes part of its healing. */
+fn spirit_link(): MoveDef {
+    return MoveDef { name: "Spirit Link", shape: TargetShape.SingleFoe, apply: spirit_link_apply, cooldown: spirit_link_cooldown(), basic: false };
 }
 
 /** The Shaman's totem: a small minion that takes no turns. See docs/summons.md. */
@@ -527,16 +561,13 @@ fn new_totem(summoner: Character): Character {
     t.hp = totem_hp();
     t.effects.push(minion_marker(true));
     t.effects.push(totem_spirit(summoner));
+    t.effects.push(totems_blessing());
     return t;
 }
 
+/** The totem carries its blessing as an aura, so it reaches the whole team, and whoever joins later, while it stands. */
 fn totem_apply(battle: Battle, user: Character, target: Target): List<Action> {
-    var out: List<Action> = [Action.Summon(user, new_totem(user))];
-    // The blessing goes to everyone standing on the team now; the totem gives it to anyone resurrected later.
-    for (c in battle.sides[user.team].active) {
-        if (!c.fainted()) { out.push(Action.AddEffect(c, totems_blessing())); }
-    }
-    return out;
+    return [Action.Summon(user, new_totem(user))];
 }
 
 /**
@@ -576,33 +607,18 @@ fn largo(): MoveDef {
     return MoveDef { name: "Largo", shape: TargetShape.SingleFoe, apply: largo_apply, cooldown: largo_cooldown(), basic: false };
 }
 
-fn crescendo_apply(battle: Battle, user: Character, target: Target): List<Action> {
-    var out: List<Action> = [];
-    match target {
-        Target.Spread(allies) => {
-            for (a in allies) { out.push(Action.AddEffect(a, crescendo(crescendo_rounds()))); }
-        }
-        _ => {}
-    }
-    return out;
-}
-
-/** All allies, the Bard included: more attack and defense for a few rounds. */
-fn crescendo_move(): MoveDef {
-    return MoveDef { name: "Crescendo", shape: TargetShape.AllAllies, apply: crescendo_apply, cooldown: crescendo_cooldown(), basic: false };
-}
-
 // Fairy. See docs/characters.md#fairy.
 
 fn fairy_ring_apply(battle: Battle, user: Character, target: Target): List<Action> {
     match target {
-        Target.Single(ally) => { return [Action.AddEffect(ally, invincible())]; }
+        // Cleanse first, so a Heal Block is gone before the heal.
+        Target.Single(ally) => { return [Action.Cleanse(ally), Action.Heal(ally, ally.max_health()), Action.AddEffect(ally, invincible())]; }
         _ => { return []; }
     }
     return [];
 }
 
-/** One ally, or the Fairy: no damage for the rest of the round. */
+/** One ally, or the Fairy: cleansed, healed to full, and no damage for the rest of the round. */
 fn fairy_ring(): MoveDef {
     return MoveDef { name: "Fairy Ring", shape: TargetShape.SingleAlly, apply: fairy_ring_apply, cooldown: fairy_ring_cooldown(), basic: false };
 }
@@ -797,6 +813,26 @@ fn shuriken(): MoveDef { return single_hit("Shuriken", shuriken_power(), shurike
 
 // Swashbuckler. See docs/characters.md#swashbuckler.
 
+fn pistol_shot_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(foe) => { return [hit(user, foe, pistol_shot_power())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** Any foe, taunts and other targeting tiers aside: a direct hit. */
+fn pistol_shot(): MoveDef {
+    return MoveDef { name: "Pistol Shot", shape: TargetShape.AnyFoe, apply: pistol_shot_apply, cooldown: pistol_shot_cooldown(), basic: false };
+}
+
+fn en_garde_apply(battle: Battle, user: Character, target: Target): List<Action> { return [Action.AddEffect(user, parry())]; }
+
+/** The user: Parry, until a foe's direct hit uses it up. */
+fn en_garde(): MoveDef {
+    return MoveDef { name: "En Garde", shape: TargetShape.User, apply: en_garde_apply, cooldown: en_garde_cooldown(), basic: false };
+}
+
 fn plunder_apply(battle: Battle, user: Character, target: Target): List<Action> {
     match target {
         // Steal first, so a shield or barrier is the Swashbuckler's before the hit.
@@ -813,7 +849,18 @@ fn plunder(): MoveDef {
 
 // Jester. See docs/characters.md#jester.
 
-fn trick_blade(): MoveDef { return single_hit("Trick Blade", trick_blade_power(), trick_blade_cooldown()); }
+fn trick_blade_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [hit(user, defender, trick_blade_power()), Action.AddEffect(defender, silence(trick_blade_silence_turns()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a hit, and Silence for its next turn, so it has only its basic attack. Being Fast, it usually lands first. */
+fn trick_blade(): MoveDef {
+    return MoveDef { name: "Trick Blade", shape: TargetShape.SingleFoe, apply: trick_blade_apply, cooldown: trick_blade_cooldown(), basic: false };
+}
 
 /**
  * A fallen foe raised as a minion on the Jester's side: its stats, max HP lost,

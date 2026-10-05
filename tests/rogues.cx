@@ -3,9 +3,9 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { use_move, damage } from "battler/core/move";
 import { Choice } from "battler/core/target";
-import { shadowed, taunt, shield, attack_up, barrier, minion_marker } from "battler/content/effects";
-import { thunderstorm, chain_lightning, shuriken, plunder, trick_blade, smite } from "battler/content/moves";
-import { thunderstorm_power, chain_lightning_powers, shuriken_power, plunder_power, trick_blade_power } from "battler/content/tuning";
+import { shadowed, taunt, shield, attack_up, barrier, minion_marker, parry, on_guard, poison } from "battler/content/effects";
+import { thunderstorm, chain_lightning, shuriken, plunder, trick_blade, smite, pistol_shot, en_garde } from "battler/content/moves";
+import { thunderstorm_power, chain_lightning_powers, shuriken_power, plunder_power, trick_blade_power, trick_blade_silence_turns, pistol_shot_power, riposte_power } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
 // The Ninja (Shadowed), the Stormbringer (Chain Lightning picks in order), and the Swashbuckler (steal).
@@ -50,15 +50,30 @@ fn a_minion_keeps_the_ninja_hidden() {
 }
 
 @test
-fn shuriken_and_trick_blade_are_plain_hits() {
+fn shuriken_is_a_plain_hit() {
     var b = duel(["A"], ["B"]);
     var foe = who(b, slot(1, 0));
     sturdy(foe);
-    var first = damage(who(b, slot(0, 0)), foe, shuriken_power());
+    var d = damage(who(b, slot(0, 0)), foe, shuriken_power());
     use_move(engine(), b, slot(0, 0), shuriken(), at(slot(1, 0)));
-    var second = damage(who(b, slot(0, 0)), foe, trick_blade_power());
+    assert(foe.hp == 1000 - d, "a hit");
+}
+
+@test
+fn trick_blade_hits_and_silences_the_foe_for_its_turns() {
+    var b = duel(["Jester"], ["Foe"]);
+    var foe = who(b, slot(1, 0));
+    sturdy(foe);
+    var d = damage(who(b, slot(0, 0)), foe, trick_blade_power());
     use_move(engine(), b, slot(0, 0), trick_blade(), at(slot(1, 0)));
-    assert(foe.hp == 1000 - first - second, "two hits");
+    assert(foe.hp == 1000 - d, "a hit");
+    var n = 0;
+    while (n < trick_blade_silence_turns()) {
+        assert(foe.silenced(), "silenced");
+        announce(engine(), b, EventKind.TurnEnded(foe));
+        n = n + 1;
+    }
+    assert(!foe.silenced(), "then free");
 }
 
 // Stormbringer
@@ -113,6 +128,54 @@ fn chain_lightning_picks_a_taunter_first_and_a_shrouded_foe_last() {
 }
 
 // Swashbuckler
+
+@test
+fn pistol_shot_reaches_past_a_taunt() {
+    var b = duel(["Swashbuckler"], ["Tank", "Back"]);
+    who(b, slot(1, 0)).effects.push(taunt(2));
+    var back = who(b, slot(1, 1));
+    var d = damage(who(b, slot(0, 0)), back, pistol_shot_power());
+    assert(use_move(engine(), b, slot(0, 0), pistol_shot(), at(slot(1, 1))), "the one behind the taunt");
+    assert(back.hp == 100 - d, "a hit");
+}
+
+@test
+fn a_parry_blocks_the_next_direct_hit_and_ripostes() {
+    var b = duel(["Swashbuckler"], ["Foe"]);
+    var me = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    assert(use_move(engine(), b, slot(0, 0), en_garde(), Choice.NoTarget), "used");
+    announce(engine(), b, EventKind.RoundEnded);
+    announce(engine(), b, EventKind.TurnEnded(me));
+    assert(has_effect(me, "Parry"), "it lasts until it's used");
+    var back = damage(me, foe, riposte_power());
+    add(b, [Action.Damage(me, Option.Some(foe), 40, true)]);
+    assert(me.hp == 100 && foe.hp == 100 - back, "blocked, and the foe hit back");
+    assert(!has_effect(me, "Parry"), "used up");
+    add(b, [Action.Damage(me, Option.Some(foe), 40, true)]);
+    assert(me.hp == 60, "the next hit lands");
+}
+
+@test
+fn a_parry_doesnt_block_indirect_damage() {
+    var b = duel(["Swashbuckler"], ["Foe"]);
+    var me = who(b, slot(0, 0));
+    me.effects.push(parry());
+    add(b, [Action.Damage(me, Option.None, 10, false)]);
+    assert(me.hp == 90 && has_effect(me, "Parry"), "poison and the like get through, and the parry waits");
+}
+
+@test
+fn on_guard_is_one_parry_to_start_the_battle() {
+    var b = duel(["Swashbuckler"], ["Foe"]);
+    var me = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    me.effects.push(on_guard());
+    add(b, [Action.Damage(me, Option.Some(foe), 40, true)]);
+    assert(me.hp == 100 && foe.hp == 100 - damage(me, foe, riposte_power()), "the first hit is parried");
+    add(b, [Action.Damage(me, Option.Some(foe), 40, true)]);
+    assert(me.hp == 60 && has_effect(me, "On Guard"), "only once; the passive stays");
+}
 
 @test
 fn plunder_steals_every_buff_then_hits() {

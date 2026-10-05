@@ -520,7 +520,7 @@ fn charges_of(c: Character, kind: string): int {
 }
 
 @test
-fn panacea_supply_gives_the_team_a_panacea_each_round() {
+fn panacea_supply_gives_the_team_a_panacea_at_the_start() {
     var b = duel(["Alchemist", "B"], ["C"]);
     var alchemist = who(b, slot(0, 0));
     add(b, alchemist, [Action.AddEffect(alchemist, panacea_supply())]);
@@ -530,7 +530,7 @@ fn panacea_supply_gives_the_team_a_panacea_each_round() {
 }
 
 @test
-fn panacea_supply_tops_up_without_stacking() {
+fn panacea_supply_hands_them_out_only_once() {
     var b = duel(["Alchemist", "B"], ["C"]);
     var alchemist = who(b, slot(0, 0));
     var ally = who(b, slot(0, 1));
@@ -539,11 +539,11 @@ fn panacea_supply_tops_up_without_stacking() {
     add(b, ally, [Action.AddEffect(ally, hex())]);
     assert(!has_effect(ally, "Hex") && !has_effect(ally, "Panacea"), "used up blocking the Hex");
     start_round(b);
-    assert(charges_of(alchemist, "Panacea") == 1 && charges_of(ally, "Panacea") == 1, "one each, never more");
+    assert(!has_effect(ally, "Panacea") && charges_of(alchemist, "Panacea") == 1, "nothing more after the first round");
 }
 
 @test
-fn panacea_supply_stops_while_the_alchemist_is_down() {
+fn panacea_supply_gives_nothing_from_a_fallen_alchemist() {
     var b = duel(["Alchemist", "B"], ["C"]);
     var alchemist = who(b, slot(0, 0));
     add(b, alchemist, [Action.AddEffect(alchemist, panacea_supply()), Action.Damage(alchemist, Option.None, 200, true)]);

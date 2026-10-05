@@ -3,12 +3,12 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { use_move, damage } from "battler/core/move";
 import { Choice } from "battler/core/target";
-import { invincible, faerie_light, ironclad, shield, barrier, retaliate, heal_block, attack_down, poison } from "battler/content/effects";
+import { invincible, fae_bargain, ironclad, shield, barrier, retaliate, heal_block, attack_down, poison, minion_marker, soul_harvest } from "battler/content/effects";
 import { fairy_ring, pixie_dust, piston_slam, lockdown, overclock, reap } from "battler/content/moves";
-import { pixie_dust_shield, faerie_light_heal, ironclad_cap_percent, piston_slam_power, piston_slam_rounds, lockdown_rounds, overclock_cut, reap_power, reap_wound_divisor } from "battler/content/tuning";
+import { pixie_dust_shield, ironclad_cap_percent, piston_slam_power, piston_slam_rounds, lockdown_rounds, overclock_cut, reap_power, reap_wound_divisor } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
-// The Fairy (Invincible, Faerie Light) and the Construct (Ironclad).
+// The Fairy (Invincible, Fae Bargain) and the Construct (Ironclad).
 
 fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
 
@@ -22,10 +22,15 @@ fn smaller(a: int, b: int): int {
 // Fairy
 
 @test
-fn fairy_ring_makes_an_ally_invincible() {
+fn fairy_ring_cleanses_heals_to_full_and_makes_an_ally_invincible() {
     var b = duel(["Fairy", "Ally"], ["Foe"]);
+    var ally = who(b, slot(0, 1));
+    ally.take(70);
+    add(b, [Action.AddEffect(ally, heal_block(2)), Action.AddEffect(ally, poison(5))]);
     assert(use_move(engine(), b, slot(0, 0), fairy_ring(), at(slot(0, 1))), "used");
-    assert(has_effect(who(b, slot(0, 1)), "Invincible"), "on the ally");
+    assert(has_effect(ally, "Invincible"), "invincible");
+    assert(!has_effect(ally, "Heal Block") && !has_effect(ally, "Poison"), "cleansed");
+    assert(ally.hp == ally.max_health(), "healed to full, Heal Block gone first");
 }
 
 @test
@@ -91,26 +96,58 @@ fn pixie_dust_shields_every_ally_and_adds_to_a_shield_already_there() {
     assert(!has_effect(who(b, slot(1, 0)), "Shield"), "not the foe");
 }
 
-@test
-fn faerie_light_heals_every_ally_at_the_end_of_the_round() {
-    var b = duel(["Fairy", "Ally"], ["Foe"]);
+/** A Fairy with Fae Bargain at 60 HP and two allies, against one foe. */
+fn with_bargain(): Battle {
+    var b = duel(["Fairy", "Ally", "Other"], ["Foe"]);
     var fairy = who(b, slot(0, 0));
-    add(b, [Action.AddEffect(fairy, faerie_light())]);
-    for (s in [slot(0, 0), slot(0, 1), slot(1, 0)]) { who(b, s).take(30); }
-    announce(engine(), b, EventKind.RoundEnded);
-    assert(fairy.hp == 70 + faerie_light_heal() && who(b, slot(0, 1)).hp == 70 + faerie_light_heal(), "both allies");
-    assert(who(b, slot(1, 0)).hp == 70, "not the foe");
+    fairy.effects.push(fae_bargain());
+    fairy.hp = 60;
+    return b;
 }
 
 @test
-fn faerie_light_stops_while_the_fairy_is_down() {
-    var b = duel(["Fairy", "Ally"], ["Foe"]);
-    var fairy = who(b, slot(0, 0));
-    add(b, [Action.AddEffect(fairy, faerie_light())]);
-    who(b, slot(0, 1)).take(30);
-    add(b, [Action.KnockOut(fairy)]);
-    announce(engine(), b, EventKind.RoundEnded);
-    assert(who(b, slot(0, 1)).hp == 70, "no heal");
+fn the_fairy_falls_in_place_of_the_first_ally_knocked_out() {
+    var b = with_bargain();
+    var ally = who(b, slot(0, 1));
+    add(b, [Action.Damage(ally, Option.Some(who(b, slot(1, 0))), 1000, true)]);
+    assert(!ally.fainted() && ally.hp == 60, "the ally stands with the Fairy's HP");
+    assert(who(b, slot(0, 0)).fainted() && who(b, slot(0, 0)).corpse, "the Fairy fell, leaving a corpse");
+    add(b, [Action.Damage(who(b, slot(0, 2)), Option.None, 1000, false)]);
+    assert(who(b, slot(0, 2)).fainted(), "only once: the next ally falls");
+}
+
+@test
+fn the_saved_ally_keeps_no_more_than_its_max_hp() {
+    var b = with_bargain();
+    var ally = who(b, slot(0, 1));
+    ally.lost_max_hp = 50;
+    ally.hp = 50;
+    add(b, [Action.Damage(ally, Option.None, 1000, false)]);
+    assert(ally.hp == 50, "capped at its max HP");
+}
+
+@test
+fn the_fairy_doesnt_fall_for_itself_or_a_minion() {
+    var b = with_bargain();
+    add(b, [Action.Damage(who(b, slot(0, 0)), Option.None, 1000, false)]);
+    assert(who(b, slot(0, 0)).fainted() && !who(b, slot(0, 1)).fainted(), "the Fairy just falls");
+    var c = with_bargain();
+    add(c, [Action.Summon(who(c, slot(0, 1)), character("Minion", 10, 10, Tier.Normal))]);
+    var m = who(c, slot(0, 3));
+    m.effects.push(minion_marker(true));
+    add(c, [Action.Damage(m, Option.None, 1000, false)]);
+    assert(m.fainted() && !who(c, slot(0, 0)).fainted(), "a minion isn't saved");
+}
+
+@test
+fn a_soul_harvest_cant_take_a_saved_allys_corpse() {
+    var b = duel(["Fairy", "Ally"], ["Reaper"]);
+    who(b, slot(0, 0)).effects.push(fae_bargain());
+    var reaper = who(b, slot(1, 0));
+    reaper.effects.push(soul_harvest());
+    add(b, [Action.Damage(who(b, slot(0, 1)), Option.Some(reaper), 1000, true)]);
+    assert(!who(b, slot(0, 1)).fainted(), "the ally never fell");
+    assert(who(b, slot(0, 0)).corpse, "and the Fairy's fall wasn't the Reaper's kill");
 }
 
 // Construct

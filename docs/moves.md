@@ -16,7 +16,7 @@ can't be used again for that many turns.
   - **3** for a heavier hit, a single-target heal or buff, or a debuff;
   - **4** for team heals, area attacks, Hex and Execution;
   - **5** for the biggest area moves (Writhing Depths, Healing Rain);
-  - more for bringing a character back (Ancestral Call, 7).
+  - more for bringing a character back (Resurrection, 7).
 
 Cooldowns went up across the board after balance testing showed big moves
 being used every time they were ready; they used to be mostly 1 to 3.
@@ -40,12 +40,12 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Paladin     | Lay on Hands   | 3 |
 | Cleric      | Prayer         | 4 |
 | Cleric      | Purify         | 3 |
-| Cleric      | Sanctuary      | 3 |
+| Cleric      | Resurrection   | 7 |
 | Witch       | Brimstone      | 4 |
 | Witch       | Hex            | 4 |
-| Alchemist   | Acid Flask     | 3 |
+| Alchemist   | Panacea Mist   | 3 |
 | Alchemist   | Greater Health Potion | 3 |
-| Alchemist   | Energize       | 3 |
+| Alchemist   | Acid Flask     | 3 |
 | Monk        | Disarming Palm | 2 |
 | Monk        | Crippling Blow | 2 |
 | Monk        | Flurry of Blows| 3 |
@@ -54,7 +54,7 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Warlock     | Writhing Depths | 5 |
 | Warlock     | The Final Offering | 5 |
 | Shaman      | Healing Rain   | 5 |
-| Shaman      | Ancestral Call | 7 |
+| Shaman      | Spirit Link    | 3 |
 | Shaman      | Totem          | 3, from when the totem is destroyed ([summons.md](summons.md)) |
 | Knight      | Shield Bash    | 3 |
 | Knight      | Bulwark        | 3 |
@@ -62,8 +62,7 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Assassin    | Execution      | 4 |
 | Bard        | Allegro        | 3 |
 | Bard        | Largo          | 3 |
-| Bard        | Crescendo      | 4 |
-| Fairy       | Fairy Ring     | 4 |
+| Fairy       | Fairy Ring     | 7 |
 | Fairy       | Pixie Dust     | 4 |
 | Necromancer | Wither         | 4 |
 | Necromancer | Raise Dead     | 5 |
@@ -74,13 +73,15 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Frost Giant | Avalanche      | 4 |
 | Frost Giant | Glacial Roar   | 3 |
 | Frost Giant | Cryosleep      | 4 |
-| Construct   | Piston Slam    | 2 |
-| Construct   | Lockdown       | 3 |
-| Construct   | Overclock      | 5 |
+| Construct   | Piston Slam    | 3 |
+| Construct   | Lockdown       | 4 |
+| Construct   | Overclock      | 6 |
 | Stormbringer | Thunderstorm  | 4 |
 | Stormbringer | Chain Lightning | 3 |
 | Ninja       | Shuriken       | 2 |
+| Swashbuckler | Pistol Shot   | 2 |
 | Swashbuckler | Plunder       | 3 |
+| Swashbuckler | En Garde      | 3 |
 | Jester      | Trick Blade    | 2 |
 | Jester      | Puppeteer      | 5, from when the puppet falls ([summons.md](summons.md#the-jesters-puppets)) |
 
@@ -109,7 +110,7 @@ attackers hit a little harder, tanks and supports a little softer.
 | Paladin     | Mace Strike   | 8 |
 | Knight      | Sword Strike  | 8 |
 | Cleric      | Holy Spark    | 8 |
-| Alchemist   | Acid Splash   | 8 |
+| Alchemist   | Bottle Bash   | 8 |
 | Shaman      | Spirit Strike | 8 |
 | Assassin    | Quick Cut     | 10 |
 | Bard        | Lute Strike   | 8 |

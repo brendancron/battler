@@ -18,6 +18,9 @@ fn choices(battle: Battle, user: Slot, move: MoveDef): List<Choice> {
         TargetShape.SingleFoe => {
             for (s in battle.targetable_foes(user)) { out.push(Choice.Slots([s])); }
         }
+        TargetShape.AnyFoe => {
+            for (s in battle.foe_slots(user)) { out.push(Choice.Slots([s])); }
+        }
         TargetShape.SingleAlly => {
             for (s in battle.ally_slots(user)) { out.push(Choice.Slots([s])); }
         }
@@ -205,10 +208,19 @@ fn worth(battle: Battle, user: Character, action: Action, cleansed: List<Charact
             if (!target.fainted() || !target.corpse) { return 0; }
             return -side_sign(user, target) * (target.max_health() * percent / 100 + 40);
         }
-        // A minion is worth more the more HP it brings, and more again if it fights.
+        // A minion is worth more the more HP it brings, and more again if it
+        // fights; an aura it brings, 10 for each standing ally, as a buff on each would be.
         Action.Summon(_, minion) => {
-            if (minion.takes_turns()) { return 15 + minion.hp; }
-            return 15;
+            var total = 15;
+            if (minion.takes_turns()) { total = total + minion.hp; }
+            for (e in minion.effects) {
+                if (e.aura) {
+                    for (ally in battle.sides[user.team].active) {
+                        if (!ally.fainted()) { total = total + 10; }
+                    }
+                }
+            }
+            return total;
         }
         Action.RemoveFromTeam(_, _) => { return 0; }
         Action.AddToTeam(_, _) => { return 0; }

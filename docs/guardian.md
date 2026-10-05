@@ -19,7 +19,7 @@ The older AIs value protection blind. In `scoring.cx`:
 |---|---|---|
 | Invincible (Fairy Ring) | a flat 15 | the same on every ally: it lands on a random one |
 | Shield (Pixie Dust, Bulwark) | half its size | the same on an ally nobody is hitting |
-| Barrier (Sanctuary) | 15, then 6 | no idea which hit it blocks |
+| Barrier | 15, then 6 | no idea which hit it blocks |
 | Taunt (Lockdown, Guard, Shield Bash) | 10 | no idea whose hits it pulls away |
 | Speed up and down (Allegro, Largo) | a flat 10 or 12 | no idea who acts before whom |
 | Greater Health Potion | by how close the ally is to the line | guesses "one hit is about 25" |
@@ -93,12 +93,13 @@ Guardian stops spending turns on it.
   threat.
 - **Bard:** Allegro's speed up is worth the action of an ally that would
   otherwise fall first; Largo's speed down the same for a foe.
-- **Cleric:** Sanctuary's barrier on the ally facing the hit, and heals that
-  keep someone standing.
+- **Cleric:** heals that keep someone standing.
 
 ## Not covered yet
 
 - Cleanses are still worth 15 a debuff (the Greedy value).
+- The forecast doesn't know about the Fairy's Fae Bargain: it counts the
+  first ally to fall as fallen.
 - Overclock and other cooldown cuts are still worth 5 a cooldown a turn.
 - Allegro's attack up lasts one turn but the Tactician counts it as 2
   rounds.

@@ -145,6 +145,19 @@ fn pair_name(a: string, b: string): string {
 }
 
 /**
+ * Credits a matchup, one character against another on the other team, with
+ * one game. It's kept once per pair of characters, in alphabetical order and
+ * from the first one's side: "Assassin vs Fairy" is how the Assassin did
+ * against the Fairy, and the Fairy's view is the same numbers turned round.
+ * A character against itself (both teams drafted it) isn't counted.
+ */
+fn credit_matchup(all: Mixes, x: string, y: string, x_won: bool, x_expected: float) {
+    if (x == y) { return; }
+    if (x < y) { credit(all, x + " vs " + y, x_won, x_expected); }
+    else { credit(all, y + " vs " + x, !x_won, 1.0 - x_expected); }
+}
+
+/**
  * A name at a game length, as one name: "Fairy @ 7" for the Fairy's games
  * that lasted 7 rounds. "All @ 7" counts every game of 7 rounds, its wins
  * being the home side's.
@@ -286,12 +299,14 @@ type Ledger {
     by_ai: Mixes,
     /** Games by length, overall and for each character (docs/balance.md#game-length). */
     lengths: Mixes,
+    /** Characters against characters on the other team (docs/balance.md#counters). */
+    counters: Mixes,
 }
 
 fn new_ledger(): Ledger {
     return Ledger {
         games: 0, draws: 0, characters: new_pool(), archetypes: new_pool(), sides: new_pool(),
-        agents: new_pool(), mixes: new_mixes(), counts: new_mixes(), pairs: new_mixes(), by_ai: new_mixes(), lengths: new_mixes()
+        agents: new_pool(), mixes: new_mixes(), counts: new_mixes(), pairs: new_mixes(), by_ai: new_mixes(), lengths: new_mixes(), counters: new_mixes()
     };
 }
 
@@ -326,7 +341,7 @@ fn ledger_data(l: Ledger): Data {
         entry("characters", pool_data(l.characters)), entry("archetypes", pool_data(l.archetypes)),
         entry("sides", pool_data(l.sides)), entry("agents", pool_data(l.agents)),
         entry("mixes", mixes_data(l.mixes)), entry("counts", mixes_data(l.counts)), entry("pairs", mixes_data(l.pairs)),
-        entry("by_ai", mixes_data(l.by_ai)), entry("lengths", mixes_data(l.lengths))
+        entry("by_ai", mixes_data(l.by_ai)), entry("lengths", mixes_data(l.lengths)), entry("counters", mixes_data(l.counters))
     ]);
 }
 
@@ -399,6 +414,6 @@ fn ledger_from(d: Data): Ledger {
         characters: pool_from(field(d, "characters")), archetypes: pool_from(field(d, "archetypes")),
         sides: pool_from(field(d, "sides")), agents: pool_from(field(d, "agents")),
         mixes: mixes_from(field(d, "mixes")), counts: mixes_from(field(d, "counts")), pairs: mixes_from(field(d, "pairs")),
-        by_ai: mixes_from(field(d, "by_ai")), lengths: mixes_from(field(d, "lengths"))
+        by_ai: mixes_from(field(d, "by_ai")), lengths: mixes_from(field(d, "lengths")), counters: mixes_from(field(d, "counters"))
     };
 }

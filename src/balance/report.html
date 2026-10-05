@@ -181,6 +181,21 @@ const characterColumns = [
   ratingColumns[4],
 ];
 const pairColumns = [{ label: "Pair", value: r => r.name }, ...mixColumns.slice(1)];
+
+// Counters: each matchup is kept once, from the first name's side in
+// alphabetical order ("Assassin vs Fairy"); here it shows both ways round, so
+// filtering by a name (which looks at the first) lists its matchups from its side.
+function counterRows(d) {
+  const out = [];
+  for (const m of d.counters || []) {
+    const at = m.name.indexOf(" vs ");
+    const a = m.name.slice(0, at), b = m.name.slice(at + 4);
+    out.push({ name: `${a} vs ${b}`, first: a, games: m.games, wins: m.wins, surprise: m.surprise });
+    out.push({ name: `${b} vs ${a}`, first: b, games: m.games, wins: m.games - m.wins, surprise: -m.surprise });
+  }
+  return out;
+}
+const counterColumns = [{ label: "Matchup", value: r => r.name }, ...mixColumns.slice(1)];
 function signed(x) { return x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1); }
 
 // Characters by AI: a row per character, with its win % under each AI that
@@ -286,18 +301,20 @@ function shortLongRows(d) {
       const t = Number(r) <= cut ? short : long;
       t.wins += m.wins; t.games += m.games;
     }
-    return { name, short, long, games: Math.min(short.games, long.games) };
+    return { name, short, long, games: short.games + long.games };
   });
 }
-const shortWin = r => pct(r.short.wins, r.short.games), longWin = r => pct(r.long.wins, r.long.games);
-const shift = r => shortWin(r) == null || longWin(r) == null ? null : longWin(r) - shortWin(r);
+// Each share is of all the character's games, so the four add up to 100.
+const share = (r, part) => { const all = r.short.games + r.long.games; return all ? 100 * part / all : null; };
+const wonShort = r => share(r, r.short.wins), lostShort = r => share(r, r.short.games - r.short.wins);
+const wonLong = r => share(r, r.long.wins), lostLong = r => share(r, r.long.games - r.long.wins);
 const shortLongColumns = [
   { label: "Name", value: r => r.name },
-  { label: "Short win %", value: shortWin, text: r => fixed(shortWin(r), 1), num: true, bar: true, base: 50 },
-  { label: "Long win %", value: longWin, text: r => fixed(longWin(r), 1), num: true, bar: true, base: 50 },
-  { label: "Long − short", value: shift, text: r => signed(shift(r)), num: true, bar: true, base: 0, signed: true },
-  { label: "Short games", value: r => r.short.games, num: true },
-  { label: "Long games", value: r => r.long.games, num: true },
+  { label: "Won short %", value: wonShort, text: r => fixed(wonShort(r), 1), num: true },
+  { label: "Lost short %", value: lostShort, text: r => fixed(lostShort(r), 1), num: true },
+  { label: "Won long %", value: wonLong, text: r => fixed(wonLong(r), 1), num: true },
+  { label: "Lost long %", value: lostLong, text: r => fixed(lostLong(r), 1), num: true },
+  { label: "Games", value: r => r.short.games + r.long.games, num: true },
 ];
 
 const aiWin = (r, ai) => r.ais[ai] ? pct(r.ais[ai].wins, r.ais[ai].games) : null;
@@ -320,8 +337,8 @@ const TABLES = [
   { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 3,
     note: "Off 50 is how far the win % is from 50, either way. Atk and Def are base stats, before effects." },
   { id: "lengths", title: "Game length", render: renderLengths },
-  { id: "short-long", title: "Short and long games", rows: shortLongRows, columns: shortLongColumns, sort: 3,
-    note: d => `Short games last up to ${shortCut()} rounds (set it with Short ≤; empty is the median, ${medianLength()}), long ones more. Long − short above 0: the character gets better as a game goes on. Games is the fewer of the two.` },
+  { id: "short-long", title: "Short and long games", rows: shortLongRows, columns: shortLongColumns, sort: 2, dir: 1,
+    note: d => `Each character's games split four ways, as shares of all its games (they add up to 100): won or lost, short or long. Short games last up to ${shortCut()} rounds (set it with Short ≤; empty is the median, ${medianLength()}), long ones more. A character that protects early should rarely lose short.` },
   { id: "by-ai", title: "Characters by AI", rows: byAiRows, get columns() { return byAiColumns(); }, sort: 0,
     note: "Win % under each AI, and the edge: that less the AI's own win %. A character whose edge is much higher under one AI is played better by it. Games is the fewest it has under any one AI; a gap needs a few thousand games each to mean much." },
   { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
@@ -329,6 +346,8 @@ const TABLES = [
     note: "Rated only in games between two different AIs." },
   { id: "sides", title: "Home and away", rows: d => d.sides, columns: ratingColumns, sort: 2,
     note: "Read the win rate here; with two entries the Elo mostly follows the latest games." },
+  { id: "counters", title: "Counters", rows: counterRows, columns: counterColumns, sort: 1, filterOn: r => r.first,
+    note: "A character against one on the other team, from the first one's side. Score: win % above what the characters' ratings predicted, in points; positive means the first one does better in that matchup than the ratings explain, so it counters the second. The filter looks at the first name. A matchup needs many games (100+) to mean much; use Min games." },
   { id: "pairs", title: "Character pairs", rows: d => d.pairs || [], columns: pairColumns, sort: 1,
     note: "Two characters on the same team. Score: win % above what the characters' ratings predicted, in points; positive means they win more together than their ratings predict. A pair needs many games (100+) to mean much; use Min games." },
 ];
@@ -373,7 +392,7 @@ function sorted(table, rows) {
 
 function renderTable(table) {
   const all = table.rows(DATA) || [];
-  const rows = all.filter(r => (r.games || 0) >= state.min && (table.nofilter || r.name.toLowerCase().includes(state.filter)));
+  const rows = all.filter(r => (r.games || 0) >= state.min && (table.nofilter || (table.filterOn ? table.filterOn(r) : r.name).toLowerCase().includes(state.filter)));
   const s = state.sorts[table.id] || { col: table.sort, dir: table.dir || -1 };
   const section = el("section", { id: table.id });
   section.append(el("h2", {}, `${table.title} `, el("span", { class: "summary" }, `(${rows.length} of ${all.length})`)));

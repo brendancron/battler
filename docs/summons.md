@@ -28,6 +28,13 @@ come later.)
   +25% defense**. This is its own multiplier (× 1.25), separate from the
   × 1.5 stat ups and downs ([effects.md](effects.md)), and it multiplies with
   them.
+- The bonus is an **aura** on the totem, Totem's Blessing
+  ([effects.md](effects.md#auras)), not a buff on each ally: it reaches
+  everyone on the team while the totem stands, including anyone who joins
+  later (a resurrected ally, a skeleton), and nothing done to an ally can
+  take it off. It can't be dispelled or stolen from the totem, and a second
+  totem doesn't add to it. (Until v0.0.3 each ally had its own copy as a
+  buff.)
 - When it's destroyed, the bonus ends.
 - Foes can target it like a character: single-target moves can pick it
   (targeting tiers apply to it as to anyone), and area moves hit it along with
@@ -39,7 +46,8 @@ come later.)
 - **Its cooldown starts when the totem is destroyed, not when it's summoned:**
   3 of the Shaman's turns after the totem falls. A totem that stands for many
   turns doesn't use those turns up; the cooldown only begins once it's gone.
-- Its HP and defense are placeholders: **20 HP and 40 defense**, so an average
+- Its HP and defense are placeholders: **20 HP and 32 defense** (40 with its
+  own aura, as before v0.0.3, when it was 40 without one), so an average
   hit of power 30 takes most of it.
 
 ## The Necromancer's skeletons
@@ -70,7 +78,7 @@ come later.)
 
 - Raised by the Jester's Puppeteer from a foe's corpse
   ([characters.md](characters.md#jester)). The corpse is removed.
-- A minion on the Jester's team, at **25% of its max HP** (placeholder; max
+- A minion on the Jester's team, at **33% of its max HP** (placeholder, 25% until v0.0.3; max
   HP lost to Reap or fatigue before it fell stays lost).
 - It takes turns in its own speed tier's phase, after its team's characters
   in that phase, like a skeleton.
