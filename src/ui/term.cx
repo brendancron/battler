@@ -1,9 +1,20 @@
 import { Command, Stdio, status } from "std/os/Process";
 import { Console, Stream } from "std/io/Console";
+import { Throw } from "std/core/Error";
 
-/** Whether standard input is a terminal a person is typing at, rather than a pipe or file. */
+/**
+ * Whether standard input is a terminal a person is typing at, rather than a
+ * pipe or file. Where there's no `test` to ask (Windows), it answers false
+ * and the game prints the plain transcript.
+ */
 fn interactive(): bool {
-    return status(Command.new("test").arg("-t").arg("0").stdin(Stdio.Inherit)) == 0;
+    var yes = false;
+    run {
+        yes = status(Command.new("test").arg("-t").arg("0").stdin(Stdio.Inherit)) == 0;
+    } handle Throw {
+        final ctl throw(e) {}
+    }
+    return yes;
 }
 
 /** Waits for any single key, without Enter and without echoing it. */
