@@ -46,6 +46,8 @@ type Character {
     corpse: bool,
     /** Everyone on its side, itself included: the battle's own list, shared, so auras reach whoever joins. Set by `place` and Summon. */
     allies: List<Character>,
+    /** Everyone on the other side, the battle's own list too. Set by `place` and Summon. */
+    foes: List<Character>,
 }
 
 type Cooldown { move: string, turns: int }
@@ -204,7 +206,7 @@ type Action {
 }
 
 fn character(name: string, attack: int, defense: int, tier: Tier): Character {
-    return Character { name: name, team: -1, hp: max_hp(), base_max_hp: max_hp(), lost_max_hp: 0, attack: attack, defense: defense, tier: tier, acted: false, effects: [], cooldowns: [], corpse: false, allies: [] };
+    return Character { name: name, team: -1, hp: max_hp(), base_max_hp: max_hp(), lost_max_hp: 0, attack: attack, defense: defense, tier: tier, acted: false, effects: [], cooldowns: [], corpse: false, allies: [], foes: [] };
 }
 
 /** The value after `steps` ups (× 1.5 each) or downs (÷ 1.5 each). */

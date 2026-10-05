@@ -4,13 +4,13 @@ import { engine, perform, announce } from "battler/core/engine";
 import { MoveDef, use_move, damage } from "battler/core/move";
 import { Choice, has_targets } from "battler/core/target";
 import { start_round, begin_phase, next_actor } from "battler/core/order";
-import { sanguine, heal_block, shield, vigil } from "battler/content/effects";
+import { sanguine, heal_block, shield, vigil, death_throes } from "battler/content/effects";
 import { wither, raise_dead, puppeteer, final_offering, bite, hemorrhage, resurrection } from "battler/content/moves";
 import { Fighter, jester, cleric } from "battler/content/roster";
 import { moves_at } from "battler/game/game";
 import {
     wither_power, skeleton_hp, bone_claw_power, puppet_percent, puppeteer_cooldown, final_offering_power,
-    sanguine_percent, bite_power, hemorrhage_power, hemorrhage_bleed, hemorrhage_rounds
+    sanguine_percent, bite_power, hemorrhage_power, hemorrhage_bleed, hemorrhage_rounds, death_throes_power
 } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
@@ -252,3 +252,52 @@ fn a_bleed_goes_on_after_the_vampire_falls_but_nobody_heals() {
     announce(engine(), b, EventKind.RoundEnded);
     assert(foe.hp == before - hemorrhage_bleed() && v.hp == 0, "still bleeding; no heal");
 }
+
+// Death Throes
+
+/** A Necromancer with Death Throes and an ally, against three sturdy foes. */
+fn throes(): Battle {
+    var b = duel(["Necro", "Ally"], ["B", "C", "D"]);
+    who(b, slot(0, 0)).effects.push(death_throes());
+    for (i in [0, 1, 2]) { sturdy(who(b, slot(1, i))); }
+    return b;
+}
+
+@test
+fn death_throes_hits_every_foe_standing_when_the_necromancer_falls() {
+    var b = throes();
+    var necro = who(b, slot(0, 0));
+    add(b, [Action.KnockOut(who(b, slot(1, 2)))]);
+    var d = damage(necro, who(b, slot(1, 0)), death_throes_power());
+    add(b, [Action.Damage(necro, Option.Some(who(b, slot(1, 0))), 1000, true)]);
+    assert(who(b, slot(1, 0)).hp == 1000 - d && who(b, slot(1, 1)).hp == 1000 - d, "each foe standing, a hit from the Necromancer");
+    assert(who(b, slot(0, 1)).hp == 100, "not its ally");
+}
+
+@test
+fn death_throes_goes_off_however_the_necromancer_falls() {
+    var b = throes();
+    add(b, [Action.Damage(who(b, slot(0, 0)), Option.None, 1000, false)]);
+    assert(who(b, slot(1, 0)).hp < 1000, "poison or fatigue counts too");
+}
+
+@test
+fn death_throes_waits_for_the_fall() {
+    var b = throes();
+    add(b, [Action.Damage(who(b, slot(0, 0)), Option.None, 50, false)]);
+    assert(who(b, slot(1, 0)).hp == 1000, "hurt isn't fallen");
+}
+
+@test
+fn death_throes_reaches_a_summoned_foe() {
+    var b = duel(["Necro"], ["B"]);
+    who(b, slot(0, 0)).effects.push(death_throes());
+    var foe = who(b, slot(1, 0));
+    sturdy(foe);
+    var minion = character("Minion", 100, 100, Tier.Normal);
+    sturdy(minion);
+    add(b, [Action.Summon(foe, minion)]);
+    add(b, [Action.KnockOut(who(b, slot(0, 0)))]);
+    assert(minion.hp < 1000, "the summon is a foe like any other");
+}
+

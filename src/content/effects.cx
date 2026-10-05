@@ -4,7 +4,7 @@ import { damage } from "../core/move";
 import {
     rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, energizer_bonus_percent, totem_bonus_percent, totem_cooldown,
     predator_bonus_percent, predator_line_percent, shield_decay, crescendo_attack_percent, crescendo_defense_percent, sanguine_percent, chill_rounds, ironclad_cap_percent,
-    puppeteer_cooldown, riposte_power, spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds, soul_harvest_heal
+    puppeteer_cooldown, riposte_power, spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds, soul_harvest_heal, death_throes_power
 } from "tuning";
 
 fn never(owner: Character, fx: Effect, event: Event): bool { return false; }
@@ -1089,6 +1089,33 @@ fn ironclad(): Effect {
     e.immune = true;
     e.blocks_healing = true;
     e.hit_cap = ironclad_cap_percent();
+    return e;
+}
+
+// Necromancer, Death Throes: when it falls, a direct hit on every foe standing, from the
+// Necromancer, with its attack as it stood. A fallen character's effects hear their own fall.
+
+fn death_throes_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Fainted(c) => { return same(c, owner) && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn death_throes_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    var out: List<Action> = [];
+    for (foe in owner.foes) {
+        if (!foe.fainted()) { out.push(Action.Damage(foe, Option.Some(owner), damage(owner, foe, death_throes_power()), true)); }
+    }
+    return out;
+}
+
+fn death_throes(): Effect {
+    var e = base("Death Throes", true);
+    e.immune = true;
+    e.should = death_throes_should;
+    e.react = death_throes_react;
     return e;
 }
 

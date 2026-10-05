@@ -82,7 +82,7 @@ fn panacea_mist_cooldown(): int { return 3; }
 fn acid_flask_poison(): int { return 6; }
 fn acid_flask_cooldown(): int { return 4; }
 /** Energizer Potion: each stack of Energized multiplies attack and defense by 100 + this, over 100. */
-fn energizer_bonus_percent(): int { return 10; }
+fn energizer_bonus_percent(): int { return 15; }
 fn energizer_cooldown(): int { return 3; }
 /** Energizer Potion also heals the ally this much. */
 fn energizer_heal(): int { return 30; }
@@ -187,6 +187,8 @@ fn pixie_dust_cooldown(): int { return 4; }
 
 // Necromancer
 
+/** Death Throes: the Necromancer's parting hit on every foe standing. */
+fn death_throes_power(): int { return 25; }
 fn wither_power(): int { return 20; }
 fn wither_cooldown(): int { return 4; }
 fn raise_dead_cooldown(): int { return 5; }

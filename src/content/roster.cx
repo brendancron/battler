@@ -1,6 +1,6 @@
 import { Character, Effect, Tier, character } from "../core/creature";
 import { MoveDef, basic_attack } from "../core/move";
-import { rage, last_rites, keen_eye, vigil, inner_peace, soul_harvest, predator, panacea_supply, fae_bargain, sanguine, cold_aura, ironclad, shadowed, crescendo } from "effects";
+import { rage, last_rites, keen_eye, vigil, inner_peace, soul_harvest, death_throes, predator, panacea_supply, fae_bargain, sanguine, cold_aura, ironclad, shadowed, crescendo } from "effects";
 import {
     cleave, smite, guard, lay_on_hands, aimed_shot, hunters_mark, venom_arrow, prayer, purify, sanctuary, brimstone, hex_move,
     acid_flask, energizer_potion, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows,
@@ -45,7 +45,7 @@ fn monk(): Fighter {
 fn witch(): Fighter { return fighter("Mage", character("Witch", 112, 48, Tier.Normal), [], [basic_attack("Curse Bolt", 10), brimstone(), hex_move()]); }
 
 fn alchemist(): Fighter {
-    return fighter("Support", character("Alchemist", 75, 80, Tier.Normal), [panacea_supply()], [basic_attack("Bottle Bash", 8), panacea_mist(), energizer_potion(), acid_flask()]);
+    return fighter("Support", character("Alchemist", 75, 85, Tier.Normal), [panacea_supply()], [basic_attack("Bottle Bash", 8), panacea_mist(), energizer_potion(), acid_flask()]);
 }
 
 fn warlock(): Fighter { return fighter("Mage", character("Warlock", 110, 45, Tier.Slow), [], [basic_attack("Void Bolt", 10), writhing_depths(), final_offering()]); }
@@ -62,7 +62,7 @@ fn bard(): Fighter { return fighter("Support", character("Bard", 70, 75, Tier.Fa
 
 fn fairy(): Fighter { return fighter("Support", character("Fairy", 65, 62, Tier.Fast), [fae_bargain()], [basic_attack("Pixie Bolt", 8), fairy_ring(), pixie_dust()]); }
 
-fn necromancer(): Fighter { return fighter("Mage", character("Necromancer", 110, 60, Tier.Slow), [], [basic_attack("Bone Spike", 10), wither(), raise_dead()]); }
+fn necromancer(): Fighter { return fighter("Mage", character("Necromancer", 110, 60, Tier.Slow), [death_throes()], [basic_attack("Bone Spike", 10), wither(), raise_dead()]); }
 
 fn vampire(): Fighter { return fighter("Warrior", character("Vampire", 115, 62, Tier.Normal), [sanguine()], [basic_attack("Claw", 10), bite(), hemorrhage()]); }
 

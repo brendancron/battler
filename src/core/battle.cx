@@ -184,7 +184,11 @@ impl Battle {
     fn place(self) {
         var side = 0;
         while (side < self.sides.len()) {
-            for (c in self.sides[side].active) { c.team = side; c.allies = self.sides[side].active; }
+            for (c in self.sides[side].active) {
+                c.team = side;
+                c.allies = self.sides[side].active;
+                if (self.sides.len() == 2) { c.foes = self.sides[1 - side].active; }
+            }
             side = side + 1;
         }
     }

@@ -237,6 +237,7 @@ Hex details:
 ### Alchemist
 
 Support ([archetypes.md](archetypes.md)).
+Stats (placeholders): attack 75, defense 85 (80 until v0.0.8; 60 before that).
 
 Each move brews something and throws it. Its potions go to its allies (or
 the Alchemist itself) and its acid goes on the foes. Since v0.0.7 its
@@ -256,15 +257,15 @@ more. (Until v0.0.3 it topped up every round, to one each.)
 | Move             | Target   | Potion |
 |------------------|----------|--------|
 | Panacea Mist     | all allies, itself too | Heals each ally 15 and gives it a Panacea, on top of any it holds. Cooldown 3. |
-| Energizer Potion | one ally, or itself | A stack of Energized: each stack multiplies the ally's attack and defense by 1.1 for the rest of the battle. Then heals the ally 30 (placeholder; since v0.0.8). Cooldown 3. |
+| Energizer Potion | one ally, or itself | A stack of Energized: each stack multiplies the ally's attack and defense by 1.15 (1.1 until v0.0.8) for the rest of the battle. Then heals the ally 30 (placeholder; since v0.0.8). Cooldown 3. |
 | Acid Flask       | all foes | 6 poison on every foe standing ([effects.md](effects.md#poison)): 21 damage each over six rounds. Cooldown 4 (3 until v0.0.7). |
 
 Its basic attack is Bottle Bash (power 8). The 15, 6 poison and cooldowns
-are placeholders, and so is Energizer's 1.1. Acid Flask is the exception to
+are placeholders, and so is Energizer's 1.15. Acid Flask is the exception to
 single-target moves: it's the Alchemist's way to pressure the whole foe team,
 slowly.
 
-- **Energized stacks multiply.** Two stacks is × 1.21, three × 1.331, on both
+- **Energized stacks multiply.** Two stacks is × 1.32, three × 1.52, on both
   attack and defense. It works with other multipliers like any other.
 - **Energized is a buff, immune to removal** ([effects.md](effects.md#removing-and-moving-effects)):
   it can't be cleansed, dispelled or stolen, so a Paladin's Smite or a
@@ -636,7 +637,26 @@ Mage ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md); the tier
 is a placeholder).
 Stats (placeholders): attack 110, defense 60.
 
-**Passive:** to be designed.
+**Passive: Death Throes** (since v0.0.8). When the Necromancer
+falls, it lashes out one last time: a direct hit of power 25 on every foe
+standing ([damage.md](damage.md)). (The name and the 25 are placeholders.)
+
+- **Any fall counts:** a hit, poison, fatigue. A fall the Fairy's Fae Bargain
+  takes instead isn't one, so nothing happens.
+- **It's a hit from the Necromancer,** using its attack as it stood when it
+  fell, so it counts as its kills: a foe Death Throes knocks out counts for
+  Crescendo and Soul Harvest like any other fall, and a parry or a Cold Aura
+  answers it as they answer any direct hit (on a fallen attacker, a riposte
+  has nothing to hit).
+- **It doesn't take corpses;** only Wither does.
+- **Every fall:** a resurrected Necromancer that falls again lashes out
+  again.
+- **It can draw a game.** If it knocks out the last foe as the Necromancer's
+  team falls, both teams lose at the same moment, and the game is a draw
+  ([fainting.md](fainting.md)).
+- It gives the Necromancer something on the way out, so focusing it down
+  costs the foes; it's the payoff for a Slow, frail Mage that often falls
+  before Raise Dead has a corpse to use.
 
 **Moves** (names, powers and cooldowns are placeholders)
 

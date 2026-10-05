@@ -437,6 +437,7 @@ fn execute(battle: Battle, action: Action): List<EventKind> {
             var side = battle.sides[summoner.team];
             minion.team = summoner.team;
             minion.allies = side.active;
+            if (battle.sides.len() == 2) { minion.foes = battle.sides[1 - summoner.team].active; }
             // Take the slot of a destroyed minion of the same name, so slots don't pile up.
             var placed = false;
             var i = 0;

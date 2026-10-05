@@ -93,7 +93,7 @@ fn copy_battle(battle: Battle): Battle {
             var n = Character {
                 name: c.name, team: c.team, hp: c.hp, base_max_hp: c.base_max_hp, lost_max_hp: c.lost_max_hp,
                 attack: c.attack, defense: c.defense, tier: c.tier, acted: c.acted, effects: [], cooldowns: cooldowns,
-                corpse: c.corpse, allies: []
+                corpse: c.corpse, allies: [], foes: []
             };
             olds.push(c);
             news.push(n);
