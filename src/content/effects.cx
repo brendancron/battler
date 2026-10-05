@@ -1,0 +1,929 @@
+import { Character, Effect, Event, EventKind, Action, trigger_id, in_chain, max_hp } from "../core/creature";
+import { pow } from "../core/maths";
+import {
+    bloodlust_a, bloodlust_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, inner_peace_heal, totem_bonus_percent, totem_cooldown,
+    predator_bonus_percent, predator_line_percent, shield_decay, crescendo_bonus_percent, faerie_light_heal, sanguine_percent, chill_rounds, ironclad_cap_percent,
+    puppeteer_cooldown
+} from "tuning";
+
+fn never(owner: Character, fx: Effect, event: Event): bool { return false; }
+
+fn nothing(owner: Character, fx: Effect, event: Event): List<Action> { return []; }
+
+/** Reapplying leaves the effect as it is. */
+fn keep(existing: Effect, incoming: Effect) {}
+
+fn plain_label(owner: Character, fx: Effect): string { return fx.kind; }
+
+fn unscaled(owner: Character, fx: Effect, attack: int): int { return attack; }
+
+fn let_through(owner: Character, fx: Effect, action: Action): Option<List<Action>> { return Option.None; }
+
+fn unscaled_hit(owner: Character, fx: Effect, target: Character, amount: int): int { return amount; }
+
+/** An effect that does nothing on its own; the effect types below fill in what they need. */
+fn base(kind: string, buff: bool): Effect {
+    return Effect {
+        kind: kind, buff: buff, immune: false, power: 0, rounds: 0, attack_steps: 0, defense_steps: 0, targeting: 0, unrestricted: false, charges: 0, skips: false, first_hit_only: false, absorbs: false, blocks_hits: false, silences: false, blocks_healing: false, minion: false, idle: false,
+        tier_shift: 0, prevents_damage: false, hit_cap: 0, unstealable: false, passive: false,
+        should: never, react: nothing, merge: keep, scale_attack: unscaled, scale_defense: unscaled, scale_hit: unscaled_hit, label: plain_label,
+        intercept: let_through
+    };
+}
+
+/** The check every trigger starts from: it isn't already in the event's provenance. */
+fn fresh(owner: Character, fx: Effect, event: Event): bool {
+    return !in_chain(event, trigger_id(owner, fx));
+}
+
+fn at_round_end(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.RoundEnded => { return fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+// Timed effects count down at the end of each round and remove themselves at 0.
+// Reapplying one resets the count to the longer of the two.
+
+fn countdown_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.rounds = fx.rounds - 1;
+    if (fx.rounds <= 0) { return [Action.RemoveEffect(owner, fx.kind)]; }
+    return [];
+}
+
+fn countdown_merge(existing: Effect, incoming: Effect) {
+    if (incoming.rounds > existing.rounds) { existing.rounds = incoming.rounds; }
+}
+
+fn timed_label(owner: Character, fx: Effect): string { return fx.kind + " (" + str(fx.rounds) + ")"; }
+
+/** The effect, lasting the given number of round ends. */
+fn timed(fx: Effect, rounds: int): Effect {
+    fx.rounds = rounds;
+    fx.should = at_round_end;
+    fx.react = countdown_react;
+    fx.merge = countdown_merge;
+    fx.label = timed_label;
+    return fx;
+}
+
+/** Foes must target the owner (targeting tier +1). */
+fn taunt(rounds: int): Effect {
+    var e = base("Taunt", true);
+    e.targeting = 1;
+    return timed(e, rounds);
+}
+
+fn guard_label(owner: Character, fx: Effect): string { return "Taunt, DEF up (" + str(fx.rounds) + ")"; }
+
+/** The Paladin's Guard: a taunt that also gives defense up (× 1.5) while it lasts. */
+fn guarding_taunt(rounds: int): Effect {
+    var e = taunt(rounds);
+    e.defense_steps = 1;
+    e.label = guard_label;
+    return e;
+}
+
+// Stat ups and downs. They don't stack; an up and a down are separate types.
+
+fn attack_up(): Effect {
+    var e = base("Attack up", true);
+    e.attack_steps = 1;
+    return e;
+}
+
+fn attack_down(): Effect {
+    var e = base("Attack down", false);
+    e.attack_steps = -1;
+    return e;
+}
+
+fn defense_up(): Effect {
+    var e = base("Defense up", true);
+    e.defense_steps = 1;
+    return e;
+}
+
+fn defense_down(): Effect {
+    var e = base("Defense down", false);
+    e.defense_steps = -1;
+    return e;
+}
+
+// Poison: at the end of every round, indirect damage equal to the amount, then the amount
+// drops by 1; gone at 0. Stacks by adding to what's left (docs/effects.md#poison).
+
+fn poison_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    var dealt = fx.power;
+    fx.power = fx.power - 1;
+    if (fx.power <= 0) { return [Action.Damage(owner, Option.None, dealt, false), Action.RemoveEffect(owner, fx.kind)]; }
+    return [Action.Damage(owner, Option.None, dealt, false)];
+}
+
+fn poison_merge(existing: Effect, incoming: Effect) { existing.power = existing.power + incoming.power; }
+
+fn poison_label(owner: Character, fx: Effect): string { return "Poison " + str(fx.power); }
+
+fn poison(damage: int): Effect {
+    var e = base("Poison", false);
+    e.power = damage;
+    e.should = at_round_end;
+    e.react = poison_react;
+    e.merge = poison_merge;
+    e.label = poison_label;
+    return e;
+}
+
+// Regen: heals at the end of the round for a number of rounds. Reapplying resets the count.
+
+fn regen_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.rounds = fx.rounds - 1;
+    if (fx.rounds <= 0) {
+        return [Action.Heal(owner, fx.power), Action.RemoveEffect(owner, fx.kind)];
+    }
+    return [Action.Heal(owner, fx.power)];
+}
+
+fn regen_merge(existing: Effect, incoming: Effect) {
+    if (incoming.rounds > existing.rounds) { existing.rounds = incoming.rounds; }
+}
+
+fn regen_label(owner: Character, fx: Effect): string { return "Regen " + str(fx.power) + " (" + str(fx.rounds) + ")"; }
+
+fn regen(amount: int, rounds: int): Effect {
+    var e = base("Regen", true);
+    e.power = amount;
+    e.rounds = rounds;
+    e.should = at_round_end;
+    e.react = regen_react;
+    e.merge = regen_merge;
+    e.label = regen_label;
+    return e;
+}
+
+// Retaliate: when hit directly, deals indirect damage back to the attacker.
+
+fn retaliate_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Damaged(target, source, _, direct, _) => {
+            match source {
+                Option.Some(_) => { return direct && same(target, owner) && fresh(owner, fx, event); }
+                Option.None => { return false; }
+            }
+        }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn retaliate_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    match event.kind {
+        EventKind.Damaged(_, source, _, _, _) => {
+            match source {
+                Option.Some(attacker) => { return [Action.Damage(attacker, Option.Some(owner), fx.power, false)]; }
+                Option.None => { return []; }
+            }
+        }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn retaliate_label(owner: Character, fx: Effect): string { return "Retaliate " + str(fx.power); }
+
+fn retaliate(damage: int): Effect {
+    var e = base("Retaliate", true);
+    e.power = damage;
+    e.should = retaliate_should;
+    e.react = retaliate_react;
+    e.label = retaliate_label;
+    return e;
+}
+
+// Passives: buffs every character of a kind starts with. They can't be removed.
+
+// Barbarian, Bloodlust: attack × (1 + a(1 − hp/max)^b), a and b in tuning.cx. See docs/characters.md.
+
+/** The attack multiplier at the owner's current HP. */
+fn bloodlust_multiplier(owner: Character): float {
+    var missing = 1.0 - owner.hp.to_float() / owner.base_max_hp.to_float();
+    return 1.0 + bloodlust_a() * pow(missing, bloodlust_b());
+}
+
+fn bloodlust_scale(owner: Character, fx: Effect, attack: int): int {
+    return (attack.to_float() * bloodlust_multiplier(owner)).to_int();
+}
+
+fn bloodlust_label(owner: Character, fx: Effect): string {
+    var hundredths = (bloodlust_multiplier(owner) * 100.0).to_int();
+    var cents = str(hundredths % 100);
+    if (hundredths % 100 < 10) { cents = "0" + cents; }
+    return "Bloodlust ×" + str(hundredths / 100) + "." + cents;
+}
+
+fn bloodlust(): Effect {
+    var e = base("Bloodlust", true);
+    e.immune = true;
+    e.scale_attack = bloodlust_scale;
+    e.label = bloodlust_label;
+    return e;
+}
+
+// Paladin, Last Rites: when the Paladin falls, the first fallen ally in slot order
+// is resurrected.
+
+fn last_rites_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Fainted(c) => { return same(c, owner) && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn last_rites_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    return [Action.ResurrectFirstFallen(owner, fx.power)];
+}
+
+fn last_rites(): Effect {
+    var e = base("Last Rites", true);
+    e.immune = true;
+    e.power = last_rites_percent();
+    e.should = last_rites_should;
+    e.react = last_rites_react;
+    return e;
+}
+
+// Ranger, Keen Eye: ignores targeting restrictions.
+
+fn keen_eye(): Effect {
+    var e = base("Keen Eye", true);
+    e.immune = true;
+    e.unrestricted = true;
+    return e;
+}
+
+// Cleric, Vigil: at the end of each round, heals the lowest-HP ally.
+
+fn vigil_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    return [Action.HealLowestAlly(owner, fx.power)];
+}
+
+fn vigil(): Effect {
+    var e = base("Vigil", true);
+    e.immune = true;
+    e.power = vigil_heal();
+    e.should = at_round_end;
+    e.react = vigil_react;
+    return e;
+}
+
+// Lost turns. A `skips` effect makes the owner lose its next turn, then goes away. Each lost
+// turn uses up one of them, the first on the owner, so a character with a Hex and a Freeze
+// loses two turns.
+
+fn first_skip(owner: Character, fx: Effect): bool {
+    for (e in owner.effects) {
+        if (e.skips) { return same(e, fx); }
+    }
+    return false;
+}
+
+fn skip_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.TurnStarted(c) => { return same(c, owner) && first_skip(owner, fx) && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn skip_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    return [Action.RemoveEffect(owner, fx.kind)];
+}
+
+/** The effect, making the owner lose its next turn. */
+fn skipping(fx: Effect): Effect {
+    fx.skips = true;
+    fx.should = skip_should;
+    fx.react = skip_react;
+    return fx;
+}
+
+// Witch, Hex: the owner loses its next turn, then the Hex goes away.
+
+fn hex_label(owner: Character, fx: Effect): string { return "Hex (frog)"; }
+
+fn hex(): Effect {
+    var e = skipping(base("Hex", false));
+    e.label = hex_label;
+    return e;
+}
+
+// Alchemist potions. Each is a buff with charges: tossing another adds a
+// charge, and each use spends one. See docs/characters.md.
+
+fn add_charges(existing: Effect, incoming: Effect) { existing.charges = existing.charges + incoming.charges; }
+
+fn potion_label(owner: Character, fx: Effect): string {
+    if (fx.charges > 1) { return fx.kind + " ×" + str(fx.charges); }
+    return fx.kind;
+}
+
+/** Spends one charge; the actions to run, removing the potion when it is empty. */
+fn spend(owner: Character, fx: Effect, actions: List<Action>): List<Action> {
+    fx.charges = fx.charges - 1;
+    if (fx.charges <= 0) { actions.push(Action.RemoveEffect(owner, fx.kind)); }
+    return actions;
+}
+
+fn potion(kind: string): Effect {
+    var e = base(kind, true);
+    e.charges = 1;
+    e.merge = add_charges;
+    e.label = potion_label;
+    return e;
+}
+
+// Greater Health Potion: heals when the owner is below the potion line (a percent of its max HP),
+// after damage or as soon as it's tossed.
+
+/** Below the potion line: under `potion_line_percent` of the current max HP. */
+fn below_potion_line(c: Character): bool { return c.hp * 100 < c.max_health() * potion_line_percent(); }
+
+fn health_potion_should(owner: Character, fx: Effect, event: Event): bool {
+    if (!below_potion_line(owner) || !fresh(owner, fx, event)) { return false; }
+    match event.kind {
+        EventKind.Damaged(target, _, _, _, _) => { return same(target, owner); }
+        EventKind.EffectAdded(target, added) => { return same(target, owner) && same(added, fx); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn health_potion_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    return spend(owner, fx, [Action.Heal(owner, fx.power)]);
+}
+
+fn greater_health_potion(amount: int): Effect {
+    var e = potion("Greater Health Potion");
+    e.power = amount;
+    e.should = health_potion_should;
+    e.react = health_potion_react;
+    return e;
+}
+
+// Panacea: blocks the next debuff put on the owner.
+
+fn panacea_intercept(owner: Character, fx: Effect, action: Action): Option<List<Action>> {
+    match action {
+        Action.AddEffect(_, incoming) => {
+            if (incoming.buff) { return Option.None; }
+            return Option.Some(spend(owner, fx, []));
+        }
+        _ => { return Option.None; }
+    }
+    return Option.None;
+}
+
+fn panacea(): Effect {
+    var e = potion("Panacea");
+    e.intercept = panacea_intercept;
+    return e;
+}
+
+// Barrier: blocks the next direct hit on the owner completely, then one charge is spent
+// (docs/effects.md). The engine checks for it before shields, when the damage lands.
+
+fn barrier(): Effect {
+    var e = potion("Barrier");
+    e.blocks_hits = true;
+    return e;
+}
+
+// Energize: the owner's next damaging move gets more attack, then one charge is spent. The
+// boost covers every hit the move computes.
+
+fn energize_scale(owner: Character, fx: Effect, attack: int): int { return attack * (100 + energize_bonus_percent()) / 100; }
+
+fn energize_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.MoveUsed(user, damaging) => { return damaging && same(user, owner) && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn energize_react(owner: Character, fx: Effect, event: Event): List<Action> { return spend(owner, fx, []); }
+
+fn energize(): Effect {
+    var e = potion("Energize");
+    e.scale_attack = energize_scale;
+    e.first_hit_only = true;
+    e.should = energize_should;
+    e.react = energize_react;
+    return e;
+}
+
+// Alchemist, Panacea Supply: at the start of each round, every standing teammate
+// without a Panacea gets one. It stops while the Alchemist is down.
+
+fn at_round_start(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.RoundStarted => { return fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn panacea_supply_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    return [Action.AddToTeam(owner, panacea)];
+}
+
+fn panacea_supply(): Effect {
+    var e = base("Panacea Supply", true);
+    e.immune = true;
+    e.should = at_round_start;
+    e.react = panacea_supply_react;
+    return e;
+}
+
+// Monk, Inner Peace: heals itself at the end of each of its turns.
+
+fn inner_peace_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.TurnEnded(c) => { return same(c, owner) && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn inner_peace_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    return [Action.Heal(owner, fx.power)];
+}
+
+fn inner_peace(): Effect {
+    var e = base("Inner Peace", true);
+    e.immune = true;
+    e.power = inner_peace_heal();
+    e.should = inner_peace_should;
+    e.react = inner_peace_react;
+    return e;
+}
+
+// Grim Reaper, Soul Harvest: a foe the Grim Reaper's damage knocks out loses its corpse.
+
+fn soul_harvest_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Damaged(target, source, _, _, _) => {
+            if (target.team == owner.team || !target.fainted() || !target.corpse) { return false; }
+            match source {
+                Option.Some(attacker) => { return same(attacker, owner) && fresh(owner, fx, event); }
+                Option.None => { return false; }
+            }
+        }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn soul_harvest_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    match event.kind {
+        EventKind.Damaged(target, _, _, _, _) => { return [Action.RemoveCorpse(target)]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn soul_harvest(): Effect {
+    var e = base("Soul Harvest", true);
+    e.immune = true;
+    e.should = soul_harvest_should;
+    e.react = soul_harvest_react;
+    return e;
+}
+
+// Shield: temporary HP that damage takes first. Stacks by adding and loses `shield_decay`
+// at the end of every round. See docs/effects.md#shield.
+
+fn shield_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.power = fx.power - shield_decay();
+    if (fx.power <= 0) { return [Action.RemoveEffect(owner, fx.kind)]; }
+    return [];
+}
+
+fn shield_merge(existing: Effect, incoming: Effect) { existing.power = existing.power + incoming.power; }
+
+fn shield_label(owner: Character, fx: Effect): string { return "Shield " + str(fx.power); }
+
+fn shield(amount: int): Effect {
+    var e = base("Shield", true);
+    e.power = amount;
+    e.absorbs = true;
+    e.should = at_round_end;
+    e.react = shield_react;
+    e.merge = shield_merge;
+    e.label = shield_label;
+    return e;
+}
+
+// Effects that last a number of the owner's own turns, kept in `power`, and
+// count down when each of its turns ends.
+
+fn own_turn_ended(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.TurnEnded(c) => { return same(c, owner) && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn own_turns_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.power = fx.power - 1;
+    if (fx.power <= 0) { return [Action.RemoveEffect(owner, fx.kind)]; }
+    return [];
+}
+
+fn for_own_turns(fx: Effect, turns: int): Effect {
+    fx.power = turns;
+    fx.should = own_turn_ended;
+    fx.react = own_turns_react;
+    return fx;
+}
+
+/** Only the basic attack, for a number of the owner's turns (usually 1, its next turn). */
+fn silence(turns: int): Effect {
+    var e = base("Silence", false);
+    e.silences = true;
+    return for_own_turns(e, turns);
+}
+
+fn heal_block_label(owner: Character, fx: Effect): string { return "Heal Block (" + str(fx.power) + ")"; }
+
+/** No healing of any kind, for a number of the owner's turns. */
+fn heal_block(turns: int): Effect {
+    var e = base("Heal Block", false);
+    e.blocks_healing = true;
+    e.label = heal_block_label;
+    return for_own_turns(e, turns);
+}
+
+// Assassin, Predator: more damage against a target below a line (a percent of its max HP). See
+// docs/characters.md.
+
+/** The damage multiplier against a target at its current HP: boosted below the line, 1 otherwise. */
+fn predator_multiplier(target: Character): float {
+    if (target.hp * 100 < target.max_health() * predator_line_percent()) { return 1.0 + predator_bonus_percent().to_float() / 100.0; }
+    return 1.0;
+}
+
+fn predator_hit(owner: Character, fx: Effect, target: Character, amount: int): int {
+    return (amount.to_float() * predator_multiplier(target)).to_int();
+}
+
+fn predator(): Effect {
+    var e = base("Predator", true);
+    e.immune = true;
+    e.scale_hit = predator_hit;
+    return e;
+}
+
+// Summons (docs/summons.md)
+
+fn minion_label(owner: Character, fx: Effect): string {
+    if (fx.idle) { return "Minion (no turns)"; }
+    return "Minion";
+}
+
+/** Marks a summon: not counted for winning or losing, no corpse; `idle` ones never take turns. */
+fn minion_marker(idle: bool): Effect {
+    var e = base("Minion", true);
+    e.immune = true;
+    e.minion = true;
+    e.idle = idle;
+    e.label = minion_label;
+    return e;
+}
+
+fn blessing_attack(owner: Character, fx: Effect, attack: int): int { return attack * (100 + totem_bonus_percent()) / 100; }
+fn blessing_defense(owner: Character, fx: Effect, defense: int): int { return defense * (100 + totem_bonus_percent()) / 100; }
+
+/** More attack and defense while the team's totem stands. It can't be removed; the totem takes it away when it falls. */
+fn totems_blessing(): Effect {
+    var e = base("Totem's Blessing", true);
+    e.immune = true;
+    e.scale_attack = blessing_attack;
+    e.scale_defense = blessing_defense;
+    return e;
+}
+
+/**
+ * The totem's own effect. When the totem falls, the blessing leaves its team
+ * and the summoner's Totem move starts its cooldown; while it stands, an ally
+ * resurrected on its team gets the blessing too.
+ */
+fn totem_spirit(summoner: Character): Effect {
+    fn should(owner: Character, fx: Effect, event: Event): bool {
+        if (!fresh(owner, fx, event)) { return false; }
+        match event.kind {
+            EventKind.Fainted(c) => { return same(c, owner); }
+            EventKind.Resurrected(c) => { return c.team == owner.team && !owner.fainted(); }
+            _ => { return false; }
+        }
+        return false;
+    }
+    fn react(owner: Character, fx: Effect, event: Event): List<Action> {
+        match event.kind {
+            EventKind.Fainted(_) => { return [Action.RemoveFromTeam(owner, "Totem's Blessing"), Action.StartCooldown(summoner, "Totem", totem_cooldown())]; }
+            EventKind.Resurrected(c) => { return [Action.AddEffect(c, totems_blessing())]; }
+            _ => { return []; }
+        }
+        return [];
+    }
+    var e = base("Totem", true);
+    e.immune = true;
+    e.should = should;
+    e.react = react;
+    return e;
+}
+
+/** A copy of the effect, with its own state. */
+fn copy_effect(e: Effect): Effect {
+    return Effect {
+        kind: e.kind, buff: e.buff, immune: e.immune, power: e.power, rounds: e.rounds, attack_steps: e.attack_steps, defense_steps: e.defense_steps, targeting: e.targeting, unrestricted: e.unrestricted, charges: e.charges, skips: e.skips, first_hit_only: e.first_hit_only, absorbs: e.absorbs, blocks_hits: e.blocks_hits, silences: e.silences, blocks_healing: e.blocks_healing, minion: e.minion, idle: e.idle,
+        tier_shift: e.tier_shift, prevents_damage: e.prevents_damage, hit_cap: e.hit_cap, unstealable: e.unstealable, passive: e.passive,
+        should: e.should, react: e.react, merge: e.merge, scale_attack: e.scale_attack, scale_defense: e.scale_defense, scale_hit: e.scale_hit, label: e.label,
+        intercept: e.intercept
+    };
+}
+
+// Speed up and speed down: one tier faster or slower for the owner's next turn
+// (docs/effects.md#speed-up-and-speed-down). Reapplying leaves it as it is.
+
+fn next_turn_label(owner: Character, fx: Effect): string { return fx.kind + " (next turn)"; }
+
+fn speed_up(): Effect {
+    var e = base("Speed up", true);
+    e.tier_shift = 1;
+    e = for_own_turns(e, 1);
+    e.label = next_turn_label;
+    return e;
+}
+
+fn speed_down(): Effect {
+    var e = base("Speed down", false);
+    e.tier_shift = -1;
+    e = for_own_turns(e, 1);
+    e.label = next_turn_label;
+    return e;
+}
+
+// Bard, Crescendo: attack and defense up by a percent, its own multiplier.
+
+fn crescendo_attack(owner: Character, fx: Effect, attack: int): int { return attack * (100 + crescendo_bonus_percent()) / 100; }
+fn crescendo_defense(owner: Character, fx: Effect, defense: int): int { return defense * (100 + crescendo_bonus_percent()) / 100; }
+
+fn crescendo(rounds: int): Effect {
+    var e = base("Crescendo", true);
+    e.scale_attack = crescendo_attack;
+    e.scale_defense = crescendo_defense;
+    return timed(e, rounds);
+}
+
+// Fairy, Fairy Ring: Invincible until the round is over. It goes at the start of the next round,
+// so the end of the round's damage (poison, fatigue) is covered too.
+
+fn round_start_react(owner: Character, fx: Effect, event: Event): List<Action> { return [Action.RemoveEffect(owner, fx.kind)]; }
+
+fn invincible(): Effect {
+    var e = base("Invincible", true);
+    e.prevents_damage = true;
+    e.should = at_round_start;
+    e.react = round_start_react;
+    return e;
+}
+
+// Fairy, Faerie Light: at the end of each round, every standing ally heals.
+
+fn faerie_light_react(owner: Character, fx: Effect, event: Event): List<Action> { return [Action.HealTeam(owner, fx.power)]; }
+
+fn faerie_light(): Effect {
+    var e = base("Faerie Light", true);
+    e.immune = true;
+    e.power = faerie_light_heal();
+    e.should = at_round_end;
+    e.react = faerie_light_react;
+    return e;
+}
+
+// Vampire, Bleed: indirect damage at the end of each round for a number of rounds, dealt by
+// whoever caused it. Reapplying resets it rather than adding (docs/effects.md#bleed).
+
+fn bleed_merge(existing: Effect, incoming: Effect) {
+    existing.rounds = incoming.rounds;
+    if (incoming.power > existing.power) { existing.power = incoming.power; }
+}
+
+fn bleed_label(owner: Character, fx: Effect): string { return "Bleed " + str(fx.power) + " (" + str(fx.rounds) + ")"; }
+
+fn bleed(source: Character, amount: int, rounds: int): Effect {
+    fn react(owner: Character, fx: Effect, event: Event): List<Action> {
+        fx.rounds = fx.rounds - 1;
+        var out: List<Action> = [Action.Damage(owner, Option.Some(source), fx.power, false)];
+        if (fx.rounds <= 0) { out.push(Action.RemoveEffect(owner, fx.kind)); }
+        return out;
+    }
+    var e = base("Bleed", false);
+    e.power = amount;
+    e.rounds = rounds;
+    e.should = at_round_end;
+    e.react = react;
+    e.merge = bleed_merge;
+    e.label = bleed_label;
+    return e;
+}
+
+// Vampire, Sanguine: heals a percent of the HP its damage takes off a foe.
+
+fn sanguine_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Damaged(_, source, _, _, lost) => {
+            match source {
+                Option.Some(s) => { return same(s, owner) && lost * sanguine_percent() / 100 > 0 && fresh(owner, fx, event); }
+                Option.None => { return false; }
+            }
+        }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn sanguine_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    match event.kind {
+        EventKind.Damaged(_, _, _, _, lost) => { return [Action.Heal(owner, lost * sanguine_percent() / 100)]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn sanguine(): Effect {
+    var e = base("Sanguine", true);
+    e.immune = true;
+    e.should = sanguine_should;
+    e.react = sanguine_react;
+    return e;
+}
+
+// Chill and freeze (docs/effects.md#chill-and-freeze). Chilling a chilled character freezes it:
+// the second chill merges into the first, which then turns itself into a Freeze. A frozen
+// character can't be chilled.
+
+fn freeze_intercept(owner: Character, fx: Effect, action: Action): Option<List<Action>> {
+    match action {
+        Action.AddEffect(_, incoming) => {
+            if (incoming.kind == "Chill") { return Option.Some([]); }
+            return Option.None;
+        }
+        _ => { return Option.None; }
+    }
+    return Option.None;
+}
+
+fn freeze(): Effect {
+    var e = skipping(base("Freeze", false));
+    e.intercept = freeze_intercept;
+    return e;
+}
+
+fn chill_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.RoundEnded => { return fresh(owner, fx, event); }
+        EventKind.EffectAdded(target, added) => { return same(target, owner) && same(added, fx) && fx.power >= 2 && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn chill_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    match event.kind {
+        EventKind.RoundEnded => { return countdown_react(owner, fx, event); }
+        _ => { return [Action.RemoveEffect(owner, fx.kind), Action.AddEffect(owner, freeze())]; }
+    }
+    return [];
+}
+
+/** A second chill: counted, so the chill can turn into a freeze. */
+fn chill_merge(existing: Effect, incoming: Effect) { existing.power = existing.power + incoming.power; }
+
+fn chill(): Effect {
+    var e = base("Chill", false);
+    e.power = 1;
+    e.rounds = chill_rounds();
+    e.should = chill_should;
+    e.react = chill_react;
+    e.merge = chill_merge;
+    e.label = timed_label;
+    return e;
+}
+
+// Frost Giant, Cold Aura: a foe that hits it directly is chilled.
+
+fn cold_aura_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Damaged(target, source, _, direct, _) => {
+            match source {
+                Option.Some(s) => { return direct && same(target, owner) && s.team != owner.team && !s.fainted() && fresh(owner, fx, event); }
+                Option.None => { return false; }
+            }
+        }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn cold_aura_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    match event.kind {
+        EventKind.Damaged(_, source, _, _, _) => {
+            match source {
+                Option.Some(s) => { return [Action.AddEffect(s, chill())]; }
+                Option.None => { return []; }
+            }
+        }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn cold_aura(): Effect {
+    var e = base("Cold Aura", true);
+    e.immune = true;
+    e.should = cold_aura_should;
+    e.react = cold_aura_react;
+    return e;
+}
+
+// Frost Giant, Cryosleep: the owner loses its next turn and takes no damage until then. A buff
+// that can be dispelled but not stolen (docs/effects.md#cryosleep).
+
+fn cryosleep(): Effect {
+    var e = skipping(base("Cryosleep", true));
+    e.prevents_damage = true;
+    e.unstealable = true;
+    return e;
+}
+
+// Construct, Ironclad: it can't be healed, and no one instance of damage takes more than a
+// percent of its max HP.
+
+fn ironclad(): Effect {
+    var e = base("Ironclad", true);
+    e.immune = true;
+    e.blocks_healing = true;
+    e.hit_cap = ironclad_cap_percent();
+    return e;
+}
+
+// Ninja, Shadowed: always shrouded, targeting tier -1 (docs/targeting.md#shroud).
+
+fn shadowed(): Effect {
+    var e = base("Shadowed", true);
+    e.immune = true;
+    e.targeting = -1;
+    return e;
+}
+
+// Jester's puppets (docs/summons.md#the-jesters-puppets). The puppet's strings: when the
+// Jester falls, the puppet falls too; when the puppet falls, the Jester's Puppeteer starts
+// its cooldown.
+
+fn strings_label(owner: Character, fx: Effect): string { return "Puppet"; }
+
+fn strings(jester: Character): Effect {
+    fn should(owner: Character, fx: Effect, event: Event): bool {
+        if (!fresh(owner, fx, event)) { return false; }
+        match event.kind {
+            EventKind.Fainted(c) => { return same(c, owner) || same(c, jester); }
+            _ => { return false; }
+        }
+        return false;
+    }
+    fn react(owner: Character, fx: Effect, event: Event): List<Action> {
+        var out: List<Action> = [];
+        match event.kind {
+            EventKind.Fainted(c) => {
+                // The puppet's own fall from the Jester's knocks it out under this trigger, so this
+                // trigger won't hear it: start the cooldown here.
+                if (same(c, jester)) { out.push(Action.KnockOut(owner)); }
+                out.push(Action.StartCooldown(jester, "Puppeteer", puppeteer_cooldown()));
+            }
+            _ => {}
+        }
+        return out;
+    }
+    var e = base("Strings", true);
+    e.immune = true;
+    e.should = should;
+    e.react = react;
+    e.label = strings_label;
+    return e;
+}

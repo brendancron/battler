@@ -1,0 +1,254 @@
+# Balance checker
+
+A tool that plays many games between AIs and reports how strong characters,
+archetypes, team compositions and the AIs themselves are. It is built on
+`play_match` (src/game/game.cx), which plays any two teams with any two agents.
+
+## Ratings
+
+Everything rated gets an **Elo** rating, starting at 1000, alongside its plain
+win rate and game count (a rating from 5 games means little). Each pool is held
+at an **average of 1000**: a game moves both sides by the same total, so the
+average stays put on its own, and after every game the pool is re-centred in
+case something else pulled it off (a character added to a pool whose ratings
+have already spread out, say). A rating above 1000 is stronger than average,
+below is weaker, and the gaps between ratings are what matter.
+
+Battles are 4 against 4, so Elo is applied team-style:
+
+1. A side's rating is the average of the ratings of what is being rated on it
+   (its 4 characters, say).
+2. The usual Elo expected score is worked out from the two sides' ratings.
+3. Every member of a side moves by the same amount: K × (result − expected),
+   with K = 32 to start.
+
+## What gets rated
+
+| Pool | Rated thing | Notes |
+|------|-------------|-------|
+| Characters | each one in the roster | the main balance number |
+| Archetypes | Warrior, Rogue, Tank, Mage, Support | a team of 2 Mages counts Mage twice |
+| Compositions | a team's archetype mix, e.g. "Mage, Support, Tank, Warrior" | win rate is more useful than Elo here, since there are many mixes |
+| Pairs | two characters on the same team, e.g. "Fairy + Warlock" | a score like the compositions', for synergy ([below](#character-pairs)) |
+| Agents | Random, Greedy, Tactician, and every AI added later | shows whether a new AI beats the old ones, and by how much |
+| Sides | home and away | how much Fast/Slow-phase priority is worth |
+
+## Keeping the numbers fair
+
+Two things can make a number lie: the AIs playing it, and the side it was on.
+Games are played in **blocks of 4** that cancel both out:
+
+1. Two random teams, X and Y, and two AIs, A and B, drawn from the AIs allowed
+   for the run (they may be the same one).
+2. A plays X against B with Y, and A plays Y against B with X, each twice with
+   home and away swapped.
+
+Each team is played by each AI equally often, and each AI plays each team from
+each side. So one block rates the characters, archetypes, mixes and sides (AI
+skill cancels out) and the AIs (team strength and home priority cancel out)
+at the same time. AIs are only rated in games between two different AIs.
+
+Allowing only the strongest AI gives the cleanest character numbers; allowing
+several also rates the AIs against each other.
+
+## Running it
+
+```
+cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--file PATH] [--jobs N] [quiet]
+```
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `--games N` | 100 | games to play this run, rounded up to whole blocks of 4; `0` just prints the report from the file; `forever` plays until cancelled (see [Running overnight](#running-overnight)) |
+| `--ai LIST` | Greedy | the AIs that may be drawn for a block |
+| `--file PATH` | balance.json | where the running totals live |
+| `--jobs N` | 1 | play in N worker processes at once; about 4 per 4 cores is a good start |
+| `quiet` | off | leave out the per-game lines |
+
+The AIs, one file each in `src/agents/` (shared scoring in `scoring.cx`):
+
+| AI | How it plays |
+|----|--------------|
+| Random | any usable move on any legal target |
+| Greedy | the move that scores best right now: damage, knockouts, healing, a flat value for each buff or debuff |
+| Tactician | like Greedy, but a buff or debuff that changes attack or defense is worth how much it changes the damage each side could deal next turn, for as long as it lasts. It knows every character's moves, so it energizes the hitter still to act this round, and gives nothing for boosting an ally that can't attack |
+| Strategist | like Tactician, but it counts what a cooldown costs: a move that would waste part of itself now (healing past max HP, or damage past what a foe has left) loses that waste times its cooldown ÷ 4. So it holds a team heal until the team is really hurt, and finishes a low foe with its basic attack instead of burning a big hit |
+
+All of them draft at random, all but Random without repeating an archetype.
+
+### Generations
+
+Each AI is a generation: it plays like the one before it plus one new idea,
+and lives in its own file. A better way to play goes into a **new** AI, not
+into an old one, so the old ones stay as fixed benchmarks and the balance
+checker can show whether each generation really beats the last
+(`--ai Tactician,Strategist`). Random (0), Greedy (1), Tactician (2),
+Strategist (3).
+
+Strategist's waste weight (÷ 4 per turn of cooldown) is a placeholder, tuned
+by running it against Tactician.
+
+The totals are read from the file at the start and saved after every 4 games,
+so runs add up (100 games, then another 100) and an interrupted run keeps what
+it played (all but the last few games). Each save writes a temporary file
+and renames it over the real one, so cancelling mid-save can't leave a
+half-written file. Delete the file to start over, for example after rebalancing a
+character. The file is listed in `.gitignore`.
+
+Progress (a line per game and standings every 20 games) is printed as it
+happens, then the final report of the totals.
+
+### Report page
+
+Each run writes a **report page** next to the totals file (`balance.json`
+gives `balance.html`), and every save writes the totals beside it as
+`balance.data.js`, which the page loads (all in `.gitignore`). Open the page
+in a browser to look at the totals without running anything. During a run a
+refresh shows the latest; the header says when the totals were last saved,
+and **Auto-refresh** reloads every 10 seconds (keeping your place on the
+page) to follow a run live. `--games 0` writes both for the file as it is,
+without playing.
+
+- One table per thing rated (characters, archetypes, AIs, home and away,
+  archetype counts, team mixes), each with a bar showing how far above or
+  below the middle (1000 Elo, 50%, a score of 0) each row is.
+- Click a heading to sort by that column, again to reverse. A filter by name
+  and a minimum number of games apply to every table; tabs show one table
+  or all of them. The page remembers these in the browser.
+
+The page is a copy of `src/balance/report.html`; the data script
+(`src/balance/page.cx`) is `window.BALANCE_DATA = {...}`, loaded with a
+`<script src>`, which works from `file://`, so the page needs no server or
+internet. The data is a file of its own because splicing it into the page was
+slow in Cronyx (about 5 s a save for a 46K-character ledger). Each table and
+column is one entry in the page's `TABLES` list, so new views are added there.
+
+### Logs
+
+Every run also appends to two logs next to the totals file, as JSON lines (one
+object per line), for looking at a long run afterwards (`src/balance/logs.cx`):
+
+- **`balance.games.jsonl`**: every game, as recorded: `time` (Unix seconds),
+  `home_ai`, `away_ai`, `home` and `away` (character names), `winner` (0 home,
+  1 away, -1 draw), `rounds`, `secs` (how long the game took to play).
+- **`balance.timeline.jsonl`**: a `start` line when a run (or a batch of a
+  `forever` run) begins, with its arguments and the games in the totals; then
+  a `snapshot` every 100 games and at the end of each run, with:
+  - `games` (in the totals), `this_run`, `elapsed_s`;
+  - `interval`: the games since the last snapshot, `wall_s`,
+    `games_per_min`, `avg_game_s`, `avg_rounds`, `draws`, `home_win_pct`;
+  - `main_rss_mb` (the main process's memory), `last_save_ms`,
+    `workers_started`;
+  - `characters`, `archetypes`, `agents`: every rating as `[elo, games, wins]`.
+
+Game lines are appended at each save, so after a cancel they match the
+totals. The logs only grow; delete them with the totals to start over.
+
+### Running overnight
+
+```
+cx run src/balance.cx -- --games forever --ai Greedy,Tactician --jobs 8 quiet
+```
+
+plays until you press Ctrl+C. It runs the checker again and again, 1000 games
+at a time (`batch_games` in `src/balance.cx`), with the same options; each
+batch is a run of its own that loads the totals, adds to them, saves, and
+exits, printing one line instead of the full report. `quiet` keeps the
+terminal to the standings every 20 games and a line per batch; the page and
+the logs have the rest.
+
+It runs in batches because a long-lived Cronyx process keeps the memory it
+had before each file write it waits on (CronyxLang#151): one endless run's
+main process grew by about 150 KB a game. A batch frees it all when it exits
+(about 100 MB at most), and the process running the batches only waits.
+
+Saves can lag a few seconds behind the games (CronyxLang#150: a file write
+waits for a worker's next line), so cancelling loses at most the last few
+seconds of games. Everything saved is consistent: the totals, the page data
+and the game log are each written whole or not at all.
+
+### Jobs
+
+The games are played by **worker processes**, each the checker itself run as
+`cx run src/balance.cx -- --worker --games K --ai LIST`, while the main
+process only records them. A worker plays its blocks and prints one line per
+game (`src/balance/jobs.cx`); it never reads or writes the totals file. The
+main process reads every worker at once and records each game as it arrives,
+so the totals still live in one place and Elo is still applied one game at a
+time; only the order games are recorded in changes. Run it from the project's
+root, with `cx` on `PATH`.
+
+`--jobs N` runs N **lanes** at once, sharing the games out in whole blocks.
+Each lane runs workers one after another, each playing at most 1000 games
+(`worker_games` in `src/balance.cx`), so a normal run is one worker per lane.
+
+Before cx 0.0.27, a Cronyx process kept every finished battle in memory
+(about 2 MB a game; CronyxLang#144 and #147), and the growing heap slowed it
+down: one process playing 300 games ran each game 5× slower by the end. The
+cap was 24 games then, so no worker got big. With 0.0.27 a worker's memory
+stays flat (about 30 MB over 400 games), and one process playing 300 games
+was no slower than fifteen 20-game workers.
+
+## Team composition
+
+Teams are picked fully at random from the roster, with any mix of archetypes
+allowed, four Supports included. The composition numbers can only show that a
+mix is bad if that mix gets played.
+
+A composition's raw win rate mixes up two things: how strong its characters
+are, and how well they work together. The **composition score** separates
+them:
+
+1. Before each game, the character ratings give each team an expected score:
+   the usual Elo expectation from the average rating of its 4 characters.
+2. After the game, each team's composition is credited with
+   actual − expected (actual is 1 for a win, 0 for a loss).
+3. A composition's score is the average of those credits.
+
+| Score | Meaning |
+|-------|---------|
+| about 0 | the mix does as well as its characters predict |
+| positive | synergy: it wins more than its characters explain |
+| negative | a bad fit: it loses more than its characters explain |
+
+The score is reported in percentage points ("+6% above expected") and can be
+converted to Elo points.
+
+A mix being bad, like four Supports, is a design goal rather than part of the
+formula: the checker shows whether the goal is met. Four Supports should come
+out clearly negative; if it doesn't, Supports are too strong together.
+
+There are 70 possible archetype mixes, so most take many games to settle. A
+coarser view fills up faster: win rate and score by how many of each
+archetype a team has (0 to 4 Supports, 0 to 4 Mages, and so on).
+
+## Character pairs
+
+Teams are random, so a character built for a combo is mostly measured with
+partners that can't use it. The Fairy is worth far more protecting a Warlock
+so it gets its nuke off than on a random team, and the Cryomancer and Frost
+Giant chill for each other; their win rates average that away.
+
+The **pair score** shows it, the same way the composition score does for
+archetype mixes:
+
+1. Before each game, each team's expected score comes from its characters'
+   ratings, as for compositions.
+2. After it, every pair of characters on a team (6 per team) is credited
+   with actual − expected.
+3. A pair's score is the average of its credits: positive means the two win
+   more together than their ratings explain.
+
+With 23 characters there are 253 pairs, and each game feeds 12 of them, so a
+pair needs many games to settle: each turns up in about 1 team in 42, and
+telling a real +8% from noise takes 100+ games together, so 4,000-5,000 games
+in all. The printed report lists the best and worst 10 pairs with 30+ games
+(`pair_min_games`, `pair_ends` in src/balance.cx); the report page has every
+pair, with Min games to hide the thin ones. Pairs are kept in the totals file
+under `pairs`; a file from before pairs existed starts with none.
+
+Balancing combo characters means two numbers: the character's own
+rating (how it does on any team) and its best pair scores (how it does on the
+team it was built for). A character that's weak alone but has strong pairs
+is working as designed (see
+[characters.md](characters.md#strong-strengths-big-weaknesses)).

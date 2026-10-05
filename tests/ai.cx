@@ -1,0 +1,378 @@
+import { Character, Action, Cooldown } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform } from "battler/core/engine";
+import { MoveDef } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { Pick, score } from "battler/agents/scoring";
+import { best } from "battler/agents/greedy";
+import { planned } from "battler/agents/tactician";
+import { random_pick } from "battler/agents/random";
+import { timed, wasted, cooldown_cost, waste_weight } from "battler/agents/strategist";
+import { hex, taunt, panacea, heal_block, barrier, poison } from "battler/content/effects";
+import { cleave, smite, guard, lay_on_hands, prayer, purify, sanctuary, hex_move, brimstone, acid_flask, greater_health_potion_move, energize_move, flurry_of_blows, soul_siphon, reap, backstab } from "battler/content/moves";
+import { basic_attack, damage } from "battler/core/move";
+import { cleave_power, prayer_heal, purify_heal, flurry_power, flurry_picks, soul_siphon_power, potion_heal, potion_line_percent, acid_flask_poison, brimstone_power, backstab_power } from "battler/content/tuning";
+import { duel, who, slot } from "support";
+
+fn none(n: int): int { return 0; }
+
+fn smaller(a: int, b: int): int {
+    if (a < b) { return a; }
+    return b;
+}
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+/** The AI's pick for the slot, with no noise. */
+fn pick(b: Battle, user: Slot, moves: List<MoveDef>): Pick {
+    match best(b, user, moves, 0, none) {
+        Option.Some(p) => { return p; }
+        Option.None => {}
+    }
+    assert(false, "no pick");
+    return Pick { move: moves[0], choice: Choice.NoTarget, score: 0 };
+}
+
+fn target_of(p: Pick): int {
+    match p.choice {
+        Choice.Slots(slots) => { return slots[0].index; }
+        Choice.NoTarget => { return -1; }
+    }
+    return -1;
+}
+
+@test
+fn goes_for_the_knockout() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    who(b, slot(1, 2)).take(100 - damage(who(b, slot(0, 0)), who(b, slot(1, 2)), cleave_power()));
+    var p = pick(b, slot(0, 0), [cleave()]);
+    assert(target_of(p) == 2, "the one Cleave finishes");
+}
+
+@test
+fn hits_the_taunter_when_it_must() {
+    var b = duel(["A"], ["B", "C"]);
+    who(b, slot(1, 0)).take(80);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 1)), taunt(2))]);
+    assert(target_of(pick(b, slot(0, 0), [cleave()])) == 1, "the taunter, not the low one");
+}
+
+@test
+fn heals_the_ally_that_needs_it() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 2)).take(50);
+    var p = pick(b, slot(0, 0), [lay_on_hands()]);
+    assert(target_of(p) == 2, "the hurt ally");
+}
+
+@test
+fn attacks_instead_of_healing_a_healthy_team() {
+    var b = duel(["A", "B"], ["C"]);
+    var p = pick(b, slot(0, 0), [prayer(), smite()]);
+    assert(p.move.name == "Smite", "nobody needs healing");
+}
+
+@test
+fn healing_is_worth_the_hp_it_restores() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 0)).take(60);
+    who(b, slot(0, 1)).take(60);
+    who(b, slot(0, 2)).take(10);
+    match score(b, slot(0, 0), prayer(), Choice.NoTarget) {
+        Option.Some(s) => { assert(s == 2 * smaller(prayer_heal(), 60) + smaller(prayer_heal(), 10), "each ally's heal, up to what it's missing"); }
+        Option.None => { assert(false, "binds"); }
+    }
+}
+
+@test
+fn does_not_hex_a_frog_or_a_panacea() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), hex()), Action.AddEffect(who(b, slot(1, 1)), panacea())]);
+    assert(target_of(pick(b, slot(0, 0), [hex_move()])) == 2, "the only one it would work on");
+}
+
+@test
+fn wards_a_healthy_team_rather_than_waste_a_heal() {
+    var b = duel(["A", "B"], ["C"]);
+    var p = pick(b, slot(0, 0), [prayer(), purify(), sanctuary()]);
+    assert(p.move.name == "Sanctuary", "a barrier is still worth something at full HP");
+}
+
+@test
+fn does_not_stack_a_barrier_over_a_fresh_ally() {
+    var b = duel(["A", "B"], ["C"]);
+    var p = pick(b, slot(0, 0), [sanctuary()]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, target_of(p))), barrier())]);
+    var again = pick(b, slot(0, 0), [sanctuary()]);
+    assert(target_of(again) != target_of(p), "the one without a barrier");
+}
+
+@test
+fn purifies_the_ally_with_debuffs() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 1)), hex())]);
+    var p = pick(b, slot(0, 0), [purify()]);
+    assert(target_of(p) == 1, "the frog");
+}
+
+@test
+fn flurry_finishes_low_foes() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    who(b, slot(1, 1)).take(100 - damage(who(b, slot(0, 0)), who(b, slot(1, 1)), flurry_power()));
+    var p = pick(b, slot(0, 0), [flurry_of_blows()]);
+    match p.choice {
+        Choice.Slots(slots) => {
+            var on_low = 0;
+            for (s in slots) {
+                if (s.index == 1) { on_low = on_low + 1; }
+            }
+            assert(on_low >= 1, "at least one punch on the foe one punch can finish");
+        }
+        Choice.NoTarget => { assert(false, "picks"); }
+    }
+}
+
+@test
+fn a_drain_is_worth_more_when_hurt() {
+    var b = duel(["A"], ["B"]);
+    var full = 0;
+    match score(b, slot(0, 0), soul_siphon(), at(slot(1, 0))) {
+        Option.Some(s) => { full = s; }
+        Option.None => { assert(false, "binds"); }
+    }
+    assert(full == damage(who(b, slot(0, 0)), who(b, slot(1, 0)), soul_siphon_power()), "at full HP, only the hit counts");
+    who(b, slot(0, 0)).take(60);
+    match score(b, slot(0, 0), soul_siphon(), at(slot(1, 0))) {
+        Option.Some(s) => { assert(s > full, "hurt: the heal counts too"); }
+        Option.None => { assert(false, "binds"); }
+    }
+}
+
+@test
+fn does_not_heal_a_heal_blocked_ally() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 1)).take(60);
+    who(b, slot(0, 2)).take(30);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 1)), heal_block(2))]);
+    assert(target_of(pick(b, slot(0, 0), [lay_on_hands()])) != 1, "the blocked one can't be healed");
+}
+
+@test
+fn sees_purify_clear_heal_block_before_healing() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 1)).take(90);
+    who(b, slot(0, 2)).take(20);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 1)), heal_block(2))]);
+    var p = pick(b, slot(0, 0), [purify()]);
+    assert(target_of(p) == 1, "the blocked ally");
+    assert(p.score == 15 + smaller(purify_heal(), 90), "15 for the cleanse, and the heal counts in full");
+}
+
+// The random AI
+
+fn zero(n: int): int { return 0; }
+fn top(n: int): int { return n - 1; }
+
+@test
+fn random_picks_only_usable_moves() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.cooldowns.push(Cooldown { move: "Cleave", turns: 1 });
+    match random_pick(b, slot(0, 0), [cleave(), smite()], zero) {
+        Option.Some(p) => { assert(p.move.name == "Smite", "cleave is cooling"); }
+        Option.None => { assert(false, "a pick"); }
+    }
+}
+
+@test
+fn random_targets_respect_taunts() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 2)), taunt(2))]);
+    match random_pick(b, slot(0, 0), [cleave()], zero) {
+        Option.Some(p) => { assert(target_of(p) == 2, "only the taunter is legal"); }
+        Option.None => { assert(false, "a pick"); }
+    }
+}
+
+@test
+fn random_fills_every_flurry_pick() {
+    var b = duel(["A"], ["B", "C"]);
+    match random_pick(b, slot(0, 0), [flurry_of_blows()], top) {
+        Option.Some(p) => {
+            match p.choice {
+                Choice.Slots(s) => { assert(s.len() == flurry_picks() && s[0].index == 1, "every pick"); }
+                Choice.NoTarget => { assert(false, "picks"); }
+            }
+        }
+        Option.None => { assert(false, "a pick"); }
+    }
+}
+
+@test
+fn random_has_nothing_when_everything_is_cooling() {
+    var b = duel(["A"], ["B"]);
+    who(b, slot(0, 0)).cooldowns.push(Cooldown { move: "Cleave", turns: 2 });
+    match random_pick(b, slot(0, 0), [cleave()], zero) {
+        Option.Some(_) => { assert(false, "nothing usable"); }
+        Option.None => {}
+    }
+}
+
+@test
+fn energizes_an_ally_still_to_act() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 1)).acted = true;
+    var p = pick(b, slot(0, 0), [energize_move()]);
+    assert(target_of(p) == 2, "C hits this round; B has already gone");
+}
+
+@test
+fn a_greater_health_potion_goes_where_it_heals_at_once() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 2)).take(101 - potion_line_percent());
+    var p = pick(b, slot(0, 0), [greater_health_potion_move()]);
+    assert(target_of(p) == 2, "C is below the line");
+    assert(p.score == smaller(potion_heal(), 101 - potion_line_percent()), "worth its heal now, up to what C is missing");
+}
+
+@test
+fn a_greater_health_potion_is_worth_more_near_the_line() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    // B is just above the line; C is at full HP.
+    who(b, slot(0, 1)).take(99 - potion_line_percent());
+    var near = 0;
+    var far = 0;
+    match score(b, slot(0, 0), greater_health_potion_move(), at(slot(0, 1))) {
+        Option.Some(s) => { near = s; }
+        Option.None => {}
+    }
+    match score(b, slot(0, 0), greater_health_potion_move(), at(slot(0, 2))) {
+        Option.Some(s) => { far = s; }
+        Option.None => {}
+    }
+    assert(far > 0, "a full-HP ally is still a home for it");
+    assert(near >= far, "never worth less nearer the line");
+    // The AI counts an ally more than one hit (25) from the line as further off.
+    if (100 - potion_line_percent() > 25) {
+        assert(near > far, "worth more one hit from the line");
+        assert(target_of(pick(b, slot(0, 0), [greater_health_potion_move()])) == 1, "so it goes to B");
+    }
+}
+
+@test
+fn acid_flask_is_worth_its_poison_on_every_foe() {
+    var one = duel(["A"], ["B"]);
+    var three = duel(["A"], ["B", "C", "D"]);
+    var single = 0;
+    match score(one, slot(0, 0), acid_flask(), Choice.NoTarget) {
+        Option.Some(s) => { single = s; }
+        Option.None => {}
+    }
+    assert(single > 0, "worth something");
+    match score(three, slot(0, 0), acid_flask(), Choice.NoTarget) {
+        Option.Some(s) => { assert(s == 3 * single, "once per foe"); }
+        Option.None => { assert(false, "binds"); }
+    }
+}
+
+@test
+fn more_poison_is_worth_only_the_extra() {
+    var b = duel(["A"], ["B", "C"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), poison(20)), Action.AddEffect(who(b, slot(1, 1)), panacea())]);
+    var p = acid_flask_poison();
+    // n poison deals n(n+1)/2 in all; the extra is capped at B's HP, then counted at 3/4 for coming slowly.
+    var extra = smaller((20 + p) * (21 + p) / 2 - 20 * 21 / 2, 100);
+    match score(b, slot(0, 0), acid_flask(), Choice.NoTarget) {
+        Option.Some(s) => { assert(s == extra * 3 / 4, "only the extra on B; C's Panacea blocks it"); }
+        Option.None => { assert(false, "binds"); }
+    }
+}
+
+// The Tactician
+
+fn planned_pick(b: Battle, user: Slot, kits: List<List<List<MoveDef>>>): Pick {
+    match planned(b, user, kits[user.side][user.index], kits, 0, none) {
+        Option.Some(p) => { return p; }
+        Option.None => {}
+    }
+    assert(false, "no pick");
+    return Pick { move: energize_move(), choice: Choice.NoTarget, score: 0 };
+}
+
+@test
+fn tactician_energizes_the_hardest_hitter() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 2)).attack = 150;
+    var kits = [[[energize_move()], [basic_attack("Jab", 20)], [basic_attack("Jab", 20)]], [[basic_attack("Jab", 10)]]];
+    assert(target_of(planned_pick(b, slot(0, 0), kits)) == 2, "C hits hardest");
+}
+
+@test
+fn tactician_energizes_the_area_move() {
+    var b = duel(["A", "B", "C"], ["D", "E", "F"]);
+    // B's single hit is as strong as each of Brimstone's three.
+    var kits = [[[energize_move()], [basic_attack("Jab", brimstone_power())], [brimstone()]], [[basic_attack("Jab", 10)], [basic_attack("Jab", 10)], [basic_attack("Jab", 10)]]];
+    assert(target_of(planned_pick(b, slot(0, 0), kits)) == 2, "Brimstone hits all three");
+}
+
+@test
+fn tactician_wont_energize_allies_who_cant_attack() {
+    var b = duel(["A", "B"], ["C"]);
+    // Nobody on A's side can attack: A only energizes, B only prays.
+    var kits = [[[energize_move()], [prayer()]], [[basic_attack("Jab", 10)]]];
+    assert(planned_pick(b, slot(0, 0), kits).score == 0, "boosting nothing is worth nothing");
+    assert(pick(b, slot(0, 0), kits[0][0]).score > 0, "Greedy doesn't know nobody can attack");
+}
+
+// The Strategist
+
+fn strategist_pick(b: Battle, user: Slot, moves: List<MoveDef>): Pick {
+    var kits = [[moves], [[basic_attack("Jab", 10)]]];
+    match timed(b, user, moves, kits, 0, none) {
+        Option.Some(p) => { return p; }
+        Option.None => {}
+    }
+    assert(false, "no pick");
+    return Pick { move: moves[0], choice: Choice.NoTarget, score: 0 };
+}
+
+@test
+fn overhealing_is_waste_and_costs_by_cooldown() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 1)).take(10);
+    var h = prayer_heal();
+    var waste = 3 * h - smaller(h, 10);
+    assert(wasted(b, slot(0, 0), prayer(), Choice.NoTarget) == waste, "everything past each ally's missing HP");
+    assert(cooldown_cost(b, slot(0, 0), prayer(), Choice.NoTarget) == waste * prayer().cooldown * waste_weight() / 4, "waste x cooldown x weight / 4");
+}
+
+@test
+fn nothing_is_wasted_when_the_team_needs_it_all() {
+    var b = duel(["A", "B"], ["D"]);
+    who(b, slot(0, 0)).take(prayer_heal());
+    who(b, slot(0, 1)).take(prayer_heal());
+    assert(cooldown_cost(b, slot(0, 0), prayer(), Choice.NoTarget) == 0, "every point of the heal lands");
+}
+
+@test
+fn overkill_is_waste_and_a_clean_hit_is_not() {
+    var b = duel(["A"], ["B", "C"]);
+    var d = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), backstab_power());
+    who(b, slot(1, 1)).take(95);
+    assert(wasted(b, slot(0, 0), backstab(), Choice.Slots([slot(1, 0)])) == 0, "a full-HP foe takes it all");
+    assert(wasted(b, slot(0, 0), backstab(), Choice.Slots([slot(1, 1)])) == d - 5, "a foe with 5 left wastes the rest");
+}
+
+@test
+fn strategist_holds_a_team_heal_for_when_its_needed() {
+    var b = duel(["A", "B", "C"], ["D"]);
+    who(b, slot(0, 1)).take(10);
+    assert(strategist_pick(b, slot(0, 0), [prayer(), basic_attack("Jab", 10)]).move.name == "Jab", "not for 10 missing HP");
+}
+
+@test
+fn strategist_finishes_a_low_foe_with_its_basic_attack() {
+    var b = duel(["A"], ["B"]);
+    who(b, slot(1, 0)).take(95);
+    assert(strategist_pick(b, slot(0, 0), [backstab(), basic_attack("Jab", 10)]).move.name == "Jab", "Backstab would be wasted on 5 HP");
+}

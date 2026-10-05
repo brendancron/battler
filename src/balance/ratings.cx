@@ -1,0 +1,383 @@
+import { pad_left, pad_right } from "std/text/String";
+import { pow } from "../core/maths";
+import { Data, Entry } from "std/encoding/Codec";
+
+/**
+ * Elo ratings and the other numbers the balance checker reports. See
+ * docs/balance.md. Nothing here plays games; the checker (src/balance.cx)
+ * plays them and feeds the results in.
+ */
+
+/** Where every rating starts, and the average every pool is held at. */
+fn start_elo(): float { return 1000.0; }
+fn k_factor(): float { return 32.0; }
+
+/** One rated thing: a character, an archetype, an agent, a side. */
+type Rating { name: string, elo: float, games: int, wins: int }
+
+/** A set of ratings, found by name and created at 1000 the first time they're seen. */
+type Pool { ratings: List<Rating> }
+
+fn new_pool(): Pool { return Pool { ratings: [] }; }
+
+fn rating(pool: Pool, name: string): Rating {
+    for (r in pool.ratings) {
+        if (r.name == name) { return r; }
+    }
+    var r = Rating { name: name, elo: start_elo(), games: 0, wins: 0 };
+    pool.ratings.push(r);
+    return r;
+}
+
+/** The chance a side rated `a` beats one rated `b`. */
+fn expected(a: float, b: float): float {
+    return 1.0 / (1.0 + pow(10.0, (b - a) / 400.0));
+}
+
+/** A side's rating: the average of its members'. A name listed twice counts twice. */
+fn side_elo(pool: Pool, names: List<string>): float {
+    var total = 0.0;
+    for (n in names) { total = total + rating(pool, n).elo; }
+    return total / names.len().to_float();
+}
+
+/**
+ * Records a game between two sides, each listed by the names of its rated
+ * members. Every member of a side moves by the same amount,
+ * K × (result − expected); a name listed twice moves twice.
+ */
+fn record(pool: Pool, winners: List<string>, losers: List<string>) {
+    var w = side_elo(pool, winners);
+    var l = side_elo(pool, losers);
+    var change = k_factor() * (1.0 - expected(w, l));
+    for (n in winners) {
+        var r = rating(pool, n);
+        r.elo = r.elo + change;
+        r.games = r.games + 1;
+        r.wins = r.wins + 1;
+    }
+    for (n in losers) {
+        var r = rating(pool, n);
+        r.elo = r.elo - change;
+        r.games = r.games + 1;
+    }
+    recenter(pool);
+}
+
+/**
+ * Shifts every rating in the pool by the same amount so they average exactly
+ * 1000. A game moves both sides by the same total, so the average normally
+ * stays put on its own; this keeps it there when something else would pull it
+ * off, like a new character joining a pool whose ratings have spread out, or
+ * rounding over many games. Differences between ratings are unchanged.
+ */
+fn recenter(pool: Pool) {
+    if (pool.ratings.len() == 0) { return; }
+    var total = 0.0;
+    for (r in pool.ratings) { total = total + r.elo; }
+    var shift = start_elo() - total / pool.ratings.len().to_float();
+    for (r in pool.ratings) { r.elo = r.elo + shift; }
+}
+
+// Compositions
+
+/** How a team mix has done: games, wins, and the running total of actual − expected. */
+type Mix { name: string, games: int, wins: int, surprise: float }
+
+type Mixes { mixes: List<Mix> }
+
+fn new_mixes(): Mixes { return Mixes { mixes: [] }; }
+
+fn mix(all: Mixes, name: string): Mix {
+    for (m in all.mixes) {
+        if (m.name == name) { return m; }
+    }
+    var m = Mix { name: name, games: 0, wins: 0, surprise: 0.0 };
+    all.mixes.push(m);
+    return m;
+}
+
+/** Credits a mix with one game: whether it won, and how likely the character ratings said it was to. */
+fn credit(all: Mixes, name: string, won: bool, expected_score: float) {
+    var m = mix(all, name);
+    m.games = m.games + 1;
+    var actual = 0.0;
+    if (won) { m.wins = m.wins + 1; actual = 1.0; }
+    m.surprise = m.surprise + (actual - expected_score);
+}
+
+/** The composition score: average actual − expected, as percentage points. */
+fn score(m: Mix): float {
+    if (m.games == 0) { return 0.0; }
+    return 100.0 * m.surprise / m.games.to_float();
+}
+
+/** A team's archetypes as one name, sorted so the same mix always reads the same: "Mage, Support, Support, Tank". */
+fn mix_name(archetypes: List<string>): string {
+    var sorted: List<string> = [];
+    for (a in archetypes) {
+        var placed = false;
+        var merged: List<string> = [];
+        for (s in sorted) {
+            if (!placed && a < s) { merged.push(a); placed = true; }
+            merged.push(s);
+        }
+        if (!placed) { merged.push(a); }
+        sorted = merged;
+    }
+    var out = "";
+    for (s in sorted) {
+        if (out != "") { out = out + ", "; }
+        out = out + s;
+    }
+    return out;
+}
+
+/** Two characters as one name, in alphabetical order so a pair always reads the same: "Fairy + Warlock". */
+fn pair_name(a: string, b: string): string {
+    if (b < a) { return b + " + " + a; }
+    return a + " + " + b;
+}
+
+/** Every pair of different characters on a team: 6 for a team of 4. */
+fn pairs_of(team: List<string>): List<string> {
+    var out: List<string> = [];
+    var i = 0;
+    while (i < team.len()) {
+        var j = i + 1;
+        while (j < team.len()) {
+            out.push(pair_name(team[i], team[j]));
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+/** How many times `archetype` is on the team, as a name for the coarse view: "Support ×2". */
+fn count_name(archetypes: List<string>, archetype: string): string {
+    var n = 0;
+    for (a in archetypes) {
+        if (a == archetype) { n = n + 1; }
+    }
+    return archetype + " ×" + str(n);
+}
+
+// Reports
+
+fn fixed(x: float, places: int): string {
+    var scale = 1;
+    var i = 0;
+    while (i < places) { scale = scale * 10; i = i + 1; }
+    var negative = x < 0.0;
+    var v = x;
+    if (negative) { v = 0.0 - x; }
+    var n = (v * scale.to_float() + 0.5).to_int();
+    var out = str(n / scale);
+    if (places > 0) { out = out + "." + pad_left(str(n % scale), places, "0"); }
+    if (negative && n > 0) { return "-" + out; }
+    return out;
+}
+
+fn percent(wins: int, games: int): string {
+    if (games == 0) { return "—"; }
+    return fixed(100.0 * wins.to_float() / games.to_float(), 0) + "%";
+}
+
+/** The pool's ratings, highest first. */
+fn ranked(pool: Pool): List<Rating> {
+    var sorted: List<Rating> = [];
+    for (r in pool.ratings) {
+        var placed = false;
+        var merged: List<Rating> = [];
+        for (s in sorted) {
+            if (!placed && r.elo > s.elo) { merged.push(r); placed = true; }
+            merged.push(s);
+        }
+        if (!placed) { merged.push(r); }
+        sorted = merged;
+    }
+    return sorted;
+}
+
+/** The pool as a table, highest rating first. */
+fn pool_table(title: string, pool: Pool): List<string> {
+    var sorted = ranked(pool);
+    var out = [title, "  " + pad_right("", 14, " ") + pad_left("Elo", 6, " ") + pad_left("Win", 6, " ") + pad_left("Games", 7, " ")];
+    for (r in sorted) {
+        out.push("  " + pad_right(r.name, 14, " ") + pad_left(fixed(r.elo, 0), 6, " ") + pad_left(percent(r.wins, r.games), 6, " ") + pad_left(str(r.games), 7, " "));
+    }
+    return out;
+}
+
+/** The mixes as a table, best composition score first; mixes with fewer than `min_games` are left out. */
+fn mix_table(title: string, all: Mixes, min_games: int): List<string> {
+    var sorted: List<Mix> = [];
+    for (m in all.mixes) {
+        if (m.games >= min_games) {
+            var placed = false;
+            var merged: List<Mix> = [];
+            for (s in sorted) {
+                if (!placed && score(m) > score(s)) { merged.push(m); placed = true; }
+                merged.push(s);
+            }
+            if (!placed) { merged.push(m); }
+            sorted = merged;
+        }
+    }
+    var out = [title, "  " + pad_right("", 36, " ") + pad_left("Score", 7, " ") + pad_left("Win", 6, " ") + pad_left("Games", 7, " ")];
+    for (m in sorted) {
+        var shown = fixed(score(m), 1);
+        if (score(m) > 0.0) { shown = "+" + shown; }
+        out.push("  " + pad_right(m.name, 36, " ") + pad_left(shown, 7, " ") + pad_left(percent(m.wins, m.games), 6, " ") + pad_left(str(m.games), 7, " "));
+    }
+    return out;
+}
+
+/**
+ * The best and worst `each` mixes by score, among those with at least
+ * `min_games`, best first. For long lists like the pairs, where the middle is
+ * noise.
+ */
+fn ends_table(title: string, all: Mixes, min_games: int, each: int): List<string> {
+    var full = mix_table(title, all, min_games);
+    // The first two lines are the title and the header.
+    var rows = full.len() - 2;
+    if (rows <= 2 * each) { return full; }
+    var out = [full[0], full[1]];
+    var i = 2;
+    while (i < 2 + each) { out.push(full[i]); i = i + 1; }
+    out.push("  ...");
+    i = full.len() - each;
+    while (i < full.len()) { out.push(full[i]); i = i + 1; }
+    return out;
+}
+
+// The running totals, kept in a file between runs (docs/balance.md)
+
+/** Everything the balance checker has counted so far, across runs. */
+type Ledger {
+    games: int,
+    draws: int,
+    characters: Pool,
+    archetypes: Pool,
+    sides: Pool,
+    agents: Pool,
+    mixes: Mixes,
+    counts: Mixes,
+    /** Character pairs on the same team (docs/balance.md#character-pairs). */
+    pairs: Mixes,
+}
+
+fn new_ledger(): Ledger {
+    return Ledger {
+        games: 0, draws: 0, characters: new_pool(), archetypes: new_pool(), sides: new_pool(),
+        agents: new_pool(), mixes: new_mixes(), counts: new_mixes(), pairs: new_mixes()
+    };
+}
+
+fn entry(key: string, value: Data): Entry { return Entry { key: key, value: value }; }
+
+fn pool_data(pool: Pool): Data {
+    var out: List<Data> = [];
+    for (r in pool.ratings) {
+        out.push(Data.Map([
+            entry("name", Data.Str(r.name)), entry("elo", Data.Float(r.elo)),
+            entry("games", Data.Int(r.games)), entry("wins", Data.Int(r.wins))
+        ]));
+    }
+    return Data.Seq(out);
+}
+
+fn mixes_data(all: Mixes): Data {
+    var out: List<Data> = [];
+    for (m in all.mixes) {
+        out.push(Data.Map([
+            entry("name", Data.Str(m.name)), entry("games", Data.Int(m.games)),
+            entry("wins", Data.Int(m.wins)), entry("surprise", Data.Float(m.surprise))
+        ]));
+    }
+    return Data.Seq(out);
+}
+
+/** The ledger as JSON-ready data. */
+fn ledger_data(l: Ledger): Data {
+    return Data.Map([
+        entry("games", Data.Int(l.games)), entry("draws", Data.Int(l.draws)),
+        entry("characters", pool_data(l.characters)), entry("archetypes", pool_data(l.archetypes)),
+        entry("sides", pool_data(l.sides)), entry("agents", pool_data(l.agents)),
+        entry("mixes", mixes_data(l.mixes)), entry("counts", mixes_data(l.counts)), entry("pairs", mixes_data(l.pairs))
+    ]);
+}
+
+fn field(d: Data, key: string): Data {
+    match d {
+        Data.Map(entries) => {
+            for (e in entries) {
+                if (e.key == key) { return e.value; }
+            }
+        }
+        _ => {}
+    }
+    return Data.Null;
+}
+
+fn int_of(d: Data): int {
+    match d {
+        Data.Int(n) => { return n; }
+        Data.Float(x) => { return x.to_int(); }
+        _ => { return 0; }
+    }
+    return 0;
+}
+
+fn float_of(d: Data): float {
+    match d {
+        Data.Float(x) => { return x; }
+        Data.Int(n) => { return n.to_float(); }
+        _ => { return 0.0; }
+    }
+    return 0.0;
+}
+
+fn str_of(d: Data): string {
+    match d {
+        Data.Str(s) => { return s; }
+        _ => { return ""; }
+    }
+    return "";
+}
+
+fn items(d: Data): List<Data> {
+    match d {
+        Data.Seq(xs) => { return xs; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn pool_from(d: Data): Pool {
+    var p = new_pool();
+    for (x in items(d)) {
+        p.ratings.push(Rating { name: str_of(field(x, "name")), elo: float_of(field(x, "elo")), games: int_of(field(x, "games")), wins: int_of(field(x, "wins")) });
+    }
+    return p;
+}
+
+fn mixes_from(d: Data): Mixes {
+    var all = new_mixes();
+    for (x in items(d)) {
+        all.mixes.push(Mix { name: str_of(field(x, "name")), games: int_of(field(x, "games")), wins: int_of(field(x, "wins")), surprise: float_of(field(x, "surprise")) });
+    }
+    return all;
+}
+
+/** A ledger read back from data written by `ledger_data`. Missing parts start empty. */
+fn ledger_from(d: Data): Ledger {
+    return Ledger {
+        games: int_of(field(d, "games")), draws: int_of(field(d, "draws")),
+        characters: pool_from(field(d, "characters")), archetypes: pool_from(field(d, "archetypes")),
+        sides: pool_from(field(d, "sides")), agents: pool_from(field(d, "agents")),
+        mixes: mixes_from(field(d, "mixes")), counts: mixes_from(field(d, "counts")), pairs: mixes_from(field(d, "pairs"))
+    };
+}

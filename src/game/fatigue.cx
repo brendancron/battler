@@ -1,0 +1,33 @@
+import { Action } from "../core/creature";
+import { Battle } from "../core/battle";
+import { Engine, perform } from "../core/engine";
+import { fatigue_from, fatigue_loss } from "../content/tuning";
+
+/**
+ * Fatigue (docs/fatigue.md): at the end of every round after round 10, every
+ * standing character, minions included, loses max HP for good.
+ */
+
+/** The max HP losses at the end of the round: none before `fatigue_from`. */
+fn fatigue_actions(battle: Battle, round: int): List<Action> {
+    var out: List<Action> = [];
+    if (round < fatigue_from()) { return out; }
+    var side = battle.home;
+    var n = 0;
+    while (n < battle.sides.len()) {
+        for (c in battle.sides[side].active) {
+            if (!c.fainted()) { out.push(Action.Wound(c, fatigue_loss())); }
+        }
+        side = 1 - side;
+        n = n + 1;
+    }
+    return out;
+}
+
+/** Runs the end of the round's fatigue, if it has set in. */
+fn fatigue(engine: Engine, battle: Battle, round: int) {
+    var losses = fatigue_actions(battle, round);
+    if (losses.len() == 0) { return; }
+    battle.say("Fatigue sets in: everyone loses " + str(fatigue_loss()) + " max HP.");
+    perform(engine, battle, "Fatigue", losses);
+}

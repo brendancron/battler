@@ -1,0 +1,77 @@
+import { random_int } from "std/random/Random";
+import { pad_right } from "std/text/String";
+import { tier_name } from "../core/creature";
+import { Fighter, roster } from "../content/roster";
+import { ask } from "../ui/prompt";
+
+/** The two drafted teams, each in pick order. */
+type Teams { home: List<Fighter>, away: List<Fighter> }
+
+/** Who picks at each of the 8 picks: away first, then two at a time. See docs/draft.md. */
+fn pick_order(): List<bool> {
+    // true = home
+    return [false, true, true, false, false, true, true, false];
+}
+
+fn has_archetype(team: List<Fighter>, archetype: string): bool {
+    for (f in team) {
+        if (f.archetype == archetype) { return true; }
+    }
+    return false;
+}
+
+/**
+ * Where in `available` the foe picks: at random among characters whose
+ * archetype its team doesn't have yet, or among all of them if every one
+ * left would repeat. `roll(n)` answers a random number from 0 up to n - 1.
+ */
+fn foe_pick<E>(available: List<Fighter>, team: List<Fighter>, roll: (int) -> <E> int): <E> int {
+    var fresh: List<int> = [];
+    var i = 0;
+    while (i < available.len()) {
+        if (!has_archetype(team, available[i].archetype)) { fresh.push(i); }
+        i = i + 1;
+    }
+    if (fresh.len() == 0) { return roll(available.len()); }
+    return fresh[roll(fresh.len())];
+}
+
+fn roll(n: int): int { return random_int(0, n); }
+
+fn without(list: List<Fighter>, index: int): List<Fighter> {
+    var out: List<Fighter> = [];
+    var i = 0;
+    while (i < list.len()) {
+        if (i != index) { out.push(list[i]); }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn names(team: List<Fighter>): string {
+    var out = "";
+    for (f in team) {
+        if (out != "") { out = out + ", "; }
+        out = out + f.body.name;
+    }
+    if (out == "") { return "—"; }
+    return out;
+}
+
+fn describe(f: Fighter): string {
+    var moves = "";
+    for (m in f.moves) {
+        if (moves != "") { moves = moves + ", "; }
+        moves = moves + m.name;
+    }
+    return pad_right(f.body.name, 12, " ") + pad_right(f.archetype, 8, " ") + pad_right(tier_name(f.body.tier), 7, " ") + moves;
+}
+
+/** Asks the player at the console for a pick. Answers the index in `available`, or -1 once input has ended. */
+fn ask_pick(available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): int {
+    print("");
+    print("You: " + names(mine) + "    Foe: " + names(theirs));
+    var options: List<string> = [];
+    for (f in available) { options.push(describe(f)); }
+    return ask("Pick " + str(pick) + " of 8, yours:", options);
+}

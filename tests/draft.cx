@@ -1,0 +1,53 @@
+import { Fighter, roster, barbarian, monk, grim_reaper, paladin, ranger } from "battler/content/roster";
+import { pick_order, foe_pick, has_archetype } from "battler/game/draft";
+
+fn first(n: int): int { return 0; }
+fn last(n: int): int { return n - 1; }
+
+@test
+fn away_picks_first_then_it_snakes() {
+    var order = pick_order();
+    var shown = "";
+    for (home in order) {
+        if (home) { shown = shown + "H"; } else { shown = shown + "A"; }
+    }
+    assert(shown == "AHHAAHHA", "A HH AA HH A");
+}
+
+@test
+fn each_side_drafts_four() {
+    var home = 0;
+    for (h in pick_order()) {
+        if (h) { home = home + 1; }
+    }
+    assert(home == 4 && pick_order().len() == 8, "four each");
+}
+
+@test
+fn the_foe_skips_archetypes_it_already_has() {
+    var available = [barbarian(), monk(), ranger()];
+    var team = [grim_reaper()];
+    assert(available[foe_pick(available, team, first)].body.name == "Ranger", "the only non-Warrior");
+    assert(available[foe_pick(available, team, last)].body.name == "Ranger", "whatever the roll");
+}
+
+@test
+fn the_foe_repeats_only_when_it_must() {
+    var available = [barbarian(), monk()];
+    var team = [grim_reaper()];
+    var i = foe_pick(available, team, last);
+    assert(i == 1, "falls back to any character");
+}
+
+@test
+fn there_are_enough_archetypes_for_a_team_without_repeats() {
+    var seen: List<string> = [];
+    for (f in roster()) {
+        var known = false;
+        for (s in seen) {
+            if (s == f.archetype) { known = true; }
+        }
+        if (!known) { seen.push(f.archetype); }
+    }
+    assert(seen.len() >= 4, "at least four archetypes");
+}

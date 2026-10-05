@@ -1,0 +1,59 @@
+import { Tier, tier_rank } from "creature";
+import { Battle, Slot } from "battle";
+
+/** The phases of a round, in the order they run. */
+fn phases(): List<Tier> { return [Tier.Fast, Tier.Normal, Tier.Slow]; }
+
+/** The side that has priority first in the phase: home in Fast and Slow, away in Normal. */
+fn first_priority(battle: Battle, phase: Tier): int {
+    match phase {
+        Tier.Normal => { return 1 - battle.home; }
+        _ => { return battle.home; }
+    }
+    return battle.home;
+}
+
+/** The side's lowest slot that can act in the phase: standing, not yet acted, and of the phase's tier or faster. */
+fn ready(battle: Battle, side: int, phase: Tier): Option<Slot> {
+    var index = 0;
+    for (p in battle.sides[side].active) {
+        if (!p.fainted() && !p.acted && p.takes_turns() && tier_rank(p.current_tier()) <= tier_rank(phase)) {
+            return Option.Some(Slot { side: side, index: index });
+        }
+        index = index + 1;
+    }
+    return Option.None;
+}
+
+fn start_round(battle: Battle) {
+    for (s in battle.sides) {
+        for (p in s.active) { p.acted = false; }
+    }
+}
+
+/** Where a phase stands: whose priority it is, and how many sides in a row have passed. */
+type Cursor { phase: Tier, side: int, passes: int }
+
+fn begin_phase(battle: Battle, phase: Tier): Cursor {
+    return Cursor { phase: phase, side: first_priority(battle, phase), passes: 0 };
+}
+
+/**
+ * The next slot to act in the phase, or None once it is over. Priority passes
+ * to the other side after every chance to act, and the phase ends when both
+ * sides pass in a row. The caller marks the slot as having acted.
+ */
+fn next_actor(battle: Battle, cursor: Cursor): Option<Slot> {
+    while (cursor.passes < 2) {
+        var side = cursor.side;
+        cursor.side = 1 - side;
+        match ready(battle, side, cursor.phase) {
+            Option.Some(slot) => {
+                cursor.passes = 0;
+                return Option.Some(slot);
+            }
+            Option.None => { cursor.passes = cursor.passes + 1; }
+        }
+    }
+    return Option.None;
+}

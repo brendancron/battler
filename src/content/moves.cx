@@ -1,0 +1,827 @@
+import { Character, Action } from "../core/creature";
+import { Battle } from "../core/battle";
+import { TargetShape, Target } from "../core/target";
+import { MoveDef, hit, follow_up_hit, damage } from "../core/move";
+import { character, Tier, Effect } from "../core/creature";
+import {
+    attack_up, attack_down, defense_down, poison, regen, retaliate, taunt, guarding_taunt, timed, hex, greater_health_potion, energize, barrier, shield, heal_block,
+    minion_marker, totems_blessing, totem_spirit, speed_up, speed_down, crescendo, invincible, bleed, chill, cryosleep, strings, copy_effect
+} from "effects";
+import {
+    cleave_power, cleave_cooldown, smite_power, smite_cooldown, guard_rounds,
+    guard_cooldown, lay_on_hands_heal, lay_on_hands_cooldown, aimed_shot_power,
+    aimed_shot_cooldown, hunters_mark_rounds, hunters_mark_cooldown, prayer_heal,
+    prayer_cooldown, purify_heal, purify_cooldown, sanctuary_heal, sanctuary_cooldown,
+    brimstone_power, brimstone_drain_percent, brimstone_cooldown, hex_cooldown,
+    acid_flask_poison, acid_flask_cooldown, potion_heal, potion_cooldown, energize_cooldown,
+    disarming_palm_power, disarming_palm_rounds, disarming_palm_cooldown, crippling_blow_power,
+    crippling_blow_turns, crippling_blow_cooldown, flurry_power, flurry_picks, flurry_cooldown,
+    reap_power, reap_wound_divisor, reap_cooldown, soul_siphon_power, soul_siphon_drain_percent,
+    soul_siphon_cooldown, writhing_depths_power, writhing_depths_cooldown, shield_bash_power,
+    shield_bash_rounds, shield_bash_cooldown, bulwark_shield, bulwark_cooldown,
+    healing_rain_regen, healing_rain_rounds, healing_rain_cooldown, ancestral_call_percent,
+    ancestral_call_cooldown, totem_hp, totem_defense, backstab_power, backstab_cooldown,
+    execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown, allegro_cut,
+    largo_rounds, largo_cooldown, crescendo_rounds, crescendo_cooldown, fairy_ring_cooldown, wither_power, wither_cooldown,
+    raise_dead_cooldown, skeleton_hp, skeleton_attack, skeleton_defense, bite_power, bite_cooldown, hemorrhage_power,
+    hemorrhage_bleed, hemorrhage_rounds, hemorrhage_cooldown, blizzard_power, blizzard_cooldown, frostbite_power,
+    frostbite_cooldown, avalanche_power, avalanche_cooldown, glacial_roar_rounds, glacial_roar_cooldown, cryosleep_heal,
+    cryosleep_cooldown, piston_slam_power, piston_slam_cooldown, lockdown_rounds, lockdown_cooldown, thunderstorm_power,
+    thunderstorm_cooldown, chain_lightning_powers, chain_lightning_cooldown, shuriken_power, shuriken_cooldown, plunder_power,
+    plunder_cooldown, trick_blade_power, trick_blade_cooldown, puppet_percent, pixie_dust_shield, pixie_dust_cooldown
+} from "tuning";
+
+// Shapes shared by many moves.
+
+/** One foe: a direct hit of the given power. */
+fn single_hit(name: string, power: int, cooldown: int): MoveDef {
+    fn strike(battle: Battle, user: Character, target: Target): List<Action> {
+        match target {
+            Target.Single(defender) => { return [hit(user, defender, power)]; }
+            _ => { return []; }
+        }
+        return [];
+    }
+    return MoveDef { name: name, shape: TargetShape.SingleFoe, apply: strike, cooldown: cooldown, basic: false };
+}
+
+/** All foes: a direct hit of the given power on each. */
+fn area_hit(name: string, power: int, cooldown: int): MoveDef {
+    fn strike(battle: Battle, user: Character, target: Target): List<Action> {
+        var out: List<Action> = [];
+        match target {
+            Target.Spread(defenders) => {
+                for (d in defenders) { out.push(hit(user, d, power)); }
+            }
+            _ => {}
+        }
+        return out;
+    }
+    return MoveDef { name: name, shape: TargetShape.AllFoes, apply: strike, cooldown: cooldown, basic: false };
+}
+
+/** The user: a taunt for the given rounds. */
+fn taunt_move(name: string, rounds: int, cooldown: int): MoveDef {
+    fn roar(battle: Battle, user: Character, target: Target): List<Action> { return [Action.AddEffect(user, taunt(rounds))]; }
+    return MoveDef { name: name, shape: TargetShape.User, apply: roar, cooldown: cooldown, basic: false };
+}
+
+// Barbarian. See docs/characters.md.
+
+fn cleave_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [hit(user, defender, cleave_power())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a direct hit. */
+fn cleave(): MoveDef {
+    return MoveDef { name: "Cleave", shape: TargetShape.SingleFoe, apply: cleave_apply, cooldown: cleave_cooldown(), basic: false };
+}
+
+// Paladin. See docs/characters.md.
+
+fn smite_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        // Dispel first, so a shield or barrier is gone before the hit.
+        Target.Single(defender) => { return [Action.Dispel(defender), hit(user, defender, smite_power())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn guard_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    return [Action.AddEffect(user, guarding_taunt(guard_rounds()))];
+}
+
+fn lay_on_hands_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.Heal(ally, lay_on_hands_heal()), Action.Heal(user, lay_on_hands_heal())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: dispels its buffs, then a direct hit. */
+fn smite(): MoveDef {
+    return MoveDef { name: "Smite", shape: TargetShape.SingleFoe, apply: smite_apply, cooldown: smite_cooldown(), basic: false };
+}
+
+/** The user: taunt with defense up. */
+fn guard(): MoveDef {
+    return MoveDef { name: "Guard", shape: TargetShape.User, apply: guard_apply, cooldown: guard_cooldown(), basic: false };
+}
+
+/** One ally, or the user: heals the ally and the user the same amount (twice over if they are the same). */
+fn lay_on_hands(): MoveDef {
+    return MoveDef { name: "Lay on Hands", shape: TargetShape.SingleAlly, apply: lay_on_hands_apply, cooldown: lay_on_hands_cooldown(), basic: false };
+}
+
+// Ranger. See docs/characters.md.
+
+fn aimed_shot_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [hit(user, defender, aimed_shot_power())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn hunters_mark_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [Action.AddEffect(defender, timed(defense_down(), hunters_mark_rounds()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a direct hit. */
+fn aimed_shot(): MoveDef {
+    return MoveDef { name: "Aimed Shot", shape: TargetShape.SingleFoe, apply: aimed_shot_apply, cooldown: aimed_shot_cooldown(), basic: false };
+}
+
+/** One foe: defense down. */
+fn hunters_mark(): MoveDef {
+    return MoveDef { name: "Hunter's Mark", shape: TargetShape.SingleFoe, apply: hunters_mark_apply, cooldown: hunters_mark_cooldown(), basic: false };
+}
+
+// Cleric. See docs/characters.md.
+
+fn prayer_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(allies) => {
+            for (a in allies) { out.push(Action.Heal(a, prayer_heal())); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+fn purify_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        // Cleanse first, so a Heal Block comes off before the heal.
+        Target.Single(ally) => { return [Action.Cleanse(ally), Action.Heal(ally, purify_heal())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn sanctuary_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.Heal(ally, sanctuary_heal()), Action.AddEffect(ally, barrier())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** All allies, the user included: heals each. */
+fn prayer(): MoveDef {
+    return MoveDef { name: "Prayer", shape: TargetShape.AllAllies, apply: prayer_apply, cooldown: prayer_cooldown(), basic: false };
+}
+
+/** One ally, or the user: cleanses its debuffs, then heals it. */
+fn purify(): MoveDef {
+    return MoveDef { name: "Purify", shape: TargetShape.SingleAlly, apply: purify_apply, cooldown: purify_cooldown(), basic: false };
+}
+
+/** One ally, or the user: heals it and gives it a barrier against the next direct hit. */
+fn sanctuary(): MoveDef {
+    return MoveDef { name: "Sanctuary", shape: TargetShape.SingleAlly, apply: sanctuary_apply, cooldown: sanctuary_cooldown(), basic: false };
+}
+
+// Witch. See docs/characters.md.
+
+fn brimstone_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Spread(defenders) => {
+            var amounts: List<int> = [];
+            for (d in defenders) { amounts.push(damage(user, d, brimstone_power())); }
+            return [Action.AreaDrain(user, defenders, amounts, brimstone_drain_percent())];
+        }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn hex_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [Action.AddEffect(defender, hex())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** All foes: a direct hit on each; then every ally heals a share of the damage dealt. */
+fn brimstone(): MoveDef {
+    return MoveDef { name: "Brimstone", shape: TargetShape.AllFoes, apply: brimstone_apply, cooldown: brimstone_cooldown(), basic: false };
+}
+
+/** One foe: it loses its next turn. */
+fn hex_move(): MoveDef {
+    return MoveDef { name: "Hex", shape: TargetShape.SingleFoe, apply: hex_apply, cooldown: hex_cooldown(), basic: false };
+}
+
+// Alchemist. See docs/characters.md.
+
+fn acid_flask_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(foes) => {
+            for (f in foes) { out.push(Action.AddEffect(f, poison(acid_flask_poison()))); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+fn greater_health_potion_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.AddEffect(ally, greater_health_potion(potion_heal()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn energize_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.AddEffect(ally, energize())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** All foes: poison on each. */
+fn acid_flask(): MoveDef {
+    return MoveDef { name: "Acid Flask", shape: TargetShape.AllFoes, apply: acid_flask_apply, cooldown: acid_flask_cooldown(), basic: false };
+}
+
+/** One ally: heals it once it drops below the potion line. */
+fn greater_health_potion_move(): MoveDef {
+    return MoveDef { name: "Greater Health Potion", shape: TargetShape.SingleAlly, apply: greater_health_potion_apply, cooldown: potion_cooldown(), basic: false };
+}
+
+/** One ally: its next damaging move gets more attack. */
+fn energize_move(): MoveDef {
+    return MoveDef { name: "Energize", shape: TargetShape.SingleAlly, apply: energize_apply, cooldown: energize_cooldown(), basic: false };
+}
+
+// Monk. See docs/characters.md.
+
+fn disarming_palm_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => {
+            return [hit(user, defender, disarming_palm_power()), Action.AddEffect(defender, timed(attack_down(), disarming_palm_rounds())), Action.AddEffect(defender, timed(defense_down(), disarming_palm_rounds()))];
+        }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn crippling_blow_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [hit(user, defender, crippling_blow_power()), Action.AddEffect(defender, heal_block(crippling_blow_turns()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One punch per pick. A foe's first punch is a hit; punches on a foe already punched are follow-ups. */
+fn flurry_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    var punched: List<Character> = [];
+    match target {
+        Target.Spread(picks) => {
+            for (p in picks) {
+                var again = false;
+                for (q in punched) {
+                    if (same(p, q)) { again = true; }
+                }
+                if (again) {
+                    out.push(follow_up_hit(user, p, flurry_power()));
+                } else {
+                    out.push(hit(user, p, flurry_power()));
+                    punched.push(p);
+                }
+            }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** One foe: a punch, and attack down and defense down. */
+fn disarming_palm(): MoveDef {
+    return MoveDef { name: "Disarming Palm", shape: TargetShape.SingleFoe, apply: disarming_palm_apply, cooldown: disarming_palm_cooldown(), basic: false };
+}
+
+/** One foe: a punch, and Heal Block for some of its turns. */
+fn crippling_blow(): MoveDef {
+    return MoveDef { name: "Crippling Blow", shape: TargetShape.SingleFoe, apply: crippling_blow_apply, cooldown: crippling_blow_cooldown(), basic: false };
+}
+
+/** Several picks, repeats allowed: a punch for each. */
+fn flurry_of_blows(): MoveDef {
+    return MoveDef { name: "Flurry of Blows", shape: TargetShape.FoePicks(flurry_picks()), apply: flurry_apply, cooldown: flurry_cooldown(), basic: false };
+}
+
+// Grim Reaper. See docs/characters.md.
+
+fn reap_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => {
+            var d = damage(user, defender, reap_power());
+            // The max HP loss is a share of the damage that can land: a capped hit takes less (Ironclad).
+            return [Action.Damage(defender, Option.Some(user), d, true), Action.Wound(defender, defender.capped(d) / reap_wound_divisor())];
+        }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn soul_siphon_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [Action.Drain(defender, user, damage(user, defender, soul_siphon_power()), soul_siphon_drain_percent())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a hit; part of the damage also comes off its max HP. */
+fn reap(): MoveDef {
+    return MoveDef { name: "Reap", shape: TargetShape.SingleFoe, apply: reap_apply, cooldown: reap_cooldown(), basic: false };
+}
+
+/** One foe: a hit; the user heals a share of the HP the foe lost. */
+fn soul_siphon(): MoveDef {
+    return MoveDef { name: "Soul Siphon", shape: TargetShape.SingleFoe, apply: soul_siphon_apply, cooldown: soul_siphon_cooldown(), basic: false };
+}
+
+// Warlock. See docs/characters.md.
+
+fn writhing_depths_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(defenders) => {
+            for (d in defenders) { out.push(hit(user, d, writhing_depths_power())); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All foes: a direct hit on each, then the Warlock falls, unless every foe already has. */
+fn final_offering_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(defenders) => {
+            for (d in defenders) { out.push(hit(user, d, final_offering_power())); }
+        }
+        _ => {}
+    }
+    out.push(Action.Sacrifice(user));
+    return out;
+}
+
+fn final_offering(): MoveDef {
+    return MoveDef { name: "The Final Offering", shape: TargetShape.AllFoes, apply: final_offering_apply, cooldown: final_offering_cooldown(), basic: false };
+}
+
+/** All foes: a direct hit on each. */
+fn writhing_depths(): MoveDef {
+    return MoveDef { name: "Writhing Depths", shape: TargetShape.AllFoes, apply: writhing_depths_apply, cooldown: writhing_depths_cooldown(), basic: false };
+}
+
+// Knight. See docs/characters.md.
+
+fn shield_bash_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [hit(user, defender, shield_bash_power()), Action.AddEffect(user, taunt(shield_bash_rounds()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn bulwark_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.AddEffect(ally, shield(bulwark_shield()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a direct hit, and the user taunts. */
+fn shield_bash(): MoveDef {
+    return MoveDef { name: "Shield Bash", shape: TargetShape.SingleFoe, apply: shield_bash_apply, cooldown: shield_bash_cooldown(), basic: false };
+}
+
+/** One ally, or the user: a shield. */
+fn bulwark(): MoveDef {
+    return MoveDef { name: "Bulwark", shape: TargetShape.SingleAlly, apply: bulwark_apply, cooldown: bulwark_cooldown(), basic: false };
+}
+
+// Shaman. See docs/characters.md.
+
+fn healing_rain_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(allies) => {
+            for (a in allies) { out.push(Action.AddEffect(a, regen(healing_rain_regen(), healing_rain_rounds()))); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All allies, the user included: regen on each. */
+fn healing_rain(): MoveDef {
+    return MoveDef { name: "Healing Rain", shape: TargetShape.AllAllies, apply: healing_rain_apply, cooldown: healing_rain_cooldown(), basic: false };
+}
+
+// Assassin. See docs/characters.md.
+
+fn backstab_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(defender) => { return [hit(user, defender, backstab_power())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** What would stand between a hit and a knockout: HP plus any shield. */
+fn toughness(c: Character): int {
+    var total = c.hp;
+    for (e in c.effects) {
+        if (e.absorbs) { total = total + e.power; }
+    }
+    return total;
+}
+
+/**
+ * Hits the lowest-HP foe; if that hit would knock it out, hits the next
+ * lowest, and so on. Whether a hit knocks out is worked out here, from the
+ * damage against HP plus shield, since the hits are decided before they land.
+ */
+fn execution_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(foes) => {
+            var left: List<Character> = [];
+            for (f in foes) { left.push(f); }
+            var going = true;
+            while (going && left.len() > 0) {
+                // The lowest HP; a tie goes to the earlier slot, which comes first in `foes`.
+                var at = 0;
+                var i = 1;
+                while (i < left.len()) {
+                    if (left[i].hp < left[at].hp) { at = i; }
+                    i = i + 1;
+                }
+                var victim = left[at];
+                var d = damage(user, victim, execution_power());
+                out.push(Action.Damage(victim, Option.Some(user), d, true));
+                going = d >= toughness(victim);
+                var rest: List<Character> = [];
+                var j = 0;
+                while (j < left.len()) {
+                    if (j != at) { rest.push(left[j]); }
+                    j = j + 1;
+                }
+                left = rest;
+            }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** One foe: a heavy hit. */
+fn backstab(): MoveDef {
+    return MoveDef { name: "Backstab", shape: TargetShape.SingleFoe, apply: backstab_apply, cooldown: backstab_cooldown(), basic: false };
+}
+
+/** The weakest foe, moving on to the next weakest after each knockout. */
+fn execution(): MoveDef {
+    return MoveDef { name: "Execution", shape: TargetShape.Weakest, apply: execution_apply, cooldown: execution_cooldown(), basic: false };
+}
+
+fn ancestral_call_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(fallen) => { return [Action.Resurrect(fallen, ancestral_call_percent())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** A fallen ally whose corpse is still there: resurrects it at a percent of its max HP. */
+fn ancestral_call(): MoveDef {
+    return MoveDef { name: "Ancestral Call", shape: TargetShape.AllyCorpse, apply: ancestral_call_apply, cooldown: ancestral_call_cooldown(), basic: false };
+}
+
+/** The Shaman's totem: a small minion that takes no turns. See docs/summons.md. */
+fn new_totem(summoner: Character): Character {
+    var t = character("Totem", 0, totem_defense(), Tier.Slow);
+    t.base_max_hp = totem_hp();
+    t.hp = totem_hp();
+    t.effects.push(minion_marker(true));
+    t.effects.push(totem_spirit(summoner));
+    return t;
+}
+
+fn totem_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [Action.Summon(user, new_totem(user))];
+    // The blessing goes to everyone standing on the team now; the totem gives it to anyone resurrected later.
+    for (c in battle.sides[user.team].active) {
+        if (!c.fainted()) { out.push(Action.AddEffect(c, totems_blessing())); }
+    }
+    return out;
+}
+
+/**
+ * Summons a totem: the whole team has more attack and defense while it stands.
+ * One at a time; the cooldown starts when the totem is destroyed, so the move
+ * itself has none.
+ */
+fn totem_move(): MoveDef {
+    return MoveDef { name: "Totem", shape: TargetShape.Summon("Totem"), apply: totem_apply, cooldown: 0, basic: false };
+}
+
+// Bard. See docs/characters.md#bard.
+
+fn allegro_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.AddEffect(ally, speed_up()), Action.ShortenCooldowns(ally, allegro_cut())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One ally, not the Bard: a tier faster for its next turn, and its cooldowns shorter. */
+fn allegro(): MoveDef {
+    return MoveDef { name: "Allegro", shape: TargetShape.OtherAlly, apply: allegro_apply, cooldown: allegro_cooldown(), basic: false };
+}
+
+fn largo_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(foe) => { return [Action.AddEffect(foe, speed_down()), Action.AddEffect(foe, timed(attack_down(), largo_rounds()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a tier slower for its next turn, and attack down. */
+fn largo(): MoveDef {
+    return MoveDef { name: "Largo", shape: TargetShape.SingleFoe, apply: largo_apply, cooldown: largo_cooldown(), basic: false };
+}
+
+fn crescendo_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(allies) => {
+            for (a in allies) { out.push(Action.AddEffect(a, crescendo(crescendo_rounds()))); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All allies, the Bard included: more attack and defense for a few rounds. */
+fn crescendo_move(): MoveDef {
+    return MoveDef { name: "Crescendo", shape: TargetShape.AllAllies, apply: crescendo_apply, cooldown: crescendo_cooldown(), basic: false };
+}
+
+// Fairy. See docs/characters.md#fairy.
+
+fn fairy_ring_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.AddEffect(ally, invincible())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One ally, or the Fairy: no damage for the rest of the round. */
+fn fairy_ring(): MoveDef {
+    return MoveDef { name: "Fairy Ring", shape: TargetShape.SingleAlly, apply: fairy_ring_apply, cooldown: fairy_ring_cooldown(), basic: false };
+}
+
+fn pixie_dust_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(allies) => {
+            for (a in allies) { out.push(Action.AddEffect(a, shield(pixie_dust_shield()))); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All allies, the Fairy included: a shield on each. */
+fn pixie_dust(): MoveDef {
+    return MoveDef { name: "Pixie Dust", shape: TargetShape.AllAllies, apply: pixie_dust_apply, cooldown: pixie_dust_cooldown(), basic: false };
+}
+
+// Necromancer. See docs/characters.md#necromancer.
+
+fn wither_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(defenders) => {
+            // Removing the corpse right after each hit takes only a foe this hit knocked out.
+            for (d in defenders) {
+                out.push(hit(user, d, wither_power()));
+                out.push(Action.RemoveCorpse(d));
+            }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All foes: a direct hit on each; a foe it knocks out leaves no corpse. */
+fn wither(): MoveDef {
+    return MoveDef { name: "Wither", shape: TargetShape.AllFoes, apply: wither_apply, cooldown: wither_cooldown(), basic: false };
+}
+
+/** The Necromancer's skeleton: a minion that takes turns, with only a basic attack. See docs/summons.md. */
+fn new_skeleton(): Character {
+    var s = character("Skeleton", skeleton_attack(), skeleton_defense(), Tier.Normal);
+    s.base_max_hp = skeleton_hp();
+    s.hp = skeleton_hp();
+    s.effects.push(minion_marker(false));
+    return s;
+}
+
+fn raise_dead_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(fallen) => { return [Action.RemoveCorpse(fallen), Action.Summon(user, new_skeleton())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** A fallen ally's corpse: removed, and a skeleton rises in its place. */
+fn raise_dead(): MoveDef {
+    return MoveDef { name: "Raise Dead", shape: TargetShape.AllyCorpse, apply: raise_dead_apply, cooldown: raise_dead_cooldown(), basic: false };
+}
+
+// Vampire. See docs/characters.md#vampire.
+
+fn bite(): MoveDef { return single_hit("Bite", bite_power(), bite_cooldown()); }
+
+fn hemorrhage_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(foe) => { return [hit(user, foe, hemorrhage_power()), Action.AddEffect(foe, bleed(user, hemorrhage_bleed(), hemorrhage_rounds()))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a light hit, and a bleed the Vampire deals. */
+fn hemorrhage(): MoveDef {
+    return MoveDef { name: "Hemorrhage", shape: TargetShape.SingleFoe, apply: hemorrhage_apply, cooldown: hemorrhage_cooldown(), basic: false };
+}
+
+// Cryomancer and Frost Giant. See docs/characters.md.
+
+/** All foes: a direct hit and a chill on each. */
+fn chilling_area(name: string, power: int, cooldown: int): MoveDef {
+    fn strike(battle: Battle, user: Character, target: Target): List<Action> {
+        var out: List<Action> = [];
+        match target {
+            Target.Spread(defenders) => {
+                for (d in defenders) {
+                    out.push(hit(user, d, power));
+                    out.push(Action.AddEffect(d, chill()));
+                }
+            }
+            _ => {}
+        }
+        return out;
+    }
+    return MoveDef { name: name, shape: TargetShape.AllFoes, apply: strike, cooldown: cooldown, basic: false };
+}
+
+fn blizzard(): MoveDef { return chilling_area("Blizzard", blizzard_power(), blizzard_cooldown()); }
+
+fn frostbite_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(foe) => { return [hit(user, foe, frostbite_power()), Action.AddEffect(foe, chill())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: a direct hit and a chill. */
+fn frostbite(): MoveDef {
+    return MoveDef { name: "Frostbite", shape: TargetShape.SingleFoe, apply: frostbite_apply, cooldown: frostbite_cooldown(), basic: false };
+}
+
+fn avalanche(): MoveDef { return chilling_area("Avalanche", avalanche_power(), avalanche_cooldown()); }
+
+fn glacial_roar(): MoveDef { return taunt_move("Glacial Roar", glacial_roar_rounds(), glacial_roar_cooldown()); }
+
+fn cryosleep_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.Heal(ally, cryosleep_heal()), Action.AddEffect(ally, cryosleep())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One ally, not the Frost Giant: heals it, and it sleeps in the ice through its next turn, taking no damage. */
+fn cryosleep_move(): MoveDef {
+    return MoveDef { name: "Cryosleep", shape: TargetShape.OtherAlly, apply: cryosleep_apply, cooldown: cryosleep_cooldown(), basic: false };
+}
+
+// Construct. See docs/characters.md#construct.
+
+fn piston_slam(): MoveDef { return single_hit("Piston Slam", piston_slam_power(), piston_slam_cooldown()); }
+
+fn lockdown(): MoveDef { return taunt_move("Lockdown", lockdown_rounds(), lockdown_cooldown()); }
+
+// Stormbringer. See docs/characters.md#stormbringer.
+
+fn thunderstorm(): MoveDef { return area_hit("Thunderstorm", thunderstorm_power(), thunderstorm_cooldown()); }
+
+fn chain_lightning_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    var powers = chain_lightning_powers();
+    match target {
+        Target.Spread(foes) => {
+            var i = 0;
+            while (i < foes.len() && i < powers.len()) {
+                out.push(hit(user, foes[i], powers[i]));
+                i = i + 1;
+            }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** Different foes picked in order, a weaker bolt on each. */
+fn chain_lightning(): MoveDef {
+    return MoveDef { name: "Chain Lightning", shape: TargetShape.ChainPicks(chain_lightning_powers().len()), apply: chain_lightning_apply, cooldown: chain_lightning_cooldown(), basic: false };
+}
+
+// Ninja. See docs/characters.md#ninja.
+
+fn shuriken(): MoveDef { return single_hit("Shuriken", shuriken_power(), shuriken_cooldown()); }
+
+// Swashbuckler. See docs/characters.md#swashbuckler.
+
+fn plunder_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        // Steal first, so a shield or barrier is the Swashbuckler's before the hit.
+        Target.Single(foe) => { return [Action.Steal(foe, user), hit(user, foe, plunder_power())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One foe: steals every buff it can, then a direct hit. */
+fn plunder(): MoveDef {
+    return MoveDef { name: "Plunder", shape: TargetShape.SingleFoe, apply: plunder_apply, cooldown: plunder_cooldown(), basic: false };
+}
+
+// Jester. See docs/characters.md#jester.
+
+fn trick_blade(): MoveDef { return single_hit("Trick Blade", trick_blade_power(), trick_blade_cooldown()); }
+
+/**
+ * A fallen foe raised as a minion on the Jester's side: its stats, max HP lost,
+ * cooldowns and passives, at a percent of its max HP. See docs/summons.md.
+ */
+fn new_puppet(fallen: Character, jester: Character): Character {
+    var p = character("Puppet " + fallen.name, fallen.attack, fallen.defense, fallen.tier);
+    p.base_max_hp = fallen.base_max_hp;
+    p.lost_max_hp = fallen.lost_max_hp;
+    p.hp = p.max_health() * puppet_percent() / 100;
+    if (p.hp < 1) { p.hp = 1; }
+    for (c in fallen.cooldowns) { p.cooldowns.push(c); }
+    for (e in fallen.effects) {
+        if (e.passive) { p.effects.push(copy_effect(e)); }
+    }
+    p.effects.push(minion_marker(false));
+    p.effects.push(strings(jester));
+    return p;
+}
+
+fn puppeteer_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(fallen) => { return [Action.RemoveCorpse(fallen), Action.Summon(user, new_puppet(fallen, user))]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/**
+ * A fallen foe's corpse: it rises as the Jester's puppet. One at a time; the
+ * cooldown starts when the puppet falls, so the move itself has none.
+ */
+fn puppeteer(): MoveDef {
+    return MoveDef { name: "Puppeteer", shape: TargetShape.PuppetCorpse, apply: puppeteer_apply, cooldown: 0, basic: false };
+}

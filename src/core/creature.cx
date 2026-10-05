@@ -1,0 +1,396 @@
+/** How early in a round a character acts. See docs/speed.md. */
+type Tier {
+    Fast,
+    Normal,
+    Slow,
+}
+
+fn tier_rank(tier: Tier): int {
+    match tier {
+        Tier.Fast => { return 0; }
+        Tier.Normal => { return 1; }
+        Tier.Slow => { return 2; }
+    }
+    return 1;
+}
+
+fn tier_name(tier: Tier): string {
+    match tier {
+        Tier.Fast => { return "Fast"; }
+        Tier.Normal => { return "Normal"; }
+        Tier.Slow => { return "Slow"; }
+    }
+    return "";
+}
+
+/** Every character starts with this much health; tankiness comes from defense. */
+fn max_hp(): int { return 100; }
+
+type Character {
+    name: string,
+    /** Which side of the battle it is on; set by `place`. */
+    team: int,
+    hp: int,
+    /** Max HP before anything takes it away: 100 for characters, less for some summons. */
+    base_max_hp: int,
+    /** Max HP taken away for good, such as by Reap. */
+    lost_max_hp: int,
+    attack: int,
+    defense: int,
+    tier: Tier,
+    acted: bool,
+    effects: List<Effect>,
+    /** Moves still cooling down, by name, with how many of its turns are left. See docs/moves.md. */
+    cooldowns: List<Cooldown>,
+    /** Whether a fainted character's corpse is still on the field, so it can be resurrected. See docs/fainting.md. */
+    corpse: bool,
+}
+
+type Cooldown { move: string, turns: int }
+
+/**
+ * A buff or debuff on a character. See docs/effects.md.
+ *
+ * The functions are the effect type's behaviour: `should` decides whether it
+ * reacts to an event (and always checks the provenance chain), `react` says
+ * what it does, `merge` folds a second application of the same type into this
+ * one, and `scale_attack` and `scale_defense` change the owner's stats beyond
+ * the steps. `scale_hit` changes the damage of each hit the owner deals, given
+ * the character it's hitting (the Assassin's Predator). `targeting` is added to the owner's targeting tier
+ * (docs/targeting.md): a taunt is +1. An `unrestricted` effect lets the owner
+ * ignore targeting tiers when picking a foe.
+ *
+ * An `immune` effect can't be cleansed, dispelled or stolen; passives are.
+ *
+ * `intercept` runs before an action lands on the owner: it answers None to let
+ * the action through, or Some(actions) to block it and run those instead.
+ * `charges` counts uses for effects that are used up, such as potions, and
+ * `skips` makes the owner lose its turns while the effect is on it.
+ * An `absorbs` effect is a shield: damage comes off its `power` before HP.
+ * A `silences` effect leaves the owner only its basic attack, and a
+ * `blocks_healing` one stops the owner being healed. A `minion` effect marks a
+ * summon (docs/summons.md): it doesn't count for winning or losing and leaves
+ * no corpse; an `idle` one never comes up in the turn order.
+ * A `first_hit_only` effect's `scale_attack` boosts only a move's first hit on
+ * each target, not its follow-up hits.
+ *
+ * `tier_shift` moves the owner's speed tier: +1 is one tier faster
+ * (docs/speed.md). A `prevents_damage` effect makes the owner take no damage
+ * and lose no max HP (Invincible). `hit_cap` caps any one instance of damage
+ * on the owner at that percent of its max HP (0 for none). An `unstealable`
+ * buff can still be dispelled but not stolen. `passive` marks a character's
+ * passive, which a puppet keeps (docs/summons.md).
+ */
+type Effect {
+    kind: string,
+    buff: bool,
+    immune: bool,
+    power: int,
+    rounds: int,
+    attack_steps: int,
+    defense_steps: int,
+    targeting: int,
+    unrestricted: bool,
+    charges: int,
+    skips: bool,
+    first_hit_only: bool,
+    absorbs: bool,
+    blocks_hits: bool,
+    silences: bool,
+    blocks_healing: bool,
+    minion: bool,
+    idle: bool,
+    tier_shift: int,
+    prevents_damage: bool,
+    hit_cap: int,
+    unstealable: bool,
+    passive: bool,
+    should: (Character, Effect, Event) -> bool,
+    react: (Character, Effect, Event) -> List<Action>,
+    merge: (Effect, Effect) -> unit,
+    scale_attack: (Character, Effect, int) -> int,
+    scale_defense: (Character, Effect, int) -> int,
+    scale_hit: (Character, Effect, Character, int) -> int,
+    label: (Character, Effect) -> string,
+    intercept: (Character, Effect, Action) -> Option<List<Action>>,
+}
+
+/** Something that happened. See docs/events.md. */
+type EventKind {
+    /** target, source, amount, direct, and the HP the target actually lost (not what a shield soaked, nor past its last HP) */
+    Damaged(Character, Option<Character>, int, bool, int),
+    Healed(Character, int),
+    Fainted(Character),
+    Resurrected(Character),
+    /** summoner, the minion summoned */
+    Summoned(Character, Character),
+    CorpseRemoved(Character),
+    EffectAdded(Character, Effect),
+    EffectRemoved(Character, Effect),
+    TurnStarted(Character),
+    TurnEnded(Character),
+    /** user, whether the move dealt direct damage */
+    MoveUsed(Character, bool),
+    RoundStarted,
+    RoundEnded,
+}
+
+/** An event and its provenance: the actions and triggers that led to it, oldest first. */
+type Event { kind: EventKind, chain: List<string> }
+
+/** A change to the state. Running one emits events. */
+type Action {
+    /** target, source, amount, direct */
+    Damage(Character, Option<Character>, int, bool),
+    Heal(Character, int),
+    /** target, attacker, amount, percent: a direct hit that heals the attacker that percent of the HP the target lost */
+    Drain(Character, Character, int, int),
+    /**
+     * attacker, targets, amounts, percent: a direct hit on each target for the
+     * matching amount, then every standing ally of the attacker (itself
+     * included) heals that percent of the total HP the targets lost.
+     */
+    AreaDrain(Character, List<Character>, List<int>, int),
+    /** Takes max HP away for good. */
+    Wound(Character, int),
+    /** Knocks the character out outright. It isn't damage, so nothing prevents it. */
+    KnockOut(Character),
+    /** The Warlock's Final Offering: knocks the character out, unless every foe has fallen already, so its team has won. */
+    Sacrifice(Character),
+    /** from, to: moves every buff that can be stolen from the first character to the second. */
+    Steal(Character, Character),
+    /** Heals every standing ally of the character, itself and minions included. */
+    HealTeam(Character, int),
+    /** Takes this many turns off every cooldown the character has running. */
+    ShortenCooldowns(Character, int),
+    /** Brings a fainted character back at this percent of its max HP, if its corpse is still there. */
+    Resurrect(Character, int),
+    /** Removes a fainted character's corpse, so it can't be resurrected. */
+    RemoveCorpse(Character),
+    /** summoner, minion: puts the minion on the summoner's side, in place of a destroyed minion of the same name if there is one. */
+    Summon(Character, Character),
+    /** Removes the effect of this type from everyone standing on the character's side. */
+    RemoveFromTeam(Character, string),
+    /** Gives a new effect from the maker to everyone standing on the character's side who doesn't already have one of its type. */
+    AddToTeam(Character, () -> Effect),
+    /** character, move, turns: puts the move on cooldown, as if it had just been used. */
+    StartCooldown(Character, string, int),
+    /** Heals whichever standing ally of the character (itself included) has the lowest HP; ties go to the lowest slot. */
+    HealLowestAlly(Character, int),
+    AddEffect(Character, Effect),
+    RemoveEffect(Character, string),
+    /** Removes the character's debuffs, except immune ones. */
+    Cleanse(Character),
+    /** Removes the character's buffs, except immune ones (passives). */
+    Dispel(Character),
+    /** Resurrects, at the percent of max HP, the first fallen ally of the character (in slot order) that has a corpse. */
+    ResurrectFirstFallen(Character, int),
+}
+
+fn character(name: string, attack: int, defense: int, tier: Tier): Character {
+    return Character { name: name, team: -1, hp: max_hp(), base_max_hp: max_hp(), lost_max_hp: 0, attack: attack, defense: defense, tier: tier, acted: false, effects: [], cooldowns: [], corpse: false };
+}
+
+/** The value after `steps` ups (× 1.5 each) or downs (÷ 1.5 each). */
+fn stepped(value: int, steps: int): int {
+    var out = value;
+    var n = steps;
+    while (n > 0) { out = out * 3 / 2; n = n - 1; }
+    while (n < 0) { out = out * 2 / 3; n = n + 1; }
+    return out;
+}
+
+/** How a trigger names itself in a provenance chain. */
+fn trigger_id(owner: Character, fx: Effect): string {
+    return owner.name + "/" + fx.kind;
+}
+
+fn in_chain(event: Event, id: string): bool {
+    for (link in event.chain) {
+        if (link == id) { return true; }
+    }
+    return false;
+}
+
+impl Character {
+    fn fainted(self): bool { return self.hp <= 0; }
+
+    fn take(self, damage: int) {
+        self.hp = self.hp - damage;
+        if (self.hp < 0) { self.hp = 0; }
+    }
+
+    /** Its base max HP (100, or a summon's own), less any taken away for good. */
+    fn max_health(self): int { return self.base_max_hp - self.lost_max_hp; }
+
+    fn heal(self, amount: int) {
+        self.hp = self.hp + amount;
+        if (self.hp > self.max_health()) { self.hp = self.max_health(); }
+    }
+
+    fn wound(self, amount: int) {
+        self.lost_max_hp = self.lost_max_hp + amount;
+        if (self.lost_max_hp > self.base_max_hp) { self.lost_max_hp = self.base_max_hp; }
+        if (self.hp > self.max_health()) { self.hp = self.max_health(); }
+    }
+
+    fn current_attack(self): int { return self.attack_for(false); }
+
+    /** The attack a follow-up hit uses: as current_attack, without first-hit-only boosts. */
+    fn follow_up_attack(self): int { return self.attack_for(true); }
+
+    fn attack_for(self, follow_up: bool): int {
+        var steps = 0;
+        for (e in self.effects) { steps = steps + e.attack_steps; }
+        var out = stepped(self.attack, steps);
+        for (e in self.effects) {
+            if (!(follow_up && e.first_hit_only)) {
+                var scale = e.scale_attack;
+                out = scale(self, e, out);
+            }
+        }
+        return out;
+    }
+
+    fn current_defense(self): int {
+        var steps = 0;
+        for (e in self.effects) { steps = steps + e.defense_steps; }
+        var out = stepped(self.defense, steps);
+        for (e in self.effects) {
+            var scale = e.scale_defense;
+            out = scale(self, e, out);
+        }
+        return out;
+    }
+
+    /** Its speed tier now: its own, moved by any speed ups and downs, no faster than Fast or slower than Slow. */
+    fn current_tier(self): Tier {
+        var rank = tier_rank(self.tier);
+        for (e in self.effects) { rank = rank - e.tier_shift; }
+        if (rank <= 0) { return Tier.Fast; }
+        if (rank == 1) { return Tier.Normal; }
+        return Tier.Slow;
+    }
+
+    /** Whether it takes no damage right now (Invincible, Cryosleep). */
+    fn untouchable(self): bool {
+        for (e in self.effects) {
+            if (e.prevents_damage) { return true; }
+        }
+        return false;
+    }
+
+    /** The amount after any cap on one instance of damage (the Construct's Ironclad). */
+    fn capped(self, amount: int): int {
+        var out = amount;
+        for (e in self.effects) {
+            if (e.hit_cap > 0) {
+                var cap = self.max_health() * e.hit_cap / 100;
+                if (out > cap) { out = cap; }
+            }
+        }
+        return out;
+    }
+
+    fn skips_turn(self): bool {
+        for (e in self.effects) {
+            if (e.skips) { return true; }
+        }
+        return false;
+    }
+
+    fn ignores_targeting(self): bool {
+        for (e in self.effects) {
+            if (e.unrestricted) { return true; }
+        }
+        return false;
+    }
+
+    /** 0 normally; a taunt raises it. Foes may only pick the highest tier standing. */
+    fn targeting_tier(self): int {
+        var tier = 0;
+        for (e in self.effects) { tier = tier + e.targeting; }
+        return tier;
+    }
+
+    fn find_effect(self, kind: string): Option<Effect> {
+        for (e in self.effects) {
+            if (e.kind == kind) { return Option.Some(e); }
+        }
+        return Option.None;
+    }
+
+    fn silenced(self): bool {
+        for (e in self.effects) {
+            if (e.silences) { return true; }
+        }
+        return false;
+    }
+
+    /** How many more of its turns before the move can be used again; 0 when it is ready. */
+    fn cooldown_left(self, move: string): int {
+        for (c in self.cooldowns) {
+            if (c.move == move) { return c.turns; }
+        }
+        return 0;
+    }
+
+    /** One of its turns has gone by: every cooldown is a turn closer to ready. */
+    fn tick_cooldowns(self) {
+        var kept: List<Cooldown> = [];
+        for (c in self.cooldowns) {
+            if (c.turns > 1) { kept.push(Cooldown { move: c.move, turns: c.turns - 1 }); }
+        }
+        self.cooldowns = kept;
+    }
+
+    fn start_cooldown(self, move: string, turns: int) {
+        if (turns <= 0) { return; }
+        var kept: List<Cooldown> = [];
+        for (c in self.cooldowns) {
+            if (c.move != move) { kept.push(c); }
+        }
+        kept.push(Cooldown { move: move, turns: turns });
+        self.cooldowns = kept;
+    }
+
+    /** Takes `turns` off every running cooldown; one that reaches 0 is ready. */
+    fn shorten_cooldowns(self, turns: int) {
+        var kept: List<Cooldown> = [];
+        for (c in self.cooldowns) {
+            if (c.turns > turns) { kept.push(Cooldown { move: c.move, turns: c.turns - turns }); }
+        }
+        self.cooldowns = kept;
+    }
+
+    fn heal_blocked(self): bool {
+        for (e in self.effects) {
+            if (e.blocks_healing) { return true; }
+        }
+        return false;
+    }
+
+    fn is_minion(self): bool {
+        for (e in self.effects) {
+            if (e.minion) { return true; }
+        }
+        return false;
+    }
+
+    /** Whether it's a puppet raised by a Jester (docs/summons.md). */
+    fn is_puppet(self): bool {
+        for (e in self.effects) {
+            if (e.kind == "Strings") { return true; }
+        }
+        return false;
+    }
+
+    /** Whether it ever takes turns: an idle minion doesn't. */
+    fn takes_turns(self): bool {
+        for (e in self.effects) {
+            if (e.idle) { return false; }
+        }
+        return true;
+    }
+}
+

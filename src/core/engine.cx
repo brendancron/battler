@@ -1,0 +1,570 @@
+import { concat } from "std/collections/List";
+import { Character, Effect, Event, EventKind, Action, max_hp, trigger_id } from "creature";
+import { Battle } from "battle";
+
+/** One unit of work: run an action under a provenance chain, or pass an event to the triggers. */
+type Step {
+    Run(Action, List<string>),
+    Notify(Event),
+}
+
+/** An effect on a character, as a candidate to react to an event. */
+type Hook { owner: Character, fx: Effect }
+
+/**
+ * The trigger engine. Both orders are strategies, so they can be swapped
+ * without touching `resolve`:
+ *
+ * - `schedule` merges the steps an event or action just produced into the
+ *   steps still pending. Putting them in front resolves depth first.
+ * - `order` decides which of the hooks matching an event fire first.
+ */
+type Engine {
+    schedule: (List<Step>, List<Step>) -> List<Step>,
+    order: (Event, List<Hook>) -> List<Hook>,
+}
+
+fn depth_first(pending: List<Step>, fresh: List<Step>): List<Step> { return concat(fresh, pending); }
+
+fn queued(pending: List<Step>, fresh: List<Step>): List<Step> { return concat(pending, fresh); }
+
+/** The character an event is about, if there is one. */
+fn subject(kind: EventKind): Option<Character> {
+    match kind {
+        EventKind.Damaged(target, _, _, _, _) => { return Option.Some(target); }
+        EventKind.Healed(target, _) => { return Option.Some(target); }
+        EventKind.Fainted(target) => { return Option.Some(target); }
+        EventKind.Resurrected(target) => { return Option.Some(target); }
+        EventKind.Summoned(_, minion) => { return Option.Some(minion); }
+        EventKind.CorpseRemoved(target) => { return Option.Some(target); }
+        EventKind.EffectAdded(target, _) => { return Option.Some(target); }
+        EventKind.EffectRemoved(target, _) => { return Option.Some(target); }
+        EventKind.TurnStarted(target) => { return Option.Some(target); }
+        EventKind.TurnEnded(target) => { return Option.Some(target); }
+        EventKind.MoveUsed(user, _) => { return Option.Some(user); }
+        EventKind.RoundStarted => { return Option.None; }
+        EventKind.RoundEnded => { return Option.None; }
+    }
+    return Option.None;
+}
+
+/** The hooks on the character the event is about first, then the rest as they came. */
+fn subject_first(event: Event, hooks: List<Hook>): List<Hook> {
+    match subject(event.kind) {
+        Option.Some(c) => {
+            var first: List<Hook> = [];
+            var rest: List<Hook> = [];
+            for (h in hooks) {
+                if (same(h.owner, c)) { first.push(h); } else { rest.push(h); }
+            }
+            return concat(first, rest);
+        }
+        Option.None => { return hooks; }
+    }
+    return hooks;
+}
+
+fn engine(): Engine {
+    return Engine { schedule: depth_first, order: subject_first };
+}
+
+/** Every effect on every character, home side first, then by slot. Fallen owners are filtered in `resolve`. */
+fn hooks(battle: Battle): List<Hook> {
+    var out: List<Hook> = [];
+    var side = battle.home;
+    var n = 0;
+    while (n < battle.sides.len()) {
+        for (c in battle.sides[side].active) {
+            for (e in c.effects) { out.push(Hook { owner: c, fx: e }); }
+        }
+        side = (side + 1) % battle.sides.len();
+        n = n + 1;
+    }
+    return out;
+}
+
+fn own_fall(event: Event, owner: Character): bool {
+    match event.kind {
+        EventKind.Fainted(c) => { return same(c, owner); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn has(c: Character, e: Effect): bool {
+    for (x in c.effects) {
+        if (same(x, e)) { return true; }
+    }
+    return false;
+}
+
+/** The owner's side that is still standing, the owner included. */
+fn allies(battle: Battle, owner: Character): List<Character> {
+    var out: List<Character> = [];
+    if (owner.team < 0) { return out; }
+    for (c in battle.sides[owner.team].active) {
+        if (!c.fainted()) { out.push(c); }
+    }
+    return out;
+}
+
+fn lowest_ally(battle: Battle, owner: Character): Option<Character> {
+    for (s in battle.sides) {
+        var mine = false;
+        for (c in s.active) {
+            if (same(c, owner)) { mine = true; }
+        }
+        if (mine) {
+            var best: Option<Character> = Option.None;
+            var best_hp = 0;
+            for (c in s.active) {
+                if (!c.fainted()) {
+                    match best {
+                        Option.Some(_) => {
+                            if (c.hp < best_hp) { best = Option.Some(c); best_hp = c.hp; }
+                        }
+                        Option.None => { best = Option.Some(c); best_hp = c.hp; }
+                    }
+                }
+            }
+            return best;
+        }
+    }
+    return Option.None;
+}
+
+/** What stops the character being healed, for the log. */
+fn healing_blocker(c: Character): string {
+    for (e in c.effects) {
+        if (e.blocks_healing) { return e.kind; }
+    }
+    return "";
+}
+
+fn has_kind(c: Character, kind: string): bool {
+    match c.find_effect(kind) {
+        Option.Some(_) => { return true; }
+        Option.None => { return false; }
+    }
+    return false;
+}
+
+/** The character an action lands on, if there is one. */
+fn action_target(action: Action): Option<Character> {
+    match action {
+        Action.Damage(target, _, _, _) => { return Option.Some(target); }
+        Action.Heal(target, _) => { return Option.Some(target); }
+        Action.Drain(target, _, _, _) => { return Option.Some(target); }
+        Action.AreaDrain(_, _, _, _) => { return Option.None; }
+        Action.Wound(target, _) => { return Option.Some(target); }
+        Action.Resurrect(target, _) => { return Option.Some(target); }
+        Action.RemoveCorpse(target) => { return Option.Some(target); }
+        Action.Summon(_, _) => { return Option.None; }
+        Action.RemoveFromTeam(_, _) => { return Option.None; }
+        Action.AddToTeam(_, _) => { return Option.None; }
+        Action.StartCooldown(_, _, _) => { return Option.None; }
+        Action.AddEffect(target, _) => { return Option.Some(target); }
+        Action.RemoveEffect(target, _) => { return Option.Some(target); }
+        Action.Cleanse(target) => { return Option.Some(target); }
+        Action.HealLowestAlly(_, _) => { return Option.None; }
+        Action.Dispel(target) => { return Option.Some(target); }
+        Action.ResurrectFirstFallen(_, _) => { return Option.None; }
+        Action.KnockOut(target) => { return Option.Some(target); }
+        Action.Sacrifice(_) => { return Option.None; }
+        Action.Steal(from, _) => { return Option.Some(from); }
+        Action.HealTeam(_, _) => { return Option.None; }
+        Action.ShortenCooldowns(target, _) => { return Option.Some(target); }
+    }
+    return Option.None;
+}
+
+/** Lets the target's effects block the action before it lands. Answers the steps to run instead, if one did. */
+fn intercepted(battle: Battle, action: Action, chain: List<string>): Option<List<Step>> {
+    match action_target(action) {
+        Option.Some(target) => {
+            if (target.fainted()) { return Option.None; }
+            for (e in target.effects) {
+                var intercept = e.intercept;
+                match intercept(target, e, action) {
+                    Option.Some(instead) => {
+                        battle.say(target.name + "'s " + e.kind + " blocked it.");
+                        var link: List<string> = [trigger_id(target, e)];
+                        var out: List<Step> = [];
+                        for (a in instead) { out.push(Step.Run(a, concat(chain, link))); }
+                        return Option.Some(out);
+                    }
+                    Option.None => {}
+                }
+            }
+        }
+        Option.None => {}
+    }
+    return Option.None;
+}
+
+/** Takes damage off the target's shields first; answers what is left for its HP. Empty shields are removed. */
+fn soak(battle: Battle, target: Character, amount: int): int {
+    var rest = amount;
+    var kept: List<Effect> = [];
+    for (e in target.effects) {
+        if (e.absorbs && rest > 0) {
+            var taken = rest;
+            if (taken > e.power) { taken = e.power; }
+            e.power = e.power - taken;
+            rest = rest - taken;
+            battle.say(target.name + "'s " + e.kind + " absorbed " + str(taken) + ".");
+            if (e.power > 0) { kept.push(e); } else { battle.say(target.name + "'s " + e.kind + " broke."); }
+        } else {
+            kept.push(e);
+        }
+    }
+    target.effects = kept;
+    return rest;
+}
+
+/**
+ * Marks the character as fallen and answers the event. It leaves a corpse,
+ * unless its max HP is down to 0, in which case it can never come back.
+ */
+fn faint(battle: Battle, target: Character, how: string): EventKind {
+    if (target.is_minion()) {
+        // Minions leave no corpse (docs/summons.md).
+        target.corpse = false;
+        battle.say(target.name + " was destroyed!");
+        return EventKind.Fainted(target);
+    }
+    target.corpse = target.max_health() > 0;
+    battle.say(target.name + how);
+    if (!target.corpse) { battle.say(target.name + " has no max HP left: no corpse remains."); }
+    return EventKind.Fainted(target);
+}
+
+/**
+ * Uses up one charge of a barrier on the target, if it has one: the hit is
+ * blocked. Answers whether it was.
+ */
+fn blocked(battle: Battle, target: Character): bool {
+    for (e in target.effects) {
+        if (e.blocks_hits && e.charges > 0) {
+            e.charges = e.charges - 1;
+            battle.say(target.name + "'s " + e.kind + " blocked the hit.");
+            if (e.charges == 0) {
+                var kept: List<Effect> = [];
+                for (k in target.effects) {
+                    if (k.kind != e.kind) { kept.push(k); }
+                }
+                target.effects = kept;
+                battle.say(target.name + "'s " + e.kind + " is used up.");
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Changes the state and answers the events that happened. */
+fn execute(battle: Battle, action: Action): List<EventKind> {
+    var out: List<EventKind> = [];
+    match action {
+        Action.Damage(target, source, requested, direct) => {
+            if (target.fainted()) { return out; }
+            // Invincible comes first: nothing reaches a barrier or shield, and nothing is set off.
+            if (target.untouchable()) {
+                battle.say(target.name + " is untouchable: no damage.");
+                return out;
+            }
+            // A barrier blocks a direct hit before it reaches a shield; a blocked hit sets nothing off.
+            if (direct && blocked(battle, target)) { return out; }
+            // A cap on one instance of damage comes before shields.
+            var amount = target.capped(requested);
+            var rest = soak(battle, target, amount);
+            var before = target.hp;
+            target.take(rest);
+            // Leave the corpse before the line is logged, so the screen never shows a fallen character as gone.
+            if (target.fainted()) { target.corpse = target.max_health() > 0 && !target.is_minion(); }
+            battle.say(target.name + " took " + str(rest) + " (" + str(target.hp) + "/" + str(target.max_health()) + ").");
+            out.push(EventKind.Damaged(target, source, amount, direct, before - target.hp));
+            if (target.fainted()) { out.push(faint(battle, target, " fainted!")); }
+        }
+        Action.Heal(target, amount) => {
+            if (target.fainted()) { return out; }
+            if (target.heal_blocked()) {
+                battle.say(target.name + " can't be healed (" + healing_blocker(target) + ").");
+                return out;
+            }
+            var before = target.hp;
+            target.heal(amount);
+            // Healing a character already at full is a non-event.
+            if (target.hp == before) { return out; }
+            battle.say(target.name + " healed " + str(target.hp - before) + " (" + str(target.hp) + "/" + str(target.max_health()) + ").");
+            out.push(EventKind.Healed(target, target.hp - before));
+        }
+        Action.Drain(target, attacker, amount, percent) => {
+            if (target.fainted()) { return out; }
+            var before = target.hp;
+            for (e in execute(battle, Action.Damage(target, Option.Some(attacker), amount, true))) { out.push(e); }
+            var gain = (before - target.hp) * percent / 100;
+            if (gain > 0) {
+                for (e in execute(battle, Action.Heal(attacker, gain))) { out.push(e); }
+            }
+        }
+        Action.AreaDrain(attacker, targets, amounts, percent) => {
+            var lost = 0;
+            var i = 0;
+            while (i < targets.len()) {
+                var target = targets[i];
+                var before = target.hp;
+                for (e in execute(battle, Action.Damage(target, Option.Some(attacker), amounts[i], true))) { out.push(e); }
+                lost = lost + before - target.hp;
+                i = i + 1;
+            }
+            var share = lost * percent / 100;
+            if (share > 0) {
+                for (ally in allies(battle, attacker)) {
+                    for (e in execute(battle, Action.Heal(ally, share))) { out.push(e); }
+                }
+            }
+        }
+        Action.Wound(target, amount) => {
+            if (target.fainted()) { return out; }
+            if (target.untouchable()) {
+                battle.say(target.name + " is untouchable: no max HP lost.");
+                return out;
+            }
+            target.wound(amount);
+            if (target.fainted()) { target.corpse = target.max_health() > 0 && !target.is_minion(); }
+            battle.say(target.name + " lost " + str(amount) + " max HP (" + str(target.hp) + "/" + str(target.max_health()) + ").");
+            // Losing the last of its max HP takes its HP with it.
+            if (target.fainted()) { out.push(faint(battle, target, " fainted!")); }
+        }
+        Action.Resurrect(target, percent) => {
+            if (!target.fainted() || !target.corpse) { return out; }
+            // Back with only its passives; max HP lost before stays lost, and cooldowns carry on.
+            var kept: List<Effect> = [];
+            for (e in target.effects) {
+                if (e.immune) { kept.push(e); }
+            }
+            target.effects = kept;
+            target.corpse = false;
+            target.hp = target.max_health() * percent / 100;
+            if (target.hp < 1) { target.hp = 1; }
+            battle.say(target.name + " was resurrected (" + str(target.hp) + "/" + str(target.max_health()) + ").");
+            out.push(EventKind.Resurrected(target));
+        }
+        Action.RemoveCorpse(target) => {
+            if (!target.fainted() || !target.corpse) { return out; }
+            target.corpse = false;
+            battle.say(target.name + "'s corpse is gone.");
+            out.push(EventKind.CorpseRemoved(target));
+        }
+        Action.Summon(summoner, minion) => {
+            if (summoner.fainted() || summoner.team < 0) { return out; }
+            var side = battle.sides[summoner.team];
+            minion.team = summoner.team;
+            // Take the slot of a destroyed minion of the same name, so slots don't pile up.
+            var placed = false;
+            var i = 0;
+            while (i < side.active.len()) {
+                var c = side.active[i];
+                if (!placed && c.fainted() && c.is_minion() && c.name == minion.name) {
+                    side.active[i] = minion;
+                    placed = true;
+                }
+                i = i + 1;
+            }
+            if (!placed) { side.active.push(minion); }
+            battle.say(summoner.name + " summoned a " + minion.name + " (" + str(minion.hp) + "/" + str(minion.max_health()) + ").");
+            out.push(EventKind.Summoned(summoner, minion));
+        }
+        Action.RemoveFromTeam(owner, kind) => {
+            if (owner.team < 0) { return out; }
+            for (c in battle.sides[owner.team].active) {
+                var kept: List<Effect> = [];
+                for (e in c.effects) {
+                    if (e.kind == kind) { out.push(EventKind.EffectRemoved(c, e)); } else { kept.push(e); }
+                }
+                c.effects = kept;
+            }
+            battle.say(kind + " faded from " + owner.name + "'s team.");
+        }
+        Action.AddToTeam(owner, make) => {
+            if (owner.team < 0) { return out; }
+            for (c in battle.sides[owner.team].active) {
+                var fx = make();
+                if (!c.fainted() && !has_kind(c, fx.kind)) {
+                    for (k in execute(battle, Action.AddEffect(c, fx))) { out.push(k); }
+                }
+            }
+        }
+        Action.StartCooldown(c, move, turns) => {
+            c.start_cooldown(move, turns);
+            battle.say(c.name + "'s " + move + " is ready in " + str(turns) + " turns.");
+        }
+        Action.HealLowestAlly(owner, amount) => {
+            match lowest_ally(battle, owner) {
+                Option.Some(target) => { return execute(battle, Action.Heal(target, amount)); }
+                Option.None => {}
+            }
+        }
+        Action.Cleanse(target) => {
+            var kept: List<Effect> = [];
+            for (e in target.effects) {
+                if (!e.buff && !e.immune) {
+                    battle.say(target.name + "'s " + e.kind + " was cleansed.");
+                    out.push(EventKind.EffectRemoved(target, e));
+                } else {
+                    kept.push(e);
+                }
+            }
+            target.effects = kept;
+        }
+        Action.Dispel(target) => {
+            if (target.fainted()) { return out; }
+            var kept: List<Effect> = [];
+            for (e in target.effects) {
+                if (e.buff && !e.immune) {
+                    battle.say(target.name + "'s " + e.kind + " was dispelled.");
+                    out.push(EventKind.EffectRemoved(target, e));
+                } else {
+                    kept.push(e);
+                }
+            }
+            target.effects = kept;
+        }
+        Action.ResurrectFirstFallen(owner, percent) => {
+            if (owner.team < 0) { return out; }
+            for (c in battle.sides[owner.team].active) {
+                if (!same(c, owner) && c.fainted() && c.corpse) { return execute(battle, Action.Resurrect(c, percent)); }
+            }
+        }
+        Action.KnockOut(target) => {
+            if (target.fainted()) { return out; }
+            target.hp = 0;
+            out.push(faint(battle, target, " fell!"));
+        }
+        Action.Sacrifice(user) => {
+            if (user.fainted() || user.team < 0) { return out; }
+            if (battle.defeated(1 - user.team)) {
+                battle.say("Every foe has fallen; " + user.name + " is spared.");
+                return out;
+            }
+            return execute(battle, Action.KnockOut(user));
+        }
+        Action.Steal(from, to) => {
+            if (from.fainted() || to.fainted()) { return out; }
+            var kept: List<Effect> = [];
+            var taken: List<Effect> = [];
+            for (e in from.effects) {
+                if (e.buff && !e.immune && !e.unstealable) { taken.push(e); } else { kept.push(e); }
+            }
+            from.effects = kept;
+            for (e in taken) {
+                battle.say(to.name + " stole " + from.name + "'s " + e.kind + ".");
+                out.push(EventKind.EffectRemoved(from, e));
+                for (k in execute(battle, Action.AddEffect(to, e))) { out.push(k); }
+            }
+        }
+        Action.HealTeam(owner, amount) => {
+            for (ally in allies(battle, owner)) {
+                for (k in execute(battle, Action.Heal(ally, amount))) { out.push(k); }
+            }
+        }
+        Action.ShortenCooldowns(target, turns) => {
+            if (target.fainted() || target.cooldowns.len() == 0) { return out; }
+            target.shorten_cooldowns(turns);
+            battle.say(target.name + "'s cooldowns are " + str(turns) + " turn shorter.");
+        }
+        Action.AddEffect(target, fx) => {
+            if (target.fainted()) { return out; }
+            match target.find_effect(fx.kind) {
+                Option.Some(existing) => {
+                    var merge = existing.merge;
+                    merge(existing, fx);
+                    var label = existing.label;
+                    battle.say(target.name + ": " + label(target, existing) + ".");
+                    out.push(EventKind.EffectAdded(target, existing));
+                }
+                Option.None => {
+                    target.effects.push(fx);
+                    var label = fx.label;
+                    battle.say(target.name + ": " + label(target, fx) + ".");
+                    out.push(EventKind.EffectAdded(target, fx));
+                }
+            }
+        }
+        Action.RemoveEffect(target, kind) => {
+            var kept: List<Effect> = [];
+            for (e in target.effects) {
+                if (e.kind == kind) {
+                    battle.say(target.name + "'s " + e.kind + " wore off.");
+                    out.push(EventKind.EffectRemoved(target, e));
+                } else {
+                    kept.push(e);
+                }
+            }
+            target.effects = kept;
+        }
+    }
+    return out;
+}
+
+/** Works through steps until none are left, letting every event reach the triggers. */
+fn resolve(engine: Engine, battle: Battle, start: List<Step>) {
+    var schedule = engine.schedule;
+    var order = engine.order;
+    var pending = start;
+    while (pending.len() > 0) {
+        var step = pending[0];
+        var rest: List<Step> = [];
+        var i = 1;
+        while (i < pending.len()) { rest.push(pending[i]); i = i + 1; }
+        var fresh: List<Step> = [];
+        match step {
+            Step.Run(action, chain) => {
+                match intercepted(battle, action, chain) {
+                    Option.Some(instead) => { fresh = instead; }
+                    Option.None => {
+                        for (kind in execute(battle, action)) {
+                            fresh.push(Step.Notify(Event { kind: kind, chain: chain }));
+                        }
+                    }
+                }
+            }
+            Step.Notify(event) => {
+                for (h in order(event, hooks(battle))) {
+                    // A fallen character's effects only hear about its own fall (last words, like a
+                    // totem ending its bonus); an earlier trigger may also have removed the effect.
+                    if ((!h.owner.fainted() || own_fall(event, h.owner)) && has(h.owner, h.fx)) {
+                        var should = h.fx.should;
+                        if (should(h.owner, h.fx, event)) {
+                            var link: List<string> = [trigger_id(h.owner, h.fx)];
+                            var react = h.fx.react;
+                            for (a in react(h.owner, h.fx, event)) {
+                                fresh.push(Step.Run(a, concat(event.chain, link)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pending = schedule(rest, fresh);
+    }
+}
+
+/** Runs actions that start a chain, such as a move's, with `origin` at the root of their provenance. */
+fn perform(engine: Engine, battle: Battle, origin: string, actions: List<Action>) {
+    var steps: List<Step> = [];
+    for (a in actions) { steps.push(Step.Run(a, [origin])); }
+    resolve(engine, battle, steps);
+}
+
+/** Emits an event that comes from an action-starting origin, such as a move finishing. */
+fn announce_from(engine: Engine, battle: Battle, origin: string, kind: EventKind) {
+    resolve(engine, battle, [Step.Notify(Event { kind: kind, chain: [origin] })]);
+}
+
+/** Emits an event from the game itself, such as the end of a round. */
+fn announce(engine: Engine, battle: Battle, kind: EventKind) {
+    var origin: List<string> = [];
+    resolve(engine, battle, [Step.Notify(Event { kind: kind, chain: origin })]);
+}

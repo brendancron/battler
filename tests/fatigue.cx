@@ -1,0 +1,77 @@
+import { Action } from "battler/core/creature";
+import { Battle } from "battler/core/battle";
+import { engine, perform } from "battler/core/engine";
+import { fatigue } from "battler/game/fatigue";
+import { shield } from "battler/content/effects";
+import { new_totem } from "battler/content/moves";
+import { fatigue_from, fatigue_loss, totem_hp } from "battler/content/tuning";
+import { duel, who, slot, has_effect } from "support";
+
+@test
+fn no_fatigue_before_its_round() {
+    var b = duel(["A"], ["B"]);
+    fatigue(engine(), b, fatigue_from() - 1);
+    assert(who(b, slot(0, 0)).max_health() == 100 && who(b, slot(1, 0)).max_health() == 100, "untouched");
+}
+
+@test
+fn from_its_round_everyone_loses_max_hp() {
+    var b = duel(["A", "B"], ["C"]);
+    var loss = fatigue_loss();
+    who(b, slot(0, 1)).take(99 - loss);
+    fatigue(engine(), b, fatigue_from());
+    var a = who(b, slot(0, 0));
+    assert(a.max_health() == 100 - loss && a.hp == 100 - loss, "full HP drops with the max");
+    assert(who(b, slot(0, 1)).max_health() == 100 - loss && who(b, slot(0, 1)).hp == loss + 1, "HP under the new max stays");
+    assert(who(b, slot(1, 0)).max_health() == 100 - loss, "both sides");
+    fatigue(engine(), b, fatigue_from() + 1);
+    assert(a.max_health() == 100 - 2 * loss, "and again each round");
+}
+
+@test
+fn shields_dont_stop_fatigue() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    perform(engine(), b, "test", [Action.AddEffect(a, shield(30))]);
+    fatigue(engine(), b, fatigue_from());
+    assert(a.max_health() == 100 - fatigue_loss() && has_effect(a, "Shield"), "the shield is untouched");
+}
+
+@test
+fn minions_waste_away_too() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    perform(engine(), b, "test", [Action.Summon(a, new_totem(a))]);
+    var totem = who(b, slot(0, 1));
+    fatigue(engine(), b, fatigue_from());
+    assert(totem.max_health() == totem_hp() - fatigue_loss() || (totem.fainted() && totem_hp() <= fatigue_loss()), "it loses max HP too");
+}
+
+@test
+fn at_zero_max_hp_a_character_falls_for_good() {
+    var b = duel(["A", "B"], ["C"]);
+    var a = who(b, slot(0, 0));
+    a.wound(100 - fatigue_loss());
+    fatigue(engine(), b, fatigue_from());
+    assert(a.hp == 0 && !a.corpse, "fainted, no corpse to raise");
+    assert(!b.defeated(0), "B still stands");
+}
+
+@test
+fn both_teams_falling_at_once_is_a_draw() {
+    var b = duel(["A"], ["B"]);
+    who(b, slot(0, 0)).wound(100 - fatigue_loss());
+    who(b, slot(1, 0)).wound(100 - fatigue_loss());
+    fatigue(engine(), b, fatigue_from());
+    assert(b.defeated(0) && b.defeated(1), "both down");
+    assert(b.winner() == -1, "a draw");
+}
+
+@test
+fn the_last_side_standing_wins() {
+    var b = duel(["A"], ["B"]);
+    assert(b.winner() == -1, "still going");
+    who(b, slot(1, 0)).wound(100 - fatigue_loss());
+    fatigue(engine(), b, fatigue_from());
+    assert(b.winner() == 0, "home wins");
+}

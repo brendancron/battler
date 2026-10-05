@@ -1,0 +1,113 @@
+import { Character, Action, EventKind, Tier, character, stepped } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { use_move } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { start_round, begin_phase, next_actor } from "battler/core/order";
+import { speed_up, speed_down } from "battler/content/effects";
+import { allegro, largo, crescendo_move } from "battler/content/moves";
+import { allegro_cut, crescendo_bonus_percent, crescendo_rounds, largo_rounds } from "battler/content/tuning";
+import { duel, who, slot, has_effect } from "support";
+
+// The Bard: speed up and speed down, Allegro, Largo and Crescendo (docs/characters.md#bard).
+
+fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+@test
+fn speed_up_is_one_tier_faster_until_its_next_turn_ends() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.tier = Tier.Slow;
+    add(b, [Action.AddEffect(a, speed_up())]);
+    assert(a.current_tier() == Tier.Normal, "one tier, not two");
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(a.current_tier() == Tier.Normal, "rounds don't wear it off");
+    announce(engine(), b, EventKind.TurnEnded(a));
+    assert(a.current_tier() == Tier.Slow && !has_effect(a, "Speed up"), "gone after its turn");
+}
+
+@test
+fn tiers_stop_at_fast_and_slow_and_an_up_and_down_cancel() {
+    var b = duel(["A", "C"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.tier = Tier.Fast;
+    add(b, [Action.AddEffect(a, speed_up())]);
+    assert(a.current_tier() == Tier.Fast, "no faster than Fast");
+    var c = who(b, slot(0, 1));
+    c.tier = Tier.Slow;
+    add(b, [Action.AddEffect(c, speed_down())]);
+    assert(c.current_tier() == Tier.Slow, "no slower than Slow");
+    add(b, [Action.AddEffect(a, speed_down())]);
+    assert(a.current_tier() == Tier.Fast, "up and down: its own tier");
+}
+
+@test
+fn a_slow_character_sped_up_acts_in_the_normal_phase() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.tier = Tier.Slow;
+    start_round(b);
+    who(b, slot(1, 0)).acted = true;
+    add(b, [Action.AddEffect(a, speed_up())]);
+    var cursor = begin_phase(b, Tier.Normal);
+    match next_actor(b, cursor) {
+        Option.Some(s) => { assert(s.side == 0 && s.index == 0, "A acts in the Normal phase"); }
+        Option.None => { assert(false, "someone acts"); }
+    }
+}
+
+@test
+fn allegro_speeds_up_an_ally_and_shortens_its_cooldowns() {
+    var b = duel(["Bard", "Ally"], ["Foe"]);
+    var ally = who(b, slot(0, 1));
+    ally.tier = Tier.Slow;
+    ally.start_cooldown("Long", allegro_cut() + 2);
+    ally.start_cooldown("Short", allegro_cut());
+    assert(use_move(engine(), b, slot(0, 0), allegro(), at(slot(0, 1))), "used");
+    assert(ally.current_tier() == Tier.Normal, "one tier faster");
+    assert(ally.cooldown_left("Long") == 2, "a running cooldown is shorter");
+    assert(ally.cooldown_left("Short") == 0, "one that runs out is ready");
+}
+
+@test
+fn allegro_cant_target_the_bard() {
+    var b = duel(["Bard", "Ally"], ["Foe"]);
+    assert(!use_move(engine(), b, slot(0, 0), allegro(), at(slot(0, 0))), "not itself");
+}
+
+@test
+fn largo_slows_a_foe_for_its_next_turn_and_lowers_its_attack() {
+    var b = duel(["Bard"], ["Foe"]);
+    var foe = who(b, slot(1, 0));
+    assert(use_move(engine(), b, slot(0, 0), largo(), at(slot(1, 0))), "used");
+    assert(foe.current_tier() == Tier.Slow, "a tier slower");
+    assert(foe.current_attack() == stepped(100, -1), "attack down");
+    announce(engine(), b, EventKind.TurnEnded(foe));
+    assert(foe.current_tier() == Tier.Normal, "the slow lasts one turn");
+    var n = 0;
+    while (n < largo_rounds()) {
+        assert(has_effect(foe, "Attack down"), "attack down lasts its rounds");
+        announce(engine(), b, EventKind.RoundEnded);
+        n = n + 1;
+    }
+    assert(!has_effect(foe, "Attack down"), "then it's gone");
+}
+
+@test
+fn crescendo_raises_every_allys_attack_and_defense_for_its_rounds() {
+    var b = duel(["Bard", "Ally"], ["Foe"]);
+    use_move(engine(), b, slot(0, 0), crescendo_move(), Choice.NoTarget);
+    var raised = 100 * (100 + crescendo_bonus_percent()) / 100;
+    for (s in [slot(0, 0), slot(0, 1)]) {
+        assert(who(b, s).current_attack() == raised && who(b, s).current_defense() == raised, "attack and defense up");
+    }
+    assert(who(b, slot(1, 0)).current_attack() == 100, "not the foe");
+    var n = 0;
+    while (n < crescendo_rounds()) {
+        announce(engine(), b, EventKind.RoundEnded);
+        n = n + 1;
+    }
+    assert(who(b, slot(0, 1)).current_attack() == 100, "it ends");
+}

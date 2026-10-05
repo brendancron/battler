@@ -1,0 +1,143 @@
+import { Character, Action, EventKind, Cooldown } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { MoveDef, use_move, usable } from "battler/core/move";
+import { TargetShape, Target, Choice, has_targets } from "battler/core/target";
+import { attack_up, poison, bloodlust } from "battler/content/effects";
+import { phases, start_round, begin_phase, next_actor } from "battler/core/order";
+import { best } from "battler/agents/greedy";
+import { random_pick } from "battler/agents/random";
+import { cleave } from "battler/content/moves";
+import { duel, who, slot, logged, has_effect } from "support";
+
+// No character has these yet; tests build them.
+
+fn revive_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(c) => { return [Action.Resurrect(c, 50)]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn desecrate_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(c) => { return [Action.RemoveCorpse(c)]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+fn revive(): MoveDef { return MoveDef { name: "Revive", shape: TargetShape.AllyCorpse, apply: revive_apply, cooldown: 2, basic: false }; }
+
+fn desecrate(): MoveDef { return MoveDef { name: "Desecrate", shape: TargetShape.FoeCorpse, apply: desecrate_apply, cooldown: 1, basic: false }; }
+
+fn knock_out(b: Battle, c: Character) { perform(engine(), b, "test", [Action.Damage(c, Option.None, 200, false)]); }
+
+@test
+fn fainting_leaves_a_corpse() {
+    var b = duel(["A", "B"], ["C"]);
+    knock_out(b, who(b, slot(0, 1)));
+    assert(who(b, slot(0, 1)).fainted() && who(b, slot(0, 1)).corpse, "a corpse");
+    assert(b.corpse_slots(0).len() == 1, "listed");
+}
+
+@test
+fn no_max_hp_leaves_no_corpse() {
+    var b = duel(["A", "B"], ["C"]);
+    perform(engine(), b, "test", [Action.Wound(who(b, slot(0, 1)), 100)]);
+    assert(who(b, slot(0, 1)).fainted() && !who(b, slot(0, 1)).corpse, "fainted with no corpse");
+    assert(logged(b, "B fainted!"), "losing the last max HP is a faint");
+}
+
+@test
+fn resurrection_brings_a_corpse_back_at_a_share_of_max_hp() {
+    var b = duel(["A", "B"], ["C"]);
+    var fallen = who(b, slot(0, 1));
+    knock_out(b, fallen);
+    assert(use_move(engine(), b, slot(0, 0), revive(), Choice.Slots([slot(0, 1)])), "revived");
+    assert(!fallen.fainted() && fallen.hp == 50 && !fallen.corpse, "50% and standing");
+    assert(logged(b, "B was resurrected (50/100)."), "logged");
+}
+
+@test
+fn resurrection_keeps_max_hp_cooldowns_and_passives_but_not_effects() {
+    var b = duel(["A", "B"], ["C"]);
+    var fallen = who(b, slot(0, 1));
+    fallen.effects.push(bloodlust());
+    perform(engine(), b, "test", [Action.AddEffect(fallen, attack_up()), Action.AddEffect(fallen, poison(5)), Action.Wound(fallen, 20)]);
+    fallen.cooldowns.push(Cooldown { move: "Cleave", turns: 2 });
+    knock_out(b, fallen);
+    use_move(engine(), b, slot(0, 0), revive(), Choice.Slots([slot(0, 1)]));
+    assert(fallen.max_health() == 80 && fallen.hp == 40, "50% of the reduced 80");
+    assert(has_effect(fallen, "Bloodlust"), "passive kept");
+    assert(!has_effect(fallen, "Attack up") && !has_effect(fallen, "Poison"), "buffs and debuffs gone");
+    assert(fallen.cooldown_left("Cleave") == 2, "cooldown kept");
+}
+
+@test
+fn a_removed_corpse_cannot_be_resurrected() {
+    var b = duel(["A"], ["C", "D"]);
+    var fallen = who(b, slot(1, 1));
+    knock_out(b, fallen);
+    assert(use_move(engine(), b, slot(0, 0), desecrate(), Choice.Slots([slot(1, 1)])), "removed");
+    assert(!fallen.corpse && logged(b, "D's corpse is gone."), "gone");
+    assert(!use_move(engine(), b, slot(1, 0), revive(), Choice.Slots([slot(1, 1)])), "nothing to revive");
+    assert(fallen.fainted(), "still down");
+}
+
+@test
+fn corpse_moves_only_reach_their_own_side_and_real_corpses() {
+    var b = duel(["A", "B"], ["C", "D"]);
+    knock_out(b, who(b, slot(1, 1)));
+    assert(!use_move(engine(), b, slot(0, 0), revive(), Choice.Slots([slot(1, 1)])), "revive is for allies");
+    assert(!use_move(engine(), b, slot(0, 0), revive(), Choice.Slots([slot(0, 1)])), "B is standing");
+    assert(!use_move(engine(), b, slot(1, 0), desecrate(), Choice.Slots([slot(1, 1)])), "desecrate is for foes");
+}
+
+@test
+fn moves_with_nothing_to_target_are_unavailable() {
+    var b = duel(["A", "B"], ["C"]);
+    assert(!has_targets(b, slot(0, 0), TargetShape.AllyCorpse), "no corpses");
+    match random_pick(b, slot(0, 0), [revive()], first) {
+        Option.Some(_) => { assert(false, "nothing to pick"); }
+        Option.None => {}
+    }
+    knock_out(b, who(b, slot(0, 1)));
+    assert(has_targets(b, slot(0, 0), TargetShape.AllyCorpse), "now there is");
+}
+
+fn first(n: int): int { return 0; }
+fn none(n: int): int { return 0; }
+
+@test
+fn the_ai_revives_a_fallen_ally() {
+    var b = duel(["A", "B"], ["C"]);
+    knock_out(b, who(b, slot(0, 1)));
+    match best(b, slot(0, 0), [cleave(), revive()], 0, none) {
+        Option.Some(p) => { assert(p.move.name == "Revive", "a teammate back beats a hit"); }
+        Option.None => { assert(false, "a pick"); }
+    }
+}
+
+@test
+fn a_team_with_only_corpses_has_lost() {
+    var b = duel(["A"], ["C"]);
+    knock_out(b, who(b, slot(1, 0)));
+    assert(b.defeated(1) && who(b, slot(1, 0)).corpse, "lost, corpse or not");
+}
+
+@test
+fn a_revived_character_can_act_if_it_had_not() {
+    var b = duel(["A", "B"], ["C"]);
+    start_round(b);
+    knock_out(b, who(b, slot(0, 1)));
+    use_move(engine(), b, slot(0, 0), revive(), Choice.Slots([slot(0, 1)]));
+    who(b, slot(0, 0)).acted = true;
+    who(b, slot(1, 0)).acted = true;
+    var cursor = begin_phase(b, phases()[1]);
+    match next_actor(b, cursor) {
+        Option.Some(s) => { assert(s.side == 0 && s.index == 1, "B gets its turn"); }
+        Option.None => { assert(false, "B should act"); }
+    }
+}

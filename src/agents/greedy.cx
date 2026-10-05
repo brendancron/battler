@@ -1,0 +1,41 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random, random_int } from "std/random/Random";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef } from "../core/move";
+import { Choice } from "../core/target";
+import { Fighter } from "../content/roster";
+import { foe_pick, roll } from "../game/draft";
+import { Agent, Plan, Turn } from "agent";
+import { Pick, as_is, best_by } from "scoring";
+
+/** The scoring AI (scoring.cx): the best move right now, with a little noise. Drafts at random without repeating an archetype. */
+type GreedyAgent;
+
+impl Agent for GreedyAgent {
+    fn choose_move(self, turn: Turn): <async, Console, Stdin, Random, Throw<IoError>> Option<Plan> {
+        return Option.Some(greedy_action(turn.battle, turn.slot, turn.moves));
+    }
+
+    fn choose_pick(self, available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): <async, Console, Stdin, Random, Throw<IoError>> int {
+        return foe_pick(available, mine, roll);
+    }
+}
+
+fn noise(n: int): int { return random_int(0, n + 1); }
+
+/** Greedy's move: the best-scoring move and target, with a little noise. */
+fn greedy_action(battle: Battle, user: Slot, moveset: List<MoveDef>): Plan {
+    match best(battle, user, moveset, 4, noise) {
+        Option.Some(p) => { return Plan { slot: user, move: p.move, choice: p.choice }; }
+        Option.None => { return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget }; }
+    }
+    return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget };
+}
+
+/** The best move and target for the slot, the Greedy way. `noise(n)` answers a random number from 0 up to n. */
+fn best<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
+    return best_by(battle, user, moveset, as_is, jitter, noise);
+}

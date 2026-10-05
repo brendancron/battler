@@ -1,0 +1,13 @@
+import { page_path, data_path, data_script } from "battler/balance/page";
+
+@test
+fn the_page_and_its_data_sit_next_to_the_totals() {
+    assert(page_path("balance.json") == "balance.html" && data_path("balance.json") == "balance.data.js", "json to html and data.js");
+    assert(page_path("runs/alchemist.json") == "runs/alchemist.html", "keeps the folder");
+    assert(page_path("totals") == "totals.html" && data_path("totals") == "totals.data.js", "no extension");
+}
+
+@test
+fn the_data_script_sets_the_totals_and_the_time() {
+    assert(data_script("{\"games\": 4}", 1700000000) == "window.BALANCE_DATA = {\"games\": 4};\nwindow.BALANCE_WRITTEN = 1700000000;\n", "two assignments");
+}

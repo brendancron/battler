@@ -1,0 +1,67 @@
+import { character, Tier } from "battler/core/creature";
+import { Battle, Side, Slot, new_battle } from "battler/core/battle";
+import { TargetShape, Choice, Target, bind } from "battler/core/target";
+
+fn doubles(): Battle {
+    return new_battle([
+        Side { active: [character("A", 10, 10, Tier.Normal), character("B", 10, 10, Tier.Normal)] },
+        Side { active: [character("C", 10, 10, Tier.Normal), character("D", 10, 10, Tier.Normal)] }
+    ], 0);
+}
+
+fn described(bound: Option<Target>): string {
+    match bound {
+        Option.Some(target) => {
+            match target {
+                Target.User(p) => { return "user " + p.name; }
+                Target.Single(p) => { return "single " + p.name; }
+                Target.Spread(ps) => {
+                    var out = "spread";
+                    for (p in ps) { out = out + " " + p.name; }
+                    return out;
+                }
+            }
+        }
+        Option.None => { return "none"; }
+    }
+    return "";
+}
+
+fn a(): Slot { return Slot { side: 0, index: 0 }; }
+
+@test
+fn user_binds_to_itself() {
+    assert(described(bind(TargetShape.User, Choice.NoTarget, doubles(), a())) == "user A", "user");
+}
+
+@test
+fn single_foe_binds_the_chosen_slot() {
+    var choice = Choice.Slots([Slot { side: 1, index: 1 }]);
+    assert(described(bind(TargetShape.SingleFoe, choice, doubles(), a())) == "single D", "single");
+}
+
+@test
+fn single_foe_refuses_an_ally() {
+    var choice = Choice.Slots([Slot { side: 0, index: 1 }]);
+    assert(described(bind(TargetShape.SingleFoe, choice, doubles(), a())) == "none", "ally");
+}
+
+@test
+fn single_foe_refuses_no_choice() {
+    assert(described(bind(TargetShape.SingleFoe, Choice.NoTarget, doubles(), a())) == "none", "no choice");
+}
+
+@test
+fn single_foe_refuses_a_fainted_slot() {
+    var battle = doubles();
+    battle.sides[1].active[0].take(100);
+    var choice = Choice.Slots([Slot { side: 1, index: 0 }]);
+    assert(described(bind(TargetShape.SingleFoe, choice, battle, a())) == "none", "fainted");
+}
+
+@test
+fn all_foes_skips_the_fainted() {
+    var battle = doubles();
+    battle.sides[1].active[0].take(100);
+    assert(described(bind(TargetShape.AllFoes, Choice.NoTarget, battle, a())) == "spread D", "spread");
+}

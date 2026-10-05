@@ -1,0 +1,546 @@
+import { Character, EventKind, Action } from "battler/core/creature";
+import { Battle } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import {
+    attack_up, attack_down, defense_down, poison, regen, timed, taunt, bloodlust, bloodlust_multiplier,
+    last_rites, keen_eye, vigil, hex, greater_health_potion, panacea, panacea_supply, energize, inner_peace, soul_harvest, shield,
+    predator, predator_multiplier, barrier, retaliate
+} from "battler/content/effects";
+import { pow } from "battler/core/maths";
+import { bloodlust_a, bloodlust_b, last_rites_percent, vigil_heal, inner_peace_heal, potion_line_percent, shield_decay, predator_bonus_percent, predator_line_percent } from "battler/content/tuning";
+import { duel, who, slot, transcript, logged, has_effect } from "support";
+
+fn add(b: Battle, c: Character, fx: List<Action>) { perform(engine(), b, "test", fx); }
+
+fn end_round(b: Battle) { announce(engine(), b, EventKind.RoundEnded); }
+
+fn start_round(b: Battle) { announce(engine(), b, EventKind.RoundStarted); }
+
+fn smaller(a: int, b: int): int {
+    if (a < b) { return a; }
+    return b;
+}
+
+fn near(x: float, y: float): bool { return x - y < 0.0001 && y - x < 0.0001; }
+
+// Stat ups and downs
+
+@test
+fn ups_and_downs_are_one_and_a_half() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, attack_up())]);
+    assert(a.current_attack() == 150, "up");
+    var bb = who(b, slot(1, 0));
+    add(b, bb, [Action.AddEffect(bb, defense_down())]);
+    assert(bb.current_defense() == 66, "down");
+}
+
+@test
+fn an_up_and_a_down_cancel() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, attack_up()), Action.AddEffect(a, attack_down())]);
+    assert(a.current_attack() == 100, "cancel");
+}
+
+@test
+fn a_second_attack_up_does_not_stack() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, attack_up()), Action.AddEffect(a, attack_up())]);
+    assert(a.current_attack() == 150, "no stack");
+    assert(a.effects.len() == 1, "one entry");
+}
+
+// Poison and regen
+
+@test
+fn poison_ticks_down_and_wears_off() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, poison(5))]);
+    end_round(b);
+    assert(a.hp == 95 && has_effect(a, "Poison"), "5 the first round");
+    end_round(b);
+    assert(a.hp == 91, "then 4");
+    end_round(b);
+    end_round(b);
+    end_round(b);
+    assert(a.hp == 85 && !has_effect(a, "Poison"), "5 + 4 + 3 + 2 + 1 = 15, then gone");
+    end_round(b);
+    assert(a.hp == 85, "nothing more");
+}
+
+@test
+fn poison_stacks_by_adding_to_whats_left() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, poison(5))]);
+    end_round(b);
+    add(b, a, [Action.AddEffect(a, poison(5))]);
+    end_round(b);
+    assert(a.hp == 86, "5, then 4 + 5 = 9");
+}
+
+@test
+fn regen_heals_for_its_rounds_then_goes() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.take(50);
+    add(b, a, [Action.AddEffect(a, regen(10, 2))]);
+    end_round(b);
+    end_round(b);
+    end_round(b);
+    assert(a.hp == 70, "healed twice");
+    assert(!has_effect(a, "Regen"), "gone");
+}
+
+@test
+fn timed_effects_wear_off_after_their_rounds() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, timed(attack_down(), 2))]);
+    end_round(b);
+    assert(has_effect(a, "Attack down"), "still on after one");
+    end_round(b);
+    assert(!has_effect(a, "Attack down"), "gone after two");
+}
+
+// Cleanse
+
+@test
+fn cleanse_removes_debuffs_only() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.effects.push(bloodlust());
+    add(b, a, [Action.AddEffect(a, poison(5)), Action.AddEffect(a, attack_up()), Action.AddEffect(a, hex()), Action.Cleanse(a)]);
+    assert(!has_effect(a, "Poison") && !has_effect(a, "Hex"), "debuffs gone");
+    assert(has_effect(a, "Attack up") && has_effect(a, "Bloodlust"), "buffs and passives stay");
+}
+
+// Targeting
+
+@test
+fn taunt_forces_single_targets() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    add(b, who(b, slot(1, 1)), [Action.AddEffect(who(b, slot(1, 1)), taunt(2))]);
+    var picks = b.targetable_foes(slot(0, 0));
+    assert(picks.len() == 1 && picks[0].index == 1, "only the taunter");
+    add(b, who(b, slot(1, 2)), [Action.AddEffect(who(b, slot(1, 2)), taunt(2))]);
+    assert(b.targetable_foes(slot(0, 0)).len() == 2, "either taunter");
+}
+
+@test
+fn taunt_wears_off_after_two_rounds() {
+    var b = duel(["A"], ["B", "C"]);
+    var c = who(b, slot(1, 1));
+    add(b, c, [Action.AddEffect(c, taunt(2))]);
+    assert(c.targeting_tier() == 1, "raised");
+    end_round(b);
+    end_round(b);
+    assert(c.targeting_tier() == 0 && b.targetable_foes(slot(0, 0)).len() == 2, "back to normal");
+}
+
+@test
+fn keen_eye_ignores_taunts() {
+    var b = duel(["Ranger"], ["B", "C"]);
+    who(b, slot(0, 0)).effects.push(keen_eye());
+    add(b, who(b, slot(1, 0)), [Action.AddEffect(who(b, slot(1, 0)), taunt(2))]);
+    assert(b.targetable_foes(slot(0, 0)).len() == 2, "any foe");
+}
+
+// Passives
+
+@test
+fn bloodlust_follows_the_formula() {
+    var b = duel(["Barbarian"], ["B"]);
+    var barb = who(b, slot(0, 0));
+    barb.effects.push(bloodlust());
+    assert(near(bloodlust_multiplier(barb), 1.0), "full hp");
+    barb.hp = 50;
+    var half = 1.0 + bloodlust_a() * pow(0.5, bloodlust_b());
+    assert(near(bloodlust_multiplier(barb), half), "half");
+    barb.hp = 25;
+    var quarter = 1.0 + bloodlust_a() * pow(0.75, bloodlust_b());
+    assert(near(bloodlust_multiplier(barb), quarter), "quarter");
+    assert(barb.current_attack() == (100.0 * quarter).to_int(), "attack multiplied");
+}
+
+@test
+fn bloodlust_multiplies_with_attack_up() {
+    var b = duel(["Barbarian"], ["B"]);
+    var barb = who(b, slot(0, 0));
+    barb.effects.push(bloodlust());
+    barb.hp = 50;
+    var alone = barb.current_attack();
+    add(b, barb, [Action.AddEffect(barb, attack_up())]);
+    var both = barb.current_attack();
+    assert(both >= alone * 3 / 2 - 1 && both <= alone * 3 / 2 + 1, "attack up's 1.5 on top of Bloodlust");
+}
+
+@test
+fn pow_handles_fractional_exponents() {
+    assert(near(pow(0.5, 0.5), 0.70710678), "sqrt");
+    assert(near(pow(0.99, 2.0), 0.9801), "square");
+    assert(near(pow(0.0, 2.0), 0.0), "zero");
+}
+
+// Paladin, Last Rites
+
+fn fell(b: Battle, c: Character) { add(b, c, [Action.Damage(c, Option.None, 500, false)]); }
+
+@test
+fn last_rites_brings_back_the_first_fallen_ally_by_slot() {
+    var b = duel(["A", "B", "Paladin"], ["D"]);
+    var paladin = who(b, slot(0, 2));
+    paladin.effects.push(last_rites());
+    fell(b, who(b, slot(0, 1)));
+    fell(b, who(b, slot(0, 0)));
+    fell(b, paladin);
+    assert(!who(b, slot(0, 0)).fainted() && who(b, slot(0, 0)).hp == last_rites_percent(), "A, the lowest slot, back at its percent of 100");
+    assert(who(b, slot(0, 1)).fainted(), "only one");
+    assert(paladin.fainted(), "not the Paladin itself");
+}
+
+@test
+fn last_rites_skips_allies_without_a_corpse() {
+    var b = duel(["A", "B", "Paladin"], ["D"]);
+    var paladin = who(b, slot(0, 2));
+    paladin.effects.push(last_rites());
+    fell(b, who(b, slot(0, 0)));
+    add(b, paladin, [Action.RemoveCorpse(who(b, slot(0, 0)))]);
+    fell(b, who(b, slot(0, 1)));
+    fell(b, paladin);
+    assert(who(b, slot(0, 0)).fainted() && !who(b, slot(0, 1)).fainted(), "B, since A has no corpse");
+}
+
+@test
+fn last_rites_does_nothing_with_no_one_fallen() {
+    var b = duel(["A", "Paladin"], ["D"]);
+    var paladin = who(b, slot(0, 1));
+    paladin.effects.push(last_rites());
+    fell(b, paladin);
+    assert(paladin.fainted() && !who(b, slot(0, 0)).fainted(), "nothing to do");
+}
+
+@test
+fn last_rites_can_save_a_team_that_falls_all_at_once() {
+    var b = duel(["A", "Paladin"], ["D"]);
+    var a = who(b, slot(0, 0));
+    var paladin = who(b, slot(0, 1));
+    paladin.effects.push(last_rites());
+    add(b, a, [Action.Damage(a, Option.None, 500, false), Action.Damage(paladin, Option.None, 500, false)]);
+    assert(!a.fainted() && b.winner() == -1, "A is back, so the game goes on");
+}
+
+@test
+fn vigil_heals_the_lowest_ally_at_round_end() {
+    var b = duel(["Cleric", "B", "C"], ["D"]);
+    who(b, slot(0, 0)).effects.push(vigil());
+    who(b, slot(0, 1)).take(90);
+    who(b, slot(0, 2)).take(90);
+    who(b, slot(1, 0)).take(95);
+    end_round(b);
+    assert(who(b, slot(0, 1)).hp == smaller(100, 10 + vigil_heal()), "lowest ally, lowest slot on a tie");
+    assert(who(b, slot(0, 2)).hp == 10 && who(b, slot(1, 0)).hp == 5, "nobody else");
+}
+
+@test
+fn inner_peace_heals_at_the_end_of_its_own_turn() {
+    var b = duel(["Monk"], ["B"]);
+    var m = who(b, slot(0, 0));
+    m.effects.push(inner_peace());
+    m.take(90);
+    announce(engine(), b, EventKind.TurnEnded(who(b, slot(1, 0))));
+    assert(m.hp == 10, "not on others' turns");
+    announce(engine(), b, EventKind.TurnEnded(m));
+    assert(m.hp == smaller(100, 10 + inner_peace_heal()), "on its own");
+}
+
+@test
+fn soul_harvest_removes_the_corpse_of_a_foe_the_reaper_knocks_out() {
+    var b = duel(["Reaper"], ["B", "C"]);
+    var reaper = who(b, slot(0, 0));
+    reaper.effects.push(soul_harvest());
+    var foe = who(b, slot(1, 0));
+    add(b, foe, [Action.Damage(foe, Option.Some(reaper), 200, true)]);
+    assert(foe.fainted() && !foe.corpse, "no corpse");
+    assert(logged(b, "B's corpse is gone."), "said so");
+}
+
+@test
+fn soul_harvest_counts_the_reapers_drain() {
+    var b = duel(["Reaper"], ["B", "C"]);
+    var reaper = who(b, slot(0, 0));
+    reaper.effects.push(soul_harvest());
+    var foe = who(b, slot(1, 0));
+    add(b, foe, [Action.Drain(foe, reaper, 200, 50)]);
+    assert(foe.fainted() && !foe.corpse, "no corpse");
+}
+
+@test
+fn soul_harvest_leaves_other_kills_alone() {
+    var b = duel(["Reaper", "Ally"], ["B", "C", "D"]);
+    var reaper = who(b, slot(0, 0));
+    reaper.effects.push(soul_harvest());
+    var ally = who(b, slot(0, 1));
+    var by_ally = who(b, slot(1, 0));
+    var by_poison = who(b, slot(1, 1));
+    add(b, by_ally, [Action.Damage(by_ally, Option.Some(ally), 200, true), Action.Damage(by_poison, Option.None, 200, false)]);
+    assert(by_ally.corpse && by_poison.corpse, "someone else's kill, and an indirect one, leave corpses");
+}
+
+@test
+fn soul_harvest_spares_its_own_team_and_survivors() {
+    var b = duel(["Reaper", "Ally"], ["B"]);
+    var reaper = who(b, slot(0, 0));
+    reaper.effects.push(soul_harvest());
+    var ally = who(b, slot(0, 1));
+    var foe = who(b, slot(1, 0));
+    add(b, ally, [Action.Damage(ally, Option.Some(reaper), 200, true), Action.Damage(foe, Option.Some(reaper), 30, true)]);
+    assert(ally.corpse, "an ally keeps its corpse");
+    assert(foe.hp == 70 && !foe.fainted(), "a hit that doesn't knock out does nothing more");
+}
+
+// Hex
+
+@test
+fn hex_skips_one_turn() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, hex())]);
+    assert(a.skips_turn(), "frog");
+    announce(engine(), b, EventKind.TurnStarted(a));
+    assert(!a.skips_turn(), "back to normal after the lost turn");
+}
+
+// Potions
+
+@test
+fn greater_health_potion_triggers_below_its_line() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var line = potion_line_percent();
+    // Full heals, so each one shows plainly.
+    add(b, a, [Action.AddEffect(a, greater_health_potion(100)), Action.AddEffect(a, greater_health_potion(100))]);
+    add(b, a, [Action.Damage(a, Option.None, 100 - line, false)]);
+    assert(a.hp == line, "exactly on the line: nothing");
+    add(b, a, [Action.Damage(a, Option.None, 1, false)]);
+    assert(a.hp == 100, "below the line: healed, the extra lost at max");
+    add(b, a, [Action.Damage(a, Option.None, 101 - line, false)]);
+    assert(a.hp == 100, "second charge");
+    add(b, a, [Action.Damage(a, Option.None, 101 - line, false)]);
+    assert(a.hp == line - 1 && !has_effect(a, "Greater Health Potion"), "empty");
+}
+
+@test
+fn greater_health_potion_line_follows_reduced_max_hp() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.wound(10);
+    // The lowest HP that isn't below the line at 90 max.
+    var lowest_safe = (90 * potion_line_percent() + 99) / 100;
+    a.take(90 - lowest_safe);
+    add(b, a, [Action.AddEffect(a, greater_health_potion(100))]);
+    assert(a.hp == lowest_safe, "on the line at 90 max: nothing yet");
+    add(b, a, [Action.Damage(a, Option.None, 1, false)]);
+    assert(a.hp == 90, "below it: healed, capped at 90");
+}
+
+@test
+fn greater_health_potion_triggers_at_once_when_already_low() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.take(101 - potion_line_percent());
+    add(b, a, [Action.AddEffect(a, greater_health_potion(100))]);
+    assert(a.hp == 100 && !has_effect(a, "Greater Health Potion"), "used straight away");
+}
+
+@test
+fn greater_health_potion_heals_before_the_next_hit() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var crossing = 101 - potion_line_percent();
+    add(b, a, [Action.AddEffect(a, greater_health_potion(100))]);
+    add(b, a, [Action.Damage(a, Option.None, crossing, true), Action.Damage(a, Option.None, crossing, true)]);
+    assert(a.hp == 100 - crossing, "healed to full between the two hits");
+}
+
+@test
+fn panacea_blocks_one_debuff_per_charge() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, poison(5)), Action.AddEffect(a, panacea()), Action.AddEffect(a, panacea())]);
+    assert(has_effect(a, "Poison"), "doesn't cleanse what's there");
+    add(b, a, [Action.AddEffect(a, hex()), Action.AddEffect(a, attack_down()), Action.AddEffect(a, attack_up())]);
+    assert(!has_effect(a, "Hex") && !has_effect(a, "Attack down"), "two blocked");
+    assert(has_effect(a, "Attack up"), "buffs pass");
+    add(b, a, [Action.AddEffect(a, hex())]);
+    assert(has_effect(a, "Hex"), "third lands");
+}
+
+// Barrier
+
+@test
+fn a_barrier_blocks_a_direct_hit_whatever_its_size() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, barrier()), Action.Damage(a, Option.None, 90, true)]);
+    assert(a.hp == 100 && !has_effect(a, "Barrier"), "all 90 blocked, barrier used up");
+    add(b, a, [Action.Damage(a, Option.None, 10, true)]);
+    assert(a.hp == 90, "the next hit lands");
+}
+
+@test
+fn indirect_damage_goes_past_a_barrier() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, barrier()), Action.AddEffect(a, poison(5))]);
+    end_round(b);
+    assert(a.hp == 95 && has_effect(a, "Barrier"), "poison lands, barrier kept");
+}
+
+@test
+fn a_barrier_comes_before_a_shield() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, shield(30)), Action.AddEffect(a, barrier()), Action.Damage(a, Option.None, 20, true)]);
+    add(b, a, [Action.Damage(a, Option.None, 40, true)]);
+    assert(a.hp == 90 && !has_effect(a, "Shield"), "first hit blocked; the whole 30 shield was left for the second");
+}
+
+@test
+fn barriers_stack_as_charges() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, barrier()), Action.AddEffect(a, barrier())]);
+    add(b, a, [Action.Damage(a, Option.None, 10, true), Action.Damage(a, Option.None, 10, true), Action.Damage(a, Option.None, 10, true)]);
+    assert(a.hp == 90, "two blocked, the third lands");
+}
+
+@test
+fn a_blocked_hit_sets_off_nothing() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, a, [Action.AddEffect(a, retaliate(10)), Action.AddEffect(a, barrier()), Action.Damage(a, Option.Some(foe), 20, true)]);
+    assert(foe.hp == 100, "no retaliation");
+}
+
+// Shield
+
+@test
+fn shield_takes_damage_before_hp() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, shield(30)), Action.Damage(a, Option.None, 20, true)]);
+    assert(a.hp == 100 && has_effect(a, "Shield"), "all on the shield");
+    add(b, a, [Action.Damage(a, Option.None, 25, true)]);
+    assert(a.hp == 85 && !has_effect(a, "Shield"), "10 left on the shield, 15 through, shield gone");
+}
+
+@test
+fn shields_stack_and_decay_each_round() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, a, [Action.AddEffect(a, shield(20)), Action.AddEffect(a, shield(30))]);
+    match a.find_effect("Shield") {
+        Option.Some(s) => { assert(s.power == 50, "50"); }
+        Option.None => { assert(false, "missing"); }
+    }
+    // A 50 shield lasts this many round ends.
+    var lasts = (50 + shield_decay() - 1) / shield_decay();
+    var i = 0;
+    while (i < lasts - 1) { end_round(b); i = i + 1; }
+    assert(has_effect(a, "Shield"), "some left");
+    end_round(b);
+    assert(!has_effect(a, "Shield"), "gone");
+}
+
+@test
+fn poison_hits_the_shield_first() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    // Big enough to outlast its own decay at the same round end.
+    add(b, a, [Action.AddEffect(a, poison(5)), Action.AddEffect(a, shield(shield_decay() + 30))]);
+    end_round(b);
+    assert(a.hp == 100, "poison soaked");
+}
+
+@test
+fn a_shield_is_not_hp_for_bloodlust() {
+    var b = duel(["Barbarian"], ["B"]);
+    var barb = who(b, slot(0, 0));
+    barb.effects.push(bloodlust());
+    barb.take(80);
+    var before = bloodlust_multiplier(barb);
+    add(b, barb, [Action.AddEffect(barb, shield(50))]);
+    assert(near(bloodlust_multiplier(barb), before), "still at its 20-HP strength");
+}
+
+@test
+fn predator_adds_its_bonus_below_its_line() {
+    var b = duel(["Assassin"], ["B"]);
+    var foe = who(b, slot(1, 0));
+    var boosted = 1.0 + predator_bonus_percent().to_float() / 100.0;
+    assert(near(predator_multiplier(foe), 1.0), "full HP");
+    foe.take(100 - predator_line_percent());
+    assert(near(predator_multiplier(foe), 1.0), "on the line isn't below it");
+    foe.take(1);
+    assert(near(predator_multiplier(foe), boosted), "just below");
+    foe.take(foe.hp - 1);
+    assert(near(predator_multiplier(foe), boosted), "at 1 HP: the same bonus");
+}
+
+@test
+fn predator_measures_missing_hp_against_reduced_max() {
+    var b = duel(["Assassin"], ["B"]);
+    var foe = who(b, slot(1, 0));
+    foe.wound(50);
+    assert(near(predator_multiplier(foe), 1.0), "50 of 50 is full, whatever Reap took");
+    foe.take(50 - (50 * predator_line_percent() / 100) + 1);
+    assert(predator_multiplier(foe) > 1.0, "below the line at 50 max");
+}
+
+// Alchemist, Panacea Supply
+
+fn charges_of(c: Character, kind: string): int {
+    match c.find_effect(kind) {
+        Option.Some(e) => { return e.charges; }
+        Option.None => { return 0; }
+    }
+    return 0;
+}
+
+@test
+fn panacea_supply_gives_the_team_a_panacea_each_round() {
+    var b = duel(["Alchemist", "B"], ["C"]);
+    var alchemist = who(b, slot(0, 0));
+    add(b, alchemist, [Action.AddEffect(alchemist, panacea_supply())]);
+    start_round(b);
+    assert(has_effect(alchemist, "Panacea") && has_effect(who(b, slot(0, 1)), "Panacea"), "the whole team, itself included");
+    assert(!has_effect(who(b, slot(1, 0)), "Panacea"), "not foes");
+}
+
+@test
+fn panacea_supply_tops_up_without_stacking() {
+    var b = duel(["Alchemist", "B"], ["C"]);
+    var alchemist = who(b, slot(0, 0));
+    var ally = who(b, slot(0, 1));
+    add(b, alchemist, [Action.AddEffect(alchemist, panacea_supply())]);
+    start_round(b);
+    add(b, ally, [Action.AddEffect(ally, hex())]);
+    assert(!has_effect(ally, "Hex") && !has_effect(ally, "Panacea"), "used up blocking the Hex");
+    start_round(b);
+    assert(charges_of(alchemist, "Panacea") == 1 && charges_of(ally, "Panacea") == 1, "one each, never more");
+}
+
+@test
+fn panacea_supply_stops_while_the_alchemist_is_down() {
+    var b = duel(["Alchemist", "B"], ["C"]);
+    var alchemist = who(b, slot(0, 0));
+    add(b, alchemist, [Action.AddEffect(alchemist, panacea_supply()), Action.Damage(alchemist, Option.None, 200, true)]);
+    start_round(b);
+    assert(!has_effect(who(b, slot(0, 1)), "Panacea"), "no Panacea from a fallen Alchemist");
+}

@@ -1,0 +1,88 @@
+import { Character, Tier, character } from "battler/core/creature";
+import { Battle, Side, new_battle } from "battler/core/battle";
+import { phases, start_round, begin_phase, next_actor } from "battler/core/order";
+
+/** Home is side 0 with H1, H2; away is side 1 with A1, A2. */
+fn match_up(h1: Tier, h2: Tier, a1: Tier, a2: Tier): Battle {
+    return new_battle([
+        Side { active: [character("H1", 100, 100, h1), character("H2", 100, 100, h2)] },
+        Side { active: [character("A1", 100, 100, a1), character("A2", 100, 100, a2)] }
+    ], 0);
+}
+
+/** Plays a round where nobody does anything but act, and answers who acted in order. */
+fn round_order(b: Battle): string {
+    return round_order_with(b, "", Tier.Normal);
+}
+
+/** As round_order, but when `actor` acts, H1 is moved to the tier `to`. */
+fn round_order_with(b: Battle, actor: string, to: Tier): string {
+    start_round(b);
+    var out = "";
+    for (phase in phases()) {
+        var cursor = begin_phase(b, phase);
+        var going = true;
+        while (going) {
+            match next_actor(b, cursor) {
+                Option.Some(s) => {
+                    var c = b.sides[s.side].active[s.index];
+                    if (out != "") { out = out + " "; }
+                    out = out + c.name;
+                    if (c.name == actor) { b.sides[0].active[0].tier = to; }
+                    c.acted = true;
+                }
+                Option.None => { going = false; }
+            }
+        }
+    }
+    return out;
+}
+
+@test
+fn everyone_fast_alternates_home_first() {
+    assert(round_order(match_up(Tier.Fast, Tier.Fast, Tier.Fast, Tier.Fast)) == "H1 A1 H2 A2", "alternate");
+}
+
+@test
+fn fast_home_against_slow_away_goes_back_to_back() {
+    assert(round_order(match_up(Tier.Fast, Tier.Fast, Tier.Slow, Tier.Slow)) == "H1 H2 A1 A2", "back to back");
+}
+
+@test
+fn away_has_priority_in_normal() {
+    assert(round_order(match_up(Tier.Fast, Tier.Normal, Tier.Normal, Tier.Normal)) == "H1 A1 H2 A2", "away first in normal");
+}
+
+@test
+fn home_has_priority_in_slow() {
+    assert(round_order(match_up(Tier.Slow, Tier.Slow, Tier.Slow, Tier.Slow)) == "H1 A1 H2 A2", "home first in slow");
+}
+
+@test
+fn slowed_before_acting_drops_to_the_slow_phase() {
+    var b = match_up(Tier.Normal, Tier.Normal, Tier.Normal, Tier.Normal);
+    assert(round_order_with(b, "A1", Tier.Slow) == "A1 H2 A2 H1", "H1 moves to slow");
+}
+
+@test
+fn sped_up_late_acts_in_the_current_phase() {
+    // H1 starts Slow and is sped up to Fast by A1 in the Normal phase. The Fast
+    // phase is over, but a Fast character can act in any later phase.
+    var b = match_up(Tier.Slow, Tier.Normal, Tier.Normal, Tier.Normal);
+    assert(round_order_with(b, "A1", Tier.Fast) == "A1 H1 A2 H2", "H1 acts in normal, lowest slot first");
+}
+
+@test
+fn fainted_characters_are_skipped() {
+    var b = match_up(Tier.Fast, Tier.Fast, Tier.Fast, Tier.Fast);
+    b.sides[1].active[0].hp = 0;
+    assert(round_order(b) == "H1 A2 H2", "A1 is out");
+}
+
+@test
+fn everyone_acts_once_a_round() {
+    var b = match_up(Tier.Fast, Tier.Normal, Tier.Slow, Tier.Fast);
+    var first = round_order(b);
+    assert(round_order(b) == first, "same order next round");
+    assert(first == "H1 A2 H2 A1", "one action each");
+}

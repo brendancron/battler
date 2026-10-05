@@ -1,0 +1,21 @@
+import { Command, Stdio, status } from "std/os/Process";
+import { Console, Stream } from "std/io/Console";
+
+/** Whether standard input is a terminal a person is typing at, rather than a pipe or file. */
+fn interactive(): bool {
+    return status(Command.new("test").arg("-t").arg("0").stdin(Stdio.Inherit)) == 0;
+}
+
+/** Waits for any single key, without Enter and without echoing it. */
+fn wait_key() {
+    // Read a key at a time with no echo, then put the terminal back.
+    status(Command.new("stty").arg("-icanon").arg("-echo").stdin(Stdio.Inherit));
+    stdin().read(1);
+    status(Command.new("stty").arg("icanon").arg("echo").stdin(Stdio.Inherit));
+}
+
+/** Clears the terminal and moves the cursor to the top left. */
+fn clear_screen() {
+    var esc = str(chr(27));
+    write(Stream.Out, esc + "[2J" + esc + "[H");
+}

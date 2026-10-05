@@ -1,0 +1,200 @@
+import { Character, Action, EventKind, Tier, character } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { use_move, damage } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { chill, freeze, hex, cold_aura, cryosleep, panacea, barrier, shield } from "battler/content/effects";
+import { blizzard, frostbite, avalanche, glacial_roar, cryosleep_move, plunder } from "battler/content/moves";
+import { chill_rounds, blizzard_power, frostbite_power, avalanche_power, glacial_roar_rounds, cryosleep_heal } from "battler/content/tuning";
+import { duel, who, slot, has_effect } from "support";
+
+// Chill and freeze, the Cryomancer, and the Frost Giant (docs/effects.md#chill-and-freeze).
+
+fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+// Chill and freeze
+
+@test
+fn a_chill_alone_does_nothing_and_a_second_one_freezes() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, chill())]);
+    assert(has_effect(a, "Chill") && !a.skips_turn(), "chilled, nothing more");
+    add(b, [Action.AddEffect(a, chill())]);
+    assert(!has_effect(a, "Chill") && has_effect(a, "Freeze") && a.skips_turn(), "frozen; the chill is used up");
+}
+
+@test
+fn a_chill_wears_off_after_its_rounds() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, chill())]);
+    var n = 0;
+    while (n < chill_rounds()) {
+        assert(has_effect(a, "Chill"), "still chilled");
+        announce(engine(), b, EventKind.RoundEnded);
+        n = n + 1;
+    }
+    assert(!has_effect(a, "Chill"), "worn off");
+    add(b, [Action.AddEffect(a, chill())]);
+    assert(!has_effect(a, "Freeze"), "a new chill starts over");
+}
+
+@test
+fn a_frozen_character_cant_be_chilled() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, freeze()), Action.AddEffect(a, chill())]);
+    assert(!has_effect(a, "Chill"), "the chill doesn't land");
+}
+
+@test
+fn freeze_goes_after_the_lost_turn() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, freeze())]);
+    announce(engine(), b, EventKind.TurnStarted(a));
+    assert(!a.skips_turn(), "thawed");
+}
+
+@test
+fn hex_and_freeze_each_take_a_turn() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, hex()), Action.AddEffect(a, freeze())]);
+    announce(engine(), b, EventKind.TurnStarted(a));
+    assert(a.skips_turn(), "one lost turn left");
+    announce(engine(), b, EventKind.TurnStarted(a));
+    assert(!a.skips_turn(), "both used up");
+}
+
+@test
+fn a_panacea_blocks_a_chill() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, chill()), Action.AddEffect(a, panacea()), Action.AddEffect(a, chill())]);
+    assert(has_effect(a, "Chill") && !has_effect(a, "Freeze"), "the second chill was blocked");
+}
+
+// Cryomancer
+
+@test
+fn blizzard_hits_and_chills_every_foe_and_freezes_the_chilled() {
+    var b = duel(["Cryomancer"], ["B", "C"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 1)), chill())]);
+    var each = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), blizzard_power());
+    use_move(engine(), b, slot(0, 0), blizzard(), Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 100 - each && who(b, slot(1, 1)).hp == 100 - each, "a hit on each");
+    assert(has_effect(who(b, slot(1, 0)), "Chill"), "chilled");
+    assert(has_effect(who(b, slot(1, 1)), "Freeze"), "the chilled one froze");
+}
+
+@test
+fn a_barrier_blocks_the_hit_but_not_the_chill() {
+    var b = duel(["Cryomancer"], ["B"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), barrier())]);
+    use_move(engine(), b, slot(0, 0), blizzard(), Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 100 && has_effect(who(b, slot(1, 0)), "Chill"), "no damage, still chilled");
+}
+
+@test
+fn frostbite_hits_one_foe_and_chills_it() {
+    var b = duel(["Cryomancer"], ["B"]);
+    var expected = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), frostbite_power());
+    use_move(engine(), b, slot(0, 0), frostbite(), at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 100 - expected && has_effect(who(b, slot(1, 0)), "Chill"), "hit and chilled");
+    use_move(engine(), b, slot(0, 0), frostbite(), at(slot(1, 0)));
+    assert(has_effect(who(b, slot(1, 0)), "Freeze"), "a second chill freezes");
+}
+
+// Frost Giant
+
+@test
+fn cold_aura_chills_a_foe_that_hits_it_directly() {
+    var b = duel(["Giant"], ["B"]);
+    var giant = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(giant, cold_aura())]);
+    add(b, [Action.Damage(giant, Option.Some(foe), 10, false)]);
+    assert(!has_effect(foe, "Chill"), "indirect damage doesn't count");
+    add(b, [Action.Damage(giant, Option.Some(foe), 10, true)]);
+    assert(has_effect(foe, "Chill"), "a direct hit chills");
+    add(b, [Action.Damage(giant, Option.Some(foe), 10, true)]);
+    assert(has_effect(foe, "Freeze"), "a second hit freezes");
+}
+
+@test
+fn cold_aura_needs_the_hit_to_land() {
+    var b = duel(["Giant"], ["B"]);
+    var giant = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(giant, cold_aura()), Action.AddEffect(giant, barrier())]);
+    add(b, [Action.Damage(giant, Option.Some(foe), 10, true)]);
+    assert(!has_effect(foe, "Chill"), "a blocked hit chills no one");
+    add(b, [Action.AddEffect(giant, shield(30)), Action.Damage(giant, Option.Some(foe), 10, true)]);
+    assert(has_effect(foe, "Chill"), "a hit a shield soaks still counts");
+}
+
+@test
+fn avalanche_hits_and_chills_every_foe() {
+    var b = duel(["Giant"], ["B", "C"]);
+    var each = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), avalanche_power());
+    use_move(engine(), b, slot(0, 0), avalanche(), Choice.NoTarget);
+    for (s in [slot(1, 0), slot(1, 1)]) {
+        assert(who(b, s).hp == 100 - each && has_effect(who(b, s), "Chill"), "hit and chilled");
+    }
+}
+
+@test
+fn glacial_roar_taunts_for_its_rounds() {
+    var b = duel(["Giant"], ["B"]);
+    use_move(engine(), b, slot(0, 0), glacial_roar(), Choice.NoTarget);
+    match who(b, slot(0, 0)).find_effect("Taunt") {
+        Option.Some(e) => { assert(e.rounds == glacial_roar_rounds(), "taunting"); }
+        Option.None => { assert(false, "taunting"); }
+    }
+}
+
+@test
+fn cryosleep_heals_an_ally_which_then_sleeps_through_its_next_turn_untouched() {
+    var b = duel(["Giant", "Ally"], ["Foe"]);
+    var ally = who(b, slot(0, 1));
+    ally.take(50);
+    assert(use_move(engine(), b, slot(0, 0), cryosleep_move(), at(slot(0, 1))), "used");
+    assert(ally.hp == 50 + cryosleep_heal(), "healed at once");
+    assert(ally.skips_turn(), "loses its next turn");
+    var before = ally.hp;
+    add(b, [Action.Damage(ally, Option.Some(who(b, slot(1, 0))), 40, true)]);
+    assert(ally.hp == before, "no damage while asleep");
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(has_effect(ally, "Cryosleep"), "a round end doesn't wake it");
+    announce(engine(), b, EventKind.TurnStarted(ally));
+    assert(!has_effect(ally, "Cryosleep"), "it wakes when its turn has gone");
+}
+
+@test
+fn cryosleep_cant_target_the_giant() {
+    var b = duel(["Giant", "Ally"], ["Foe"]);
+    assert(!use_move(engine(), b, slot(0, 0), cryosleep_move(), at(slot(0, 0))), "not itself");
+}
+
+@test
+fn cryosleep_is_a_buff_a_panacea_lets_through_and_a_cleanse_leaves() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, panacea()), Action.AddEffect(a, cryosleep()), Action.Cleanse(a)]);
+    assert(has_effect(a, "Cryosleep") && has_effect(a, "Panacea"), "not blocked, not cleansed");
+    add(b, [Action.Dispel(a)]);
+    assert(!has_effect(a, "Cryosleep"), "a dispel wakes it");
+}
+
+@test
+fn cryosleep_cant_be_stolen() {
+    var b = duel(["Thief"], ["B"]);
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(foe, cryosleep())]);
+    use_move(engine(), b, slot(0, 0), plunder(), at(slot(1, 0)));
+    assert(has_effect(foe, "Cryosleep") && !has_effect(who(b, slot(0, 0)), "Cryosleep"), "it stays");
+}

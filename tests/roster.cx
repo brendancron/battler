@@ -1,0 +1,55 @@
+import { roster } from "battler/content/roster";
+import { TargetShape } from "battler/core/target";
+
+// Rules every character follows, however the roster changes.
+
+@test
+fn every_character_has_a_unique_name_and_moves() {
+    var all = roster();
+    assert(all.len() >= 1, "a roster");
+    var i = 0;
+    while (i < all.len()) {
+        assert(all[i].moves.len() >= 1, all[i].body.name + " has a move");
+        var j = i + 1;
+        while (j < all.len()) {
+            assert(all[i].body.name != all[j].body.name, all[i].body.name + " is listed once");
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+@test
+fn a_characters_starting_effects_are_passives() {
+    for (f in roster()) {
+        for (e in f.body.effects) {
+            assert(e.immune && e.buff, f.body.name + "'s " + e.kind + " can't be removed");
+        }
+    }
+}
+
+@test
+fn everyone_has_a_basic_attack_first() {
+    for (f in roster()) {
+        assert(f.moves[0].basic && f.moves[0].cooldown == 0, f.body.name + " leads with a basic attack");
+        var i = 1;
+        while (i < f.moves.len()) {
+            // A summon's cooldown starts when the summon is destroyed, so the move itself has none.
+            var summons = false;
+            match f.moves[i].shape {
+                TargetShape.Summon(_) => { summons = true; }
+                TargetShape.PuppetCorpse => { summons = true; }
+                _ => {}
+            }
+            assert(!f.moves[i].basic && (f.moves[i].cooldown >= 1 || summons), f.body.name + "'s other moves have cooldowns");
+            i = i + 1;
+        }
+    }
+}
+
+@test
+fn every_character_starts_at_full_hp() {
+    for (f in roster()) {
+        assert(f.body.hp == f.body.max_health() && f.body.hp > 0, f.body.name + " starts full");
+    }
+}

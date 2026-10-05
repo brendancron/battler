@@ -1,0 +1,110 @@
+import { Character, Effect, Event, EventKind, Action } from "battler/core/creature";
+import { Battle } from "battler/core/battle";
+import { Engine, engine, perform, announce, queued, subject_first } from "battler/core/engine";
+import { retaliate, fresh, panacea, poison } from "battler/content/effects";
+import { duel, who, slot, transcript, logged, has_effect } from "support";
+
+// Retaliate that fires on any hit, direct or not, so only provenance can stop a loop.
+fn any_hit(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.Damaged(target, source, _, _, _) => {
+            match source {
+                Option.Some(_) => { return same(target, owner) && fresh(owner, fx, event); }
+                Option.None => { return false; }
+            }
+        }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn two_hits_on_retaliator(rules: Engine): string {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var bb = who(b, slot(1, 0));
+    bb.effects.push(retaliate(10));
+    perform(rules, b, "A: two hits", [Action.Damage(bb, Option.Some(a), 1, true), Action.Damage(bb, Option.Some(a), 2, true)]);
+    return transcript(b);
+}
+
+@test
+fn depth_first_resolves_each_trigger_before_the_next_event() {
+    assert(two_hits_on_retaliator(engine()) == "B took 1 (99/100). | A took 10 (90/100). | B took 2 (97/100). | A took 10 (80/100).", "depth first");
+}
+
+@test
+fn queued_resolves_every_original_event_first() {
+    var rules = Engine { schedule: queued, order: subject_first };
+    assert(two_hits_on_retaliator(rules) == "B took 1 (99/100). | B took 2 (97/100). | A took 10 (90/100). | A took 10 (80/100).", "queued");
+}
+
+@test
+fn retaliate_ignores_indirect_damage() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var bb = who(b, slot(1, 0));
+    a.effects.push(retaliate(10));
+    bb.effects.push(retaliate(10));
+    perform(engine(), b, "A: hit", [Action.Damage(bb, Option.Some(a), 20, true)]);
+    assert(bb.hp == 80, "B took the hit");
+    assert(a.hp == 90, "A took one retaliation, and its own retaliate didn't answer it");
+}
+
+@test
+fn provenance_stops_two_triggers_feeding_each_other() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var bb = who(b, slot(1, 0));
+    var ra = retaliate(10);
+    ra.should = any_hit;
+    var rb = retaliate(10);
+    rb.should = any_hit;
+    a.effects.push(ra);
+    bb.effects.push(rb);
+    perform(engine(), b, "A: hit", [Action.Damage(bb, Option.Some(a), 20, true)]);
+    assert(transcript(b) == "B took 20 (80/100). | A took 10 (90/100). | B took 10 (70/100).", "each trigger fires once in the chain");
+}
+
+@test
+fn intercept_blocks_the_action() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    perform(engine(), b, "test", [Action.AddEffect(a, panacea()), Action.AddEffect(a, poison(5))]);
+    assert(!has_effect(a, "Poison"), "no poison");
+    assert(logged(b, "A's Panacea blocked it."), "logged");
+}
+
+@test
+fn round_end_reaches_every_trigger() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var bb = who(b, slot(1, 0));
+    perform(engine(), b, "test", [Action.AddEffect(a, poison(3)), Action.AddEffect(bb, poison(4))]);
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(a.hp == 97 && bb.hp == 96, "both poisons ticked");
+}
+
+@test
+fn fainted_characters_take_no_more_actions() {
+    var b = duel(["A"], ["B"]);
+    var bb = who(b, slot(1, 0));
+    perform(engine(), b, "test", [Action.Damage(bb, Option.None, 100, false), Action.Heal(bb, 50), Action.Damage(bb, Option.None, 5, false)]);
+    assert(bb.hp == 0, "stays down");
+    assert(transcript(b) == "B took 100 (0/100). | B fainted!", "nothing after fainting");
+}
+
+@test
+fn healing_at_full_hp_is_not_logged() {
+    var b = duel(["A"], ["B"]);
+    perform(engine(), b, "test", [Action.Heal(who(b, slot(0, 0)), 10)]);
+    assert(b.log.len() == 0, "nothing to report");
+}
+
+@test
+fn every_log_line_has_a_frame() {
+    var b = duel(["A"], ["B"]);
+    var bb = who(b, slot(1, 0));
+    perform(engine(), b, "test", [Action.Damage(bb, Option.None, 30, false), Action.Damage(bb, Option.None, 20, false)]);
+    assert(b.frames.len() == b.log.len(), "one each");
+    assert(b.frames[0].looks[1][0].hp == 70 && b.frames[1].looks[1][0].hp == 50, "HP as it stood after each line");
+}

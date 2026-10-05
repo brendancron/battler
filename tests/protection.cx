@@ -1,0 +1,183 @@
+import { Character, Action, EventKind, Tier, character } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { use_move, damage } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { invincible, faerie_light, ironclad, shield, barrier, retaliate, heal_block, attack_down, poison } from "battler/content/effects";
+import { fairy_ring, pixie_dust, piston_slam, lockdown, reap } from "battler/content/moves";
+import { pixie_dust_shield, faerie_light_heal, ironclad_cap_percent, piston_slam_power, lockdown_rounds, reap_power, reap_wound_divisor } from "battler/content/tuning";
+import { duel, who, slot, has_effect, sturdy } from "support";
+
+// The Fairy (Invincible, Faerie Light) and the Construct (Ironclad).
+
+fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+fn smaller(a: int, b: int): int {
+    if (a < b) { return a; }
+    return b;
+}
+
+// Fairy
+
+@test
+fn fairy_ring_makes_an_ally_invincible() {
+    var b = duel(["Fairy", "Ally"], ["Foe"]);
+    assert(use_move(engine(), b, slot(0, 0), fairy_ring(), at(slot(0, 1))), "used");
+    assert(has_effect(who(b, slot(0, 1)), "Invincible"), "on the ally");
+}
+
+@test
+fn invincible_stops_every_kind_of_damage_and_max_hp_loss() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(a, invincible())]);
+    add(b, [Action.Damage(a, Option.Some(foe), 40, true), Action.Damage(a, Option.None, 40, false), Action.Wound(a, 10)]);
+    assert(a.hp == 100 && a.max_health() == 100, "nothing got through");
+}
+
+@test
+fn invincible_comes_before_barriers_and_shields_and_sets_nothing_off() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(a, barrier()), Action.AddEffect(a, shield(30)), Action.AddEffect(a, retaliate(10)), Action.AddEffect(a, invincible())]);
+    add(b, [Action.Damage(a, Option.Some(foe), 40, true)]);
+    match a.find_effect("Barrier") {
+        Option.Some(e) => { assert(e.charges == 1, "the barrier wasn't used"); }
+        Option.None => { assert(false, "the barrier is still there"); }
+    }
+    match a.find_effect("Shield") {
+        Option.Some(e) => { assert(e.power == 30, "the shield soaked nothing"); }
+        Option.None => { assert(false, "the shield is still there"); }
+    }
+    assert(foe.hp == 100, "no Retaliate");
+}
+
+@test
+fn invincible_lets_debuffs_through() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, invincible()), Action.AddEffect(a, attack_down())]);
+    assert(has_effect(a, "Attack down"), "debuffs still land");
+}
+
+@test
+fn invincible_covers_the_end_of_the_round_and_goes_at_the_next_start() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, poison(5)), Action.AddEffect(a, invincible())]);
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(a.hp == 100, "poison at the end of the round is covered");
+    announce(engine(), b, EventKind.RoundStarted);
+    assert(!has_effect(a, "Invincible"), "gone when the next round starts");
+}
+
+@test
+fn pixie_dust_shields_every_ally_and_adds_to_a_shield_already_there() {
+    var b = duel(["Fairy", "Ally"], ["Foe"]);
+    add(b, [Action.AddEffect(who(b, slot(0, 1)), shield(10))]);
+    use_move(engine(), b, slot(0, 0), pixie_dust(), Choice.NoTarget);
+    match who(b, slot(0, 0)).find_effect("Shield") {
+        Option.Some(e) => { assert(e.power == pixie_dust_shield(), "the Fairy too"); }
+        Option.None => { assert(false, "shielded"); }
+    }
+    match who(b, slot(0, 1)).find_effect("Shield") {
+        Option.Some(e) => { assert(e.power == 10 + pixie_dust_shield(), "added up"); }
+        Option.None => { assert(false, "shielded"); }
+    }
+    assert(!has_effect(who(b, slot(1, 0)), "Shield"), "not the foe");
+}
+
+@test
+fn faerie_light_heals_every_ally_at_the_end_of_the_round() {
+    var b = duel(["Fairy", "Ally"], ["Foe"]);
+    var fairy = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(fairy, faerie_light())]);
+    for (s in [slot(0, 0), slot(0, 1), slot(1, 0)]) { who(b, s).take(30); }
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(fairy.hp == 70 + faerie_light_heal() && who(b, slot(0, 1)).hp == 70 + faerie_light_heal(), "both allies");
+    assert(who(b, slot(1, 0)).hp == 70, "not the foe");
+}
+
+@test
+fn faerie_light_stops_while_the_fairy_is_down() {
+    var b = duel(["Fairy", "Ally"], ["Foe"]);
+    var fairy = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(fairy, faerie_light())]);
+    who(b, slot(0, 1)).take(30);
+    add(b, [Action.KnockOut(fairy)]);
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(who(b, slot(0, 1)).hp == 70, "no heal");
+}
+
+// Construct
+
+@test
+fn ironclad_caps_each_instance_of_damage() {
+    var b = duel(["Construct"], ["Foe"]);
+    var c = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(c, ironclad())]);
+    var cap = c.max_health() * ironclad_cap_percent() / 100;
+    add(b, [Action.Damage(c, Option.None, cap + 30, true)]);
+    assert(c.hp == 100 - cap, "a big hit takes the cap");
+    add(b, [Action.Damage(c, Option.None, cap + 30, false)]);
+    assert(c.hp == 100 - 2 * cap, "indirect damage too");
+}
+
+@test
+fn ironclad_caps_before_shields() {
+    var b = duel(["Construct"], ["Foe"]);
+    var c = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(c, ironclad()), Action.AddEffect(c, shield(10))]);
+    var cap = c.max_health() * ironclad_cap_percent() / 100;
+    add(b, [Action.Damage(c, Option.None, cap + 30, true)]);
+    assert(c.hp == 100 - (cap - 10), "the shield takes part of the capped hit");
+}
+
+@test
+fn ironclad_cant_be_healed_and_cant_be_cleansed() {
+    var b = duel(["Construct"], ["Foe"]);
+    var c = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(c, ironclad())]);
+    c.take(40);
+    add(b, [Action.Cleanse(c), Action.Heal(c, 20)]);
+    assert(c.hp == 60, "no healing");
+}
+
+@test
+fn max_hp_loss_isnt_capped_but_the_cap_follows_max_hp() {
+    var b = duel(["Construct"], ["Foe"]);
+    var c = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(c, ironclad()), Action.Wound(c, 40)]);
+    assert(c.max_health() == 60, "all 40 max HP gone");
+    var cap = c.max_health() * ironclad_cap_percent() / 100;
+    add(b, [Action.Damage(c, Option.None, 100, true)]);
+    assert(c.hp == 60 - cap, "the cap is of the new max HP");
+}
+
+@test
+fn reap_takes_max_hp_from_the_capped_hit() {
+    var b = duel(["Reaper"], ["Construct"]);
+    var c = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(c, ironclad())]);
+    who(b, slot(0, 0)).attack = 1000;
+    var cap = c.max_health() * ironclad_cap_percent() / 100;
+    use_move(engine(), b, slot(0, 0), reap(), at(slot(1, 0)));
+    assert(c.max_health() == 100 - cap / reap_wound_divisor(), "a share of the capped hit");
+}
+
+@test
+fn piston_slam_hits_and_lockdown_taunts() {
+    var b = duel(["Construct"], ["Foe"]);
+    var expected = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), piston_slam_power());
+    use_move(engine(), b, slot(0, 0), piston_slam(), at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 100 - expected, "a hit");
+    use_move(engine(), b, slot(0, 0), lockdown(), Choice.NoTarget);
+    match who(b, slot(0, 0)).find_effect("Taunt") {
+        Option.Some(e) => { assert(e.rounds == lockdown_rounds(), "taunting for its rounds"); }
+        Option.None => { assert(false, "taunting"); }
+    }
+}

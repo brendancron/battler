@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Balance Report</title>
+<!--
+  The balance checker's report page (docs/balance.md#report-page). The
+  checker copies this file next to the totals file (balance.json gives
+  balance.html), and on every save writes the totals to a script beside it
+  (balance.data.js), which this page loads. A <script src> works from
+  file://, so the page needs no server: open it, and refresh it to see the
+  latest.
+
+  Each table is described once in TABLES; sorting, filtering and the bars
+  come from that description, so a new table or column is one entry there.
+-->
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+    --line: #e4e3df; --accent: #2f6fdb; --good: #2e8b57; --bad: #c0392b;
+    --bar: #dbe6fb; --bar-bad: #f6dcd8; --head: #f0efeb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
+      --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
+      --bar: #233350; --bar-bad: #4a2621; --head: #262624;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
+    --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
+    --bar: #233350; --bar-bad: #4a2621; --head: #262624;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto;
+    display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline;
+  }
+  h1 { font-size: 20px; margin: 0; }
+  .summary { color: var(--muted); }
+  nav {
+    position: sticky; top: 0; z-index: 2; background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .inner {
+    max-width: 1100px; margin: 0 auto; padding: 8px 16px;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  }
+  nav button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 999px; padding: 4px 12px; font: inherit; cursor: pointer;
+  }
+  nav button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tools { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tools input {
+    font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--panel); color: var(--text);
+  }
+  .tools input[type="search"] { width: 160px; }
+  .tools input[type="number"] { width: 64px; }
+  .tools label { color: var(--muted); }
+  main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 40px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    margin: 0 0 16px; overflow: hidden;
+  }
+  section h2 { font-size: 15px; margin: 0; padding: 12px 14px 4px; }
+  section p.note { margin: 0; padding: 0 14px 10px; color: var(--muted); font-size: 13px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 12px; text-align: left; border-top: 1px solid var(--line); white-space: nowrap; }
+  th {
+    background: var(--head); font-weight: 600; cursor: pointer; user-select: none;
+    position: relative;
+  }
+  th.num, td.num { text-align: right; }
+  th .arrow { color: var(--accent); margin-left: 4px; }
+  td.rank { color: var(--muted); width: 1%; }
+  td.barcell { position: relative; min-width: 120px; }
+  td.barcell .bar {
+    position: absolute; top: 4px; bottom: 4px; background: var(--bar);
+    border-radius: 3px;
+  }
+  td.barcell::before {
+    content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px;
+    border-left: 1px solid var(--line);
+  }
+  td.barcell .bar.neg { background: var(--bar-bad); }
+  td.barcell span { position: relative; }
+  .pos { color: var(--good); }
+  .neg { color: var(--bad); }
+  .empty { padding: 12px 14px; color: var(--muted); }
+  .hidden { display: none; }
+  footer { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Balance Report</h1>
+  <span class="summary" id="summary"></span>
+</header>
+<nav>
+  <div class="inner">
+    <div id="tabs"></div>
+    <div class="tools">
+      <input type="search" id="filter" placeholder="Filter by name" aria-label="Filter by name">
+      <label for="min">Min games</label>
+      <input type="number" id="min" min="0" value="0">
+      <button id="auto" aria-pressed="false" title="Reload every 10 seconds, to follow a run as it plays">Auto-refresh</button>
+      <button id="theme" title="Switch light or dark">Theme</button>
+    </div>
+  </div>
+</nav>
+<main id="tables"></main>
+<footer>Click a column heading to sort by it; click again to reverse. Written by the balance checker (docs/balance.md).</footer>
+
+<script>
+// The totals, as the checker saved them: set by the data script beside this
+// page (this page's name with .data.js for .html), loaded before init() runs.
+let DATA = {};
+let WRITTEN = null;
+
+const pct = (wins, games) => games ? 100 * wins / games : null;
+const fixed = (x, places) => x == null ? "—" : x.toFixed(places);
+
+// Every table: where its rows come from, and its columns. A column has a
+// label, a value(row) to sort by, an optional text(row) to show, and flags:
+// num (right-aligned), bar (a bar scaled to the column's largest value),
+// signed (green above 0, red below).
+const ratingColumns = [
+  { label: "Name", value: r => r.name },
+  { label: "Elo", value: r => r.elo, text: r => fixed(r.elo, 0), num: true, bar: true, base: 1000 },
+  { label: "Win %", value: r => pct(r.wins, r.games), text: r => fixed(pct(r.wins, r.games), 1), num: true, bar: true, base: 50 },
+  { label: "Wins", value: r => r.wins, num: true },
+  { label: "Games", value: r => r.games, num: true },
+];
+const mixColumns = [
+  { label: "Mix", value: r => r.name },
+  { label: "Score", value: r => r.games ? 100 * r.surprise / r.games : null, text: r => signed(r.games ? 100 * r.surprise / r.games : null), num: true, bar: true, base: 0, signed: true },
+  { label: "Win %", value: r => pct(r.wins, r.games), text: r => fixed(pct(r.wins, r.games), 1), num: true },
+  { label: "Games", value: r => r.games, num: true },
+];
+const pairColumns = [{ label: "Pair", value: r => r.name }, ...mixColumns.slice(1)];
+function signed(x) { return x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1); }
+
+const TABLES = [
+  { id: "characters", title: "Characters", rows: d => d.characters, columns: ratingColumns, sort: 1 },
+  { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
+  { id: "agents", title: "AIs", rows: d => d.agents, columns: ratingColumns, sort: 1,
+    note: "Rated only in games between two different AIs." },
+  { id: "sides", title: "Home and away", rows: d => d.sides, columns: ratingColumns, sort: 2,
+    note: "Read the win rate here; with two entries the Elo mostly follows the latest games." },
+  { id: "counts", title: "Archetype counts", rows: d => d.counts, columns: mixColumns, sort: 1,
+    note: "Score: win % above what the characters' ratings predicted, in points." },
+  { id: "mixes", title: "Team mixes", rows: d => d.mixes, columns: mixColumns, sort: 1,
+    note: "Score as above. Use Min games to hide mixes with few games." },
+  { id: "pairs", title: "Character pairs", rows: d => d.pairs || [], columns: pairColumns, sort: 1,
+    note: "Two characters on the same team. Score as above: positive means they win more together than their ratings predict. A pair needs many games (100+) to mean much; use Min games." },
+];
+
+const state = { tab: "all", filter: "", min: 0, sorts: {}, auto: false };
+
+// How often Auto-refresh reloads the page, in seconds. The checker rewrites the page every 4 games.
+const REFRESH_SECONDS = 10;
+
+function remember() { try { localStorage.setItem("balance-report", JSON.stringify(state)); } catch (e) {} }
+function recall() {
+  try { Object.assign(state, JSON.parse(localStorage.getItem("balance-report") || "{}")); } catch (e) {}
+}
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") node.className = v; else if (k.startsWith("on")) node.addEventListener(k.slice(2), v); else node.setAttribute(k, v);
+  }
+  for (const c of children) if (c != null) node.append(c);
+  return node;
+}
+
+function sorted(table, rows) {
+  const s = state.sorts[table.id] || { col: table.sort, dir: -1 };
+  const col = table.columns[s.col];
+  return [...rows].sort((a, b) => {
+    const x = col.value(a), y = col.value(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    // dir -1 is the natural order: biggest numbers first, names A to Z.
+    if (typeof x === "string") return s.dir < 0 ? x.localeCompare(y) : y.localeCompare(x);
+    return s.dir < 0 ? y - x : x - y;
+  });
+}
+
+function renderTable(table) {
+  const all = table.rows(DATA) || [];
+  const rows = all.filter(r => (r.games || 0) >= state.min && r.name.toLowerCase().includes(state.filter));
+  const s = state.sorts[table.id] || { col: table.sort, dir: -1 };
+  const section = el("section", { id: table.id });
+  section.append(el("h2", {}, `${table.title} `, el("span", { class: "summary" }, `(${rows.length} of ${all.length})`)));
+  if (table.note) section.append(el("p", { class: "note" }, table.note));
+  if (!rows.length) { section.append(el("div", { class: "empty" }, all.length ? "Nothing matches the filter." : "No games yet.")); return section; }
+
+  const head = el("tr", {}, el("th", { class: "num" }, "#"));
+  table.columns.forEach((col, i) => {
+    const arrow = s.col === i ? el("span", { class: "arrow" }, s.dir < 0 ? "▼" : "▲") : null;
+    head.append(el("th", {
+      class: col.num ? "num" : "", title: "Sort by " + col.label,
+      onclick: () => { state.sorts[table.id] = { col: i, dir: s.col === i ? -s.dir : -1 }; remember(); render(); },
+    }, col.label, arrow));
+  });
+
+  // Bars measure from the column's base (1000 Elo, 50%, 0 score), scaled to its furthest value.
+  const spans = table.columns.map(col => {
+    if (!col.bar) return 0;
+    return Math.max(1e-9, ...rows.map(r => Math.abs((col.value(r) ?? col.base) - col.base)));
+  });
+
+  const body = el("tbody");
+  sorted(table, rows).forEach((r, n) => {
+    const tr = el("tr", {}, el("td", { class: "rank num" }, String(n + 1)));
+    table.columns.forEach((col, i) => {
+      const v = col.value(r);
+      const shown = col.text ? col.text(r) : String(v ?? "—");
+      if (col.bar) {
+        const off = v == null ? 0 : (v - col.base) / spans[i];
+        // Bars grow from the middle: right for above the base, left for below.
+        const bar = el("div", { class: "bar" + (off < 0 ? " neg" : "") });
+        const half = Math.abs(off) * 50;
+        bar.style.width = half + "%";
+        bar.style.left = (off < 0 ? 50 - half : 50) + "%";
+        const text = el("span", { class: col.signed && v != null ? (v > 0 ? "pos" : v < 0 ? "neg" : "") : "" }, shown);
+        tr.append(el("td", { class: "barcell num" }, bar, text));
+      } else {
+        tr.append(el("td", { class: col.num ? "num" : "" }, shown));
+      }
+    });
+    body.append(tr);
+  });
+  section.append(el("div", { class: "scroll" }, el("table", {}, el("thead", {}, head), body)));
+  return section;
+}
+
+function render() {
+  const tabs = document.getElementById("tabs");
+  tabs.replaceChildren(...[{ id: "all", title: "All" }, ...TABLES].map(t =>
+    el("button", { "aria-pressed": String(state.tab === t.id), onclick: () => { state.tab = t.id; remember(); render(); } }, t.title)));
+  const main = document.getElementById("tables");
+  main.replaceChildren(...TABLES.filter(t => state.tab === "all" || state.tab === t.id).map(renderTable));
+}
+
+function init() {
+  recall();
+  const games = DATA.games || 0, draws = DATA.draws || 0;
+  // When the checker last saved, from the data script.
+  const when = WRITTEN ? ` · updated ${WRITTEN.toLocaleTimeString()}` : "";
+  document.getElementById("summary").textContent = `${games} games, ${draws} draws${when}`;
+
+  // Auto-refresh: reload on a timer, coming back to the same scroll position.
+  const auto = document.getElementById("auto");
+  let timer = null;
+  function follow() {
+    auto.setAttribute("aria-pressed", String(state.auto));
+    clearTimeout(timer);
+    if (state.auto) {
+      timer = setTimeout(() => {
+        try { sessionStorage.setItem("balance-report-scroll", String(window.scrollY)); } catch (e) {}
+        location.reload();
+      }, REFRESH_SECONDS * 1000);
+    }
+  }
+  auto.addEventListener("click", () => { state.auto = !state.auto; remember(); follow(); });
+  follow();
+  const filter = document.getElementById("filter");
+  const min = document.getElementById("min");
+  filter.value = state.filter; min.value = state.min;
+  filter.addEventListener("input", () => { state.filter = filter.value.trim().toLowerCase(); remember(); render(); });
+  min.addEventListener("input", () => { state.min = Math.max(0, Number(min.value) || 0); remember(); render(); });
+  document.getElementById("theme").addEventListener("click", () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+  });
+  render();
+  // Back to where the page was before an auto-refresh, once the tables are drawn.
+  try {
+    const y = sessionStorage.getItem("balance-report-scroll");
+    if (y != null) { window.scrollTo(0, Number(y)); sessionStorage.removeItem("balance-report-scroll"); }
+  } catch (e) {}
+}
+// Loads the data script beside this page, then draws it.
+(function load() {
+  const src = location.pathname.split("/").pop().replace(/\.html?$/, "") + ".data.js";
+  const script = document.createElement("script");
+  script.src = src + "?" + Date.now();
+  script.onload = () => {
+    DATA = window.BALANCE_DATA || {};
+    if (window.BALANCE_WRITTEN) WRITTEN = new Date(window.BALANCE_WRITTEN * 1000);
+    init();
+  };
+  script.onerror = () => {
+    document.getElementById("summary").textContent = `No data: ${src} is missing. Run the balance checker (--games 0 writes it).`;
+  };
+  document.head.append(script);
+})();
+</script>
+</body>
+</html>

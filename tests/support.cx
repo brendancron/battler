@@ -1,0 +1,47 @@
+import { Character, character, Tier } from "battler/core/creature";
+import { Battle, Side, Slot, new_battle } from "battler/core/battle";
+
+/** Two sides of plain characters with 100 attack and 100 defense, home on side 0. */
+fn duel(home: List<string>, away: List<string>): Battle {
+    var a: List<Character> = [];
+    for (n in home) { a.push(character(n, 100, 100, Tier.Normal)); }
+    var b: List<Character> = [];
+    for (n in away) { b.push(character(n, 100, 100, Tier.Normal)); }
+    return new_battle([Side { active: a }, Side { active: b }], 0);
+}
+
+/** Gives the character 1000 max HP, so no hit in a test can take it all, whatever the tuning. */
+fn sturdy(c: Character) {
+    c.base_max_hp = 1000;
+    c.hp = 1000;
+}
+
+fn who(battle: Battle, slot: Slot): Character { return battle.sides[slot.side].active[slot.index]; }
+
+fn slot(side: int, index: int): Slot { return Slot { side: side, index: index }; }
+
+/** Whether the log has this exact line. */
+fn logged(battle: Battle, line: string): bool {
+    for (l in battle.log) {
+        if (l == line) { return true; }
+    }
+    return false;
+}
+
+/** The log lines joined with " | ", for comparing whole sequences. */
+fn transcript(battle: Battle): string {
+    var out = "";
+    for (l in battle.log) {
+        if (out != "") { out = out + " | "; }
+        out = out + l;
+    }
+    return out;
+}
+
+fn has_effect(c: Character, kind: string): bool {
+    match c.find_effect(kind) {
+        Option.Some(_) => { return true; }
+        Option.None => { return false; }
+    }
+    return false;
+}

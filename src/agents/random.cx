@@ -1,0 +1,96 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random, random_int } from "std/random/Random";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef, usable } from "../core/move";
+import { TargetShape, Choice, has_targets } from "../core/target";
+import { Fighter } from "../content/roster";
+import { Agent, Plan, Turn } from "agent";
+import { Pick } from "scoring";
+
+/** Plays at random: any usable move, any legal target, any character in the draft. Useful as a baseline. */
+type RandomAgent;
+
+fn dice(n: int): int { return random_int(0, n); }
+
+impl Agent for RandomAgent {
+    fn choose_move(self, turn: Turn): <async, Console, Stdin, Random, Throw<IoError>> Option<Plan> {
+        match random_pick(turn.battle, turn.slot, turn.moves, dice) {
+            Option.Some(p) => { return Option.Some(Plan { slot: turn.slot, move: p.move, choice: p.choice }); }
+            Option.None => { return Option.None; }
+        }
+        return Option.None;
+    }
+
+    fn choose_pick(self, available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): <async, Console, Stdin, Random, Throw<IoError>> int {
+        return dice(available.len());
+    }
+}
+
+/**
+ * A random usable move with a random legal target: the "random" AI. `roll(n)`
+ * answers a random number from 0 up to n - 1. None if no move is usable.
+ */
+fn random_pick<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, roll: (int) -> <E> int): <E> Option<Pick> {
+    var c = battle.sides[user.side].active[user.index];
+    var ready: List<MoveDef> = [];
+    for (m in moveset) {
+        if (usable(c, m) && has_targets(battle, user, m.shape)) { ready.push(m); }
+    }
+    if (ready.len() == 0) { return Option.None; }
+    var move = ready[roll(ready.len())];
+    var choice = Choice.NoTarget;
+    match move.shape {
+        TargetShape.SingleFoe => {
+            var foes = battle.targetable_foes(user);
+            choice = Choice.Slots([foes[roll(foes.len())]]);
+        }
+        TargetShape.SingleAlly => {
+            var allies = battle.ally_slots(user);
+            choice = Choice.Slots([allies[roll(allies.len())]]);
+        }
+        TargetShape.AllyCorpse => {
+            var corpses = battle.corpse_slots(user.side);
+            if (corpses.len() == 0) { return Option.None; }
+            choice = Choice.Slots([corpses[roll(corpses.len())]]);
+        }
+        TargetShape.FoeCorpse => {
+            var corpses = battle.corpse_slots(1 - user.side);
+            if (corpses.len() == 0) { return Option.None; }
+            choice = Choice.Slots([corpses[roll(corpses.len())]]);
+        }
+        TargetShape.OtherAlly => {
+            var others: List<Slot> = [];
+            for (s in battle.ally_slots(user)) {
+                if (s.index != user.index) { others.push(s); }
+            }
+            if (others.len() == 0) { return Option.None; }
+            choice = Choice.Slots([others[roll(others.len())]]);
+        }
+        TargetShape.PuppetCorpse => {
+            var corpses = battle.corpse_slots(1 - user.side);
+            if (corpses.len() == 0) { return Option.None; }
+            choice = Choice.Slots([corpses[roll(corpses.len())]]);
+        }
+        TargetShape.ChainPicks(n) => {
+            var picks: List<Slot> = [];
+            var going = true;
+            while (going && picks.len() < n) {
+                var next = battle.next_in_chain(user, picks);
+                if (next.len() == 0) { going = false; } else { picks.push(next[roll(next.len())]); }
+            }
+            choice = Choice.Slots(picks);
+        }
+        TargetShape.FoePicks(n) => {
+            var foes = battle.targetable_foes(user);
+            var picks: List<Slot> = [];
+            var i = 0;
+            while (i < n) { picks.push(foes[roll(foes.len())]); i = i + 1; }
+            choice = Choice.Slots(picks);
+        }
+        _ => {}
+    }
+    return Option.Some(Pick { move: move, choice: choice, score: 0 });
+}

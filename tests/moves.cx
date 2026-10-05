@@ -1,0 +1,636 @@
+import { Character, Action, EventKind, Tier, character } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { Choice } from "battler/core/target";
+import { use_move, damage, hit } from "battler/core/move";
+import { energize, taunt, keen_eye, regen, heal_block, predator, predator_multiplier, shield, barrier, poison } from "battler/content/effects";
+import {
+    cleave, aimed_shot, hunters_mark, smite, guard, lay_on_hands, prayer, purify, sanctuary, brimstone, hex_move,
+    acid_flask, greater_health_potion_move, energize_move, disarming_palm, crippling_blow, flurry_of_blows, reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, backstab, execution, ancestral_call
+} from "battler/content/moves";
+import {
+    cleave_power, aimed_shot_power, smite_power, guard_rounds, lay_on_hands_heal, prayer_heal, purify_heal, sanctuary_heal,
+    brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, disarming_palm_power,
+    crippling_blow_power, crippling_blow_turns, flurry_power, flurry_picks, reap_power, reap_wound_divisor,
+    soul_siphon_power, soul_siphon_drain_percent, writhing_depths_power, shield_bash_power, bulwark_shield,
+    healing_rain_regen, healing_rain_rounds, backstab_power, execution_power, ancestral_call_percent, predator_line_percent
+} from "battler/content/tuning";
+import { duel, who, slot, logged, has_effect, sturdy } from "support";
+
+/**
+ * These tests check what each move does in terms of its numbers in
+ * tuning.cx, never the numbers themselves, so retuning a move doesn't break
+ * them. The duel characters all have 100 attack, 100 defense and 100 HP.
+ */
+
+fn use(b: Battle, user: Slot, move: string, choice: Choice): bool {
+    var m = cleave();
+    if (move == "aimed_shot") { m = aimed_shot(); }
+    if (move == "hunters_mark") { m = hunters_mark(); }
+    if (move == "smite") { m = smite(); }
+    if (move == "guard") { m = guard(); }
+    if (move == "lay_on_hands") { m = lay_on_hands(); }
+    if (move == "prayer") { m = prayer(); }
+    if (move == "purify") { m = purify(); }
+    if (move == "sanctuary") { m = sanctuary(); }
+    if (move == "brimstone") { m = brimstone(); }
+    if (move == "hex") { m = hex_move(); }
+    if (move == "acid_flask") { m = acid_flask(); }
+    if (move == "greater_health_potion") { m = greater_health_potion_move(); }
+    if (move == "energize") { m = energize_move(); }
+    if (move == "disarming_palm") { m = disarming_palm(); }
+    if (move == "crippling_blow") { m = crippling_blow(); }
+    if (move == "flurry") { m = flurry_of_blows(); }
+    if (move == "reap") { m = reap(); }
+    if (move == "soul_siphon") { m = soul_siphon(); }
+    if (move == "writhing_depths") { m = writhing_depths(); }
+    if (move == "shield_bash") { m = shield_bash(); }
+    if (move == "bulwark") { m = bulwark(); }
+    if (move == "healing_rain") { m = healing_rain(); }
+    if (move == "backstab") { m = backstab(); }
+    if (move == "execution") { m = execution(); }
+    if (move == "ancestral_call") { m = ancestral_call(); }
+    return use_move(engine(), b, user, m, choice);
+}
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+/** What a hit of this power from one slot would deal to another, as things stand. */
+fn hit_for(b: Battle, from: Slot, to: Slot, power: int): int { return damage(who(b, from), who(b, to), power); }
+
+fn smaller(a: int, b: int): int {
+    if (a < b) { return a; }
+    return b;
+}
+
+/** HP after healing `amount` from `hp`, at 100 max HP. */
+fn healed(hp: int, amount: int): int { return smaller(100, hp + amount); }
+
+fn end_rounds(b: Battle, n: int) {
+    var i = 0;
+    while (i < n) { announce(engine(), b, EventKind.RoundEnded); i = i + 1; }
+}
+
+/** `flurry_picks` picks: all on `first` but the last, which goes to `last`. */
+fn flurry_on(first: Slot, last: Slot): Choice {
+    var picks: List<Slot> = [];
+    var i = 0;
+    while (i < flurry_picks() - 1) { picks.push(first); i = i + 1; }
+    picks.push(last);
+    return Choice.Slots(picks);
+}
+
+// Damage formula (docs/damage.md)
+
+@test
+fn power_is_percent_damage_at_equal_stats() {
+    var a = character("A", 100, 100, Tier.Normal);
+    var strong = character("S", 150, 150, Tier.Normal);
+    assert(damage(a, a, 30) == 30, "equal");
+    assert(damage(strong, a, 30) == 45, "more attack");
+    assert(damage(a, strong, 30) == 20, "more defense");
+}
+
+// Barbarian, Ranger
+
+@test
+fn cleave_and_aimed_shot_are_direct_hits_at_their_power() {
+    var b = duel(["A"], ["B", "C"]);
+    var cleave_hit = hit_for(b, slot(0, 0), slot(1, 0), cleave_power());
+    var shot_hit = hit_for(b, slot(0, 0), slot(1, 1), aimed_shot_power());
+    use(b, slot(0, 0), "cleave", at(slot(1, 0)));
+    use(b, slot(0, 0), "aimed_shot", at(slot(1, 1)));
+    assert(who(b, slot(1, 0)).hp == 100 - cleave_hit && who(b, slot(1, 1)).hp == 100 - shot_hit, "each at its power");
+}
+
+@test
+fn hunters_mark_makes_hits_land_harder() {
+    var b = duel(["A"], ["B", "C"]);
+    use(b, slot(0, 0), "hunters_mark", at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).current_defense() < 100, "defense down");
+    use(b, slot(0, 0), "aimed_shot", at(slot(1, 0)));
+    use(b, slot(0, 0), "aimed_shot", at(slot(1, 1)));
+    assert(who(b, slot(1, 0)).hp < who(b, slot(1, 1)).hp, "the marked foe lost more");
+}
+
+@test
+fn single_target_moves_respect_taunts() {
+    var b = duel(["A"], ["B", "C"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 1)), taunt(2))]);
+    assert(!use(b, slot(0, 0), "cleave", at(slot(1, 0))), "refused");
+    who(b, slot(0, 0)).effects.push(keen_eye());
+    assert(use(b, slot(0, 0), "aimed_shot", at(slot(1, 0))), "keen eye ignores it");
+}
+
+// Paladin
+
+@test
+fn smite_is_a_direct_hit_with_no_debuff() {
+    var b = duel(["A"], ["B"]);
+    var expected = hit_for(b, slot(0, 0), slot(1, 0), smite_power());
+    use(b, slot(0, 0), "smite", at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 100 - expected, "the hit");
+    assert(who(b, slot(1, 0)).effects.len() == 0, "nothing left on the foe");
+}
+
+@test
+fn guard_taunts_the_user_with_defense_up() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 1), "guard", Choice.NoTarget);
+    var picks = b.targetable_foes(slot(1, 0));
+    assert(picks.len() == 1 && picks[0].index == 1, "only the guard");
+    assert(who(b, slot(0, 1)).current_defense() > 100, "and defense up");
+}
+
+@test
+fn guards_defense_up_ends_with_its_taunt() {
+    var b = duel(["A"], ["B"]);
+    use(b, slot(0, 0), "guard", Choice.NoTarget);
+    end_rounds(b, guard_rounds() - 1);
+    assert(who(b, slot(0, 0)).current_defense() > 100 && has_effect(who(b, slot(0, 0)), "Taunt"), "one round left");
+    end_rounds(b, 1);
+    assert(who(b, slot(0, 0)).current_defense() == 100 && !has_effect(who(b, slot(0, 0)), "Taunt"), "both gone");
+}
+
+@test
+fn other_taunts_do_not_raise_defense() {
+    var b = duel(["A"], ["B"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 0)), taunt(2))]);
+    assert(who(b, slot(0, 0)).current_defense() == 100, "plain taunt");
+}
+
+@test
+fn smite_dispels_buffs_before_the_hit() {
+    var b = duel(["A"], ["B"]);
+    var foe = who(b, slot(1, 0));
+    var expected = hit_for(b, slot(0, 0), slot(1, 0), smite_power());
+    perform(engine(), b, "test", [Action.AddEffect(foe, barrier()), Action.AddEffect(foe, shield(30)), Action.AddEffect(foe, poison(5)), Action.AddEffect(foe, keen_eye())]);
+    use(b, slot(0, 0), "smite", at(slot(1, 0)));
+    assert(foe.hp == 100 - expected, "no barrier or shield left to stop the hit");
+    assert(!has_effect(foe, "Barrier") && !has_effect(foe, "Shield"), "buffs gone");
+    assert(has_effect(foe, "Poison") && has_effect(foe, "Keen Eye"), "debuffs and passives stay");
+}
+
+@test
+fn lay_on_hands_heals_the_ally_and_the_paladin() {
+    var b = duel(["A", "B"], ["C"]);
+    who(b, slot(0, 0)).take(90);
+    who(b, slot(0, 1)).take(90);
+    use(b, slot(0, 0), "lay_on_hands", at(slot(0, 1)));
+    var after_one = healed(10, lay_on_hands_heal());
+    assert(who(b, slot(0, 1)).hp == after_one && who(b, slot(0, 0)).hp == after_one, "the same heal each");
+    use(b, slot(0, 0), "lay_on_hands", at(slot(0, 0)));
+    assert(who(b, slot(0, 0)).hp == healed(after_one, 2 * lay_on_hands_heal()), "twice over on itself");
+    assert(!use(b, slot(0, 0), "lay_on_hands", at(slot(1, 0))), "not a foe");
+}
+
+// Cleric
+
+@test
+fn prayer_heals_the_whole_team() {
+    var b = duel(["A", "B"], ["C"]);
+    who(b, slot(0, 0)).take(90);
+    who(b, slot(0, 1)).take(90);
+    who(b, slot(1, 0)).take(90);
+    use(b, slot(0, 0), "prayer", Choice.NoTarget);
+    assert(who(b, slot(0, 0)).hp == healed(10, prayer_heal()) && who(b, slot(0, 1)).hp == healed(10, prayer_heal()), "team");
+    assert(who(b, slot(1, 0)).hp == 10, "not foes");
+}
+
+@test
+fn purify_cleanses_heal_block_before_healing() {
+    var b = duel(["A", "B"], ["C"]);
+    var ally = who(b, slot(0, 1));
+    ally.take(90);
+    perform(engine(), b, "test", [Action.AddEffect(ally, heal_block(2))]);
+    use(b, slot(0, 0), "purify", at(slot(0, 1)));
+    assert(!has_effect(ally, "Heal Block") && ally.hp == healed(10, purify_heal()), "block gone, then healed");
+}
+
+@test
+fn purify_heals_and_cleanses() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(1, 0), "hex", at(slot(0, 1)));
+    who(b, slot(0, 1)).take(90);
+    use(b, slot(0, 0), "purify", at(slot(0, 1)));
+    assert(who(b, slot(0, 1)).hp == healed(10, purify_heal()) && !has_effect(who(b, slot(0, 1)), "Hex"), "healed, no hex");
+}
+
+@test
+fn sanctuary_heals_and_gives_a_barrier() {
+    var b = duel(["A", "B"], ["C"]);
+    var ally = who(b, slot(0, 1));
+    ally.take(90);
+    use(b, slot(0, 0), "sanctuary", at(slot(0, 1)));
+    var after = healed(10, sanctuary_heal());
+    assert(ally.hp == after && has_effect(ally, "Barrier"), "healed, barrier on");
+    use(b, slot(1, 0), "cleave", at(slot(0, 1)));
+    assert(ally.hp == after && !has_effect(ally, "Barrier"), "the hit was blocked");
+}
+
+@test
+fn a_barrier_blocks_brimstone_only_on_its_owner() {
+    var b = duel(["A"], ["C", "D"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 1)), barrier())]);
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp < 100 && who(b, slot(1, 1)).hp == 100, "C hit, D blocked");
+}
+
+@test
+fn a_barrier_blocks_only_the_first_hit_of_a_flurry() {
+    var b = duel(["A"], ["C"]);
+    var foe = who(b, slot(1, 0));
+    perform(engine(), b, "test", [Action.AddEffect(foe, barrier())]);
+    use(b, slot(0, 0), "flurry", flurry_on(slot(1, 0), slot(1, 0)));
+    assert(foe.hp < 100 && !has_effect(foe, "Barrier"), "later hits land");
+}
+
+// Witch
+
+@test
+fn brimstone_heals_the_team_a_share_of_the_damage() {
+    var b = duel(["A", "B"], ["C", "D", "E"]);
+    who(b, slot(0, 0)).take(90);
+    who(b, slot(0, 1)).take(90);
+    var each = hit_for(b, slot(0, 0), slot(1, 0), brimstone_power());
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 100 - each && who(b, slot(1, 2)).hp == 100 - each, "a hit on each foe");
+    var share = 3 * each * brimstone_drain_percent() / 100;
+    assert(who(b, slot(0, 0)).hp == healed(10, share) && who(b, slot(0, 1)).hp == healed(10, share), "each ally heals the share of the total");
+}
+
+@test
+fn brimstone_counts_only_hp_actually_lost() {
+    var b = duel(["A", "B"], ["C", "D"]);
+    who(b, slot(0, 1)).take(90);
+    who(b, slot(1, 0)).take(95);
+    var each = hit_for(b, slot(0, 0), slot(1, 1), brimstone_power());
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 1)), shield(each))]);
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 0 && who(b, slot(1, 1)).hp == 100, "5 of C's HP lost; D's shield soaked it all");
+    assert(who(b, slot(0, 1)).hp == healed(10, 5 * brimstone_drain_percent() / 100), "the share of 5");
+}
+
+@test
+fn brimstone_heal_respects_heal_block() {
+    var b = duel(["A", "B"], ["C", "D", "E", "F"]);
+    who(b, slot(0, 1)).take(50);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 1)), heal_block(2))]);
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    assert(who(b, slot(0, 1)).hp == 50, "blocked");
+}
+
+@test
+fn soul_siphon_spends_energize() {
+    var b = duel(["A"], ["B"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 0)), energize())]);
+    use(b, slot(0, 0), "soul_siphon", at(slot(1, 0)));
+    assert(!has_effect(who(b, slot(0, 0)), "Energize"), "a drain is an attack");
+}
+
+@test
+fn brimstone_hits_every_foe_whatever_the_taunts() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), taunt(2))]);
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    var hp = who(b, slot(1, 0)).hp;
+    assert(hp < 100 && who(b, slot(1, 1)).hp == hp && who(b, slot(1, 2)).hp == hp, "the same hit on each");
+}
+
+// Alchemist
+
+@test
+fn greater_health_potion_goes_to_one_ally_and_stacks() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "greater_health_potion", at(slot(0, 1)));
+    use(b, slot(0, 0), "greater_health_potion", at(slot(0, 1)));
+    assert(!has_effect(who(b, slot(0, 0)), "Greater Health Potion"), "not the user");
+    match who(b, slot(0, 1)).find_effect("Greater Health Potion") {
+        Option.Some(p) => { assert(p.charges == 2, "two charges"); }
+        Option.None => { assert(false, "missing"); }
+    }
+}
+
+@test
+fn acid_flask_poisons_every_foe() {
+    var b = duel(["A", "B"], ["C", "D"]);
+    use(b, slot(0, 0), "acid_flask", Choice.NoTarget);
+    assert(has_effect(who(b, slot(1, 0)), "Poison") && has_effect(who(b, slot(1, 1)), "Poison"), "both foes");
+    assert(!has_effect(who(b, slot(0, 1)), "Poison"), "not allies");
+    assert(who(b, slot(1, 0)).hp == 100, "no damage up front");
+    var n = acid_flask_poison();
+    end_rounds(b, n + 1);
+    var total = smaller(n * (n + 1) / 2, 100);
+    assert(who(b, slot(1, 0)).hp == 100 - total && who(b, slot(1, 1)).hp == 100 - total, "the poison runs its course on each");
+    assert(!has_effect(who(b, slot(1, 0)), "Poison"), "and wears off");
+}
+
+@test
+fn energize_boosts_one_area_move_on_every_target() {
+    var b = duel(["A"], ["B", "C"]);
+    sturdy(who(b, slot(1, 0)));
+    sturdy(who(b, slot(1, 1)));
+    var boosted = character("E", 100 * (100 + energize_bonus_percent()) / 100, 100, Tier.Normal);
+    var first = damage(boosted, who(b, slot(1, 0)), brimstone_power());
+    var plain = hit_for(b, slot(0, 0), slot(1, 0), brimstone_power());
+    use(b, slot(0, 0), "energize", at(slot(0, 0)));
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 1000 - first && who(b, slot(1, 1)).hp == 1000 - first, "boosted on both");
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 1000 - first - plain, "spent after one move");
+}
+
+// Monk
+
+@test
+fn disarming_palm_lowers_attack_and_defense() {
+    var b = duel(["A"], ["B"]);
+    var expected = hit_for(b, slot(0, 0), slot(1, 0), disarming_palm_power());
+    use(b, slot(0, 0), "disarming_palm", at(slot(1, 0)));
+    var foe = who(b, slot(1, 0));
+    assert(foe.hp == 100 - expected && foe.current_attack() < 100 && foe.current_defense() < 100, "the hit, and both down");
+}
+
+@test
+fn crippling_blow_blocks_all_healing_for_its_turns() {
+    var b = duel(["A", "Healer"], ["B", "C"]);
+    var expected = hit_for(b, slot(0, 0), slot(1, 0), crippling_blow_power());
+    use(b, slot(0, 0), "crippling_blow", at(slot(1, 0)));
+    var foe = who(b, slot(1, 0));
+    var after = 100 - expected;
+    assert(foe.hp == after && has_effect(foe, "Heal Block"), "the hit, and blocked");
+    use(b, slot(1, 1), "lay_on_hands", at(slot(1, 0)));
+    use(b, slot(1, 1), "prayer", Choice.NoTarget);
+    perform(engine(), b, "test", [Action.AddEffect(foe, regen(10, 3))]);
+    end_rounds(b, 1);
+    assert(foe.hp == after, "no heal, no prayer, no regen");
+    assert(logged(b, "B can't be healed (Heal Block)."), "logged");
+    var i = 0;
+    while (i < crippling_blow_turns()) { announce(engine(), b, EventKind.TurnEnded(foe)); i = i + 1; }
+    assert(!has_effect(foe, "Heal Block"), "gone after its turns");
+    use(b, slot(1, 1), "lay_on_hands", at(slot(1, 0)));
+    assert(foe.hp > after, "heals again");
+}
+
+@test
+fn heal_block_stops_soul_siphon_but_not_shields() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    a.take(50);
+    perform(engine(), b, "test", [Action.AddEffect(a, heal_block(2))]);
+    use(b, slot(0, 0), "soul_siphon", at(slot(1, 0)));
+    assert(a.hp == 50 && who(b, slot(1, 0)).hp < 100, "the hit lands, the drain doesn't heal");
+    use(b, slot(1, 0), "bulwark", at(slot(1, 0)));
+    use(b, slot(0, 0), "bulwark", at(slot(0, 0)));
+    assert(has_effect(a, "Shield"), "shields still go on");
+}
+
+@test
+fn flurry_punches_each_pick() {
+    var b = duel(["A"], ["B", "C"]);
+    sturdy(who(b, slot(1, 0)));
+    sturdy(who(b, slot(1, 1)));
+    var punch = hit_for(b, slot(0, 0), slot(1, 0), flurry_power());
+    use(b, slot(0, 0), "flurry", flurry_on(slot(1, 0), slot(1, 1)));
+    assert(who(b, slot(1, 0)).hp == 1000 - (flurry_picks() - 1) * punch && who(b, slot(1, 1)).hp == 1000 - punch, "a punch per pick");
+}
+
+@test
+fn energize_boosts_only_the_first_punch_on_each_foe() {
+    var b = duel(["A"], ["B", "C"]);
+    sturdy(who(b, slot(1, 0)));
+    sturdy(who(b, slot(1, 1)));
+    var boosted = character("E", 100 * (100 + energize_bonus_percent()) / 100, 100, Tier.Normal);
+    var first = damage(boosted, who(b, slot(1, 0)), flurry_power());
+    var punch = hit_for(b, slot(0, 0), slot(1, 0), flurry_power());
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 0)), energize())]);
+    use(b, slot(0, 0), "flurry", flurry_on(slot(1, 0), slot(1, 1)));
+    assert(who(b, slot(1, 0)).hp == 1000 - first - (flurry_picks() - 2) * punch, "boosted first punch, plain follow-ups");
+    assert(who(b, slot(1, 1)).hp == 1000 - first, "a first punch on another foe is boosted too");
+}
+
+@test
+fn flurry_loses_punches_on_a_fainted_foe() {
+    var b = duel(["A"], ["B", "C"]);
+    var punch = hit_for(b, slot(0, 0), slot(1, 1), flurry_power());
+    who(b, slot(1, 0)).take(100 - punch);
+    use(b, slot(0, 0), "flurry", flurry_on(slot(1, 0), slot(1, 1)));
+    assert(who(b, slot(1, 0)).hp == 0 && who(b, slot(1, 1)).hp == 100 - punch, "later punches on B lost, C's lands");
+}
+
+@test
+fn flurry_needs_exactly_its_picks() {
+    var b = duel(["A"], ["B", "C"]);
+    var short: List<Slot> = [];
+    var i = 0;
+    while (i < flurry_picks() - 1) { short.push(slot(1, 0)); i = i + 1; }
+    assert(!use(b, slot(0, 0), "flurry", Choice.Slots(short)), "one pick short");
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 1)), taunt(2))]);
+    assert(!use(b, slot(0, 0), "flurry", flurry_on(slot(1, 1), slot(1, 0))), "a pick past the taunt");
+}
+
+// Grim Reaper
+
+@test
+fn reap_takes_part_of_its_damage_off_max_hp() {
+    var b = duel(["A"], ["B"]);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), reap_power());
+    use(b, slot(0, 0), "reap", at(slot(1, 0)));
+    var foe = who(b, slot(1, 0));
+    var max = 100 - d / reap_wound_divisor();
+    assert(foe.hp == 100 - d && foe.max_health() == max, "the damage, and part of it off max HP");
+    perform(engine(), b, "test", [Action.Heal(foe, 100)]);
+    assert(foe.hp == max, "heals stop at the new max");
+}
+
+@test
+fn soul_siphon_heals_a_share_of_the_hp_lost() {
+    var b = duel(["A"], ["B", "C"]);
+    who(b, slot(0, 0)).take(90);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), soul_siphon_power());
+    use(b, slot(0, 0), "soul_siphon", at(slot(1, 0)));
+    var after = healed(10, d * soul_siphon_drain_percent() / 100);
+    assert(who(b, slot(0, 0)).hp == after, "a share of the damage");
+    who(b, slot(1, 1)).take(98);
+    use(b, slot(0, 0), "soul_siphon", at(slot(1, 1)));
+    assert(who(b, slot(0, 0)).hp == healed(after, 2 * soul_siphon_drain_percent() / 100), "a share of only the 2 it had");
+}
+
+// Warlock
+
+@test
+fn writhing_depths_hits_every_foe_whatever_the_taunts() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), taunt(2))]);
+    var each = hit_for(b, slot(0, 0), slot(1, 0), writhing_depths_power());
+    use(b, slot(0, 0), "writhing_depths", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 100 - each && who(b, slot(1, 1)).hp == 100 - each && who(b, slot(1, 2)).hp == 100 - each, "a hit on each");
+}
+
+// Knight
+
+@test
+fn shield_bash_hits_and_taunts() {
+    var b = duel(["A", "B"], ["C"]);
+    var expected = hit_for(b, slot(0, 1), slot(1, 0), shield_bash_power());
+    use(b, slot(0, 1), "shield_bash", at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 100 - expected, "the hit");
+    var picks = b.targetable_foes(slot(1, 0));
+    assert(picks.len() == 1 && picks[0].index == 1, "the knight taunts");
+}
+
+@test
+fn bulwark_shields_an_ally() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "bulwark", at(slot(0, 1)));
+    perform(engine(), b, "test", [Action.Damage(who(b, slot(0, 1)), Option.None, bulwark_shield() + 10, true)]);
+    assert(who(b, slot(0, 1)).hp == 90 && !has_effect(who(b, slot(0, 1)), "Shield"), "the shield took its amount, 10 got through");
+    assert(!use(b, slot(0, 0), "bulwark", at(slot(1, 0))), "not a foe");
+}
+
+// The log says who each move went to
+
+@test
+fn the_log_names_each_moves_target() {
+    var b = duel(["A", "B"], ["C", "D"]);
+    use(b, slot(0, 0), "cleave", at(slot(1, 0)));
+    use(b, slot(0, 0), "lay_on_hands", at(slot(0, 1)));
+    use(b, slot(0, 0), "lay_on_hands", at(slot(0, 0)));
+    use(b, slot(0, 0), "acid_flask", Choice.NoTarget);
+    use(b, slot(0, 0), "brimstone", Choice.NoTarget);
+    use(b, slot(0, 0), "guard", Choice.NoTarget);
+    assert(logged(b, "A used Cleave on C!"), "one foe");
+    assert(logged(b, "A used Lay on Hands on B!"), "one ally");
+    assert(logged(b, "A used Lay on Hands on itself!"), "itself");
+    assert(logged(b, "A used Acid Flask on every foe!"), "acid");
+    assert(logged(b, "A used Brimstone on every foe!"), "every foe");
+    assert(logged(b, "A used Guard!"), "a move on the user");
+}
+
+@test
+fn the_log_lists_each_pick() {
+    var b = duel(["A"], ["C", "D"]);
+    use(b, slot(0, 0), "flurry", flurry_on(slot(1, 0), slot(1, 1)));
+    // "C, C and D" for three picks: every pick but the last on C.
+    var names = "C";
+    var i = 1;
+    while (i < flurry_picks() - 1) { names = names + ", C"; i = i + 1; }
+    assert(logged(b, "A used Flurry of Blows on " + names + " and D!"), "picks");
+}
+
+// Shaman
+
+@test
+fn healing_rain_regens_the_team_for_its_rounds() {
+    var b = duel(["A", "B"], ["C"]);
+    var total = healing_rain_regen() * healing_rain_rounds();
+    who(b, slot(0, 0)).take(90);
+    who(b, slot(0, 1)).take(1);
+    who(b, slot(1, 0)).take(90);
+    use(b, slot(0, 0), "healing_rain", Choice.NoTarget);
+    end_rounds(b, healing_rain_rounds() + 1);
+    assert(who(b, slot(0, 0)).hp == healed(10, total), "the regen each round, for its rounds");
+    assert(who(b, slot(0, 1)).hp == 100, "capped at max");
+    assert(who(b, slot(1, 0)).hp == 10, "not the foes");
+    assert(!has_effect(who(b, slot(0, 0)), "Regen"), "gone after its rounds");
+}
+
+@test
+fn ancestral_call_brings_a_fallen_ally_back() {
+    var b = duel(["Shaman", "B"], ["C"]);
+    perform(engine(), b, "test", [Action.Damage(who(b, slot(0, 1)), Option.None, 200, false)]);
+    assert(use(b, slot(0, 0), "ancestral_call", at(slot(0, 1))), "used");
+    assert(!who(b, slot(0, 1)).fainted() && who(b, slot(0, 1)).hp == ancestral_call_percent(), "its percent of 100 max HP");
+    assert(logged(b, "Shaman used Ancestral Call on B!"), "names who it called back");
+}
+
+// Assassin
+
+@test
+fn backstab_is_a_direct_hit_at_its_power() {
+    var b = duel(["A"], ["B"]);
+    var expected = hit_for(b, slot(0, 0), slot(1, 0), backstab_power());
+    use(b, slot(0, 0), "backstab", at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 100 - expected, "the hit");
+}
+
+@test
+fn predator_hits_wounded_foes_harder() {
+    var b = duel(["A"], ["B", "C"]);
+    var a = who(b, slot(0, 0));
+    a.effects.push(predator());
+    var full = who(b, slot(1, 0));
+    var low = who(b, slot(1, 1));
+    // Just below Predator's line.
+    low.take(100 - predator_line_percent() + 1);
+    var start = low.hp;
+    assert(predator_multiplier(low) > 1.0 && predator_multiplier(full) == 1.0, "only the wounded foe counts");
+    // A light hit, so the wounded foe survives it. Worked out before it lands.
+    var plain = damage(a, full, 8);
+    perform(engine(), b, "test", [hit(a, full, 8), hit(a, low, 8)]);
+    assert(full.hp == 100 - plain, "full HP: no bonus");
+    assert(low.hp == start - (plain.to_float() * predator_multiplier(low)).to_int(), "the wounded foe takes the boosted hit");
+}
+
+/** Sets the foe in the slot to this much HP. */
+fn set_hp(b: Battle, s: Slot, hp: int) { who(b, s).take(100 - hp); }
+
+@test
+fn execution_hits_the_weakest_and_stops_without_a_kill() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), execution_power());
+    set_hp(b, slot(1, 0), d + 20);
+    set_hp(b, slot(1, 1), d + 10);
+    use(b, slot(0, 0), "execution", Choice.NoTarget);
+    assert(who(b, slot(1, 1)).hp == 10, "the lowest, C, takes the hit and survives");
+    assert(who(b, slot(1, 0)).hp == d + 20 && who(b, slot(1, 2)).hp == 100, "no kill, so no more hits");
+}
+
+@test
+fn execution_chains_through_knockouts() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), execution_power());
+    set_hp(b, slot(1, 0), d);
+    set_hp(b, slot(1, 1), d - 1);
+    use(b, slot(0, 0), "execution", Choice.NoTarget);
+    assert(who(b, slot(1, 1)).hp == 0, "C, the lowest, goes first");
+    assert(who(b, slot(1, 0)).hp == 0, "then B");
+    assert(who(b, slot(1, 2)).hp == 100 - d, "then D, which survives and ends it");
+}
+
+@test
+fn execution_breaks_ties_by_slot_and_ignores_taunts() {
+    var b = duel(["A"], ["B", "C", "D"]);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), execution_power());
+    set_hp(b, slot(1, 1), d + 10);
+    set_hp(b, slot(1, 2), d + 10);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), taunt(2))]);
+    use(b, slot(0, 0), "execution", Choice.NoTarget);
+    assert(who(b, slot(1, 1)).hp == 10 && who(b, slot(1, 2)).hp == d + 10, "the earlier of the tied pair");
+    assert(who(b, slot(1, 0)).hp == 100, "the taunter isn't forced");
+    assert(logged(b, "A used Execution!"), "no target named");
+}
+
+@test
+fn execution_counts_shields_when_deciding_on_a_kill() {
+    var b = duel(["A"], ["B", "C"]);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), execution_power());
+    set_hp(b, slot(1, 0), d);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), shield(1))]);
+    use(b, slot(0, 0), "execution", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 1 && who(b, slot(1, 1)).hp == 100, "the shield soaks 1, so it survives and the chain stops");
+}
+
+@test
+fn predator_makes_execution_chains_likelier() {
+    var b = duel(["A"], ["B", "C"]);
+    who(b, slot(0, 0)).effects.push(predator());
+    var d = hit_for(b, slot(0, 0), slot(1, 0), execution_power());
+    // Just more HP than a plain hit takes, and low enough for Predator.
+    set_hp(b, slot(1, 0), d + 1);
+    set_hp(b, slot(1, 1), d + 1);
+    var boosted = (d.to_float() * predator_multiplier(who(b, slot(1, 0)))).to_int();
+    assert(boosted > d, "Predator applies at this HP");
+    use(b, slot(0, 0), "execution", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 0 && who(b, slot(1, 1)).hp == 0, "both knocked out, where plain hits would stop at the first");
+}

@@ -1,0 +1,6 @@
+[package]
+name    = "battler"
+version = "0.1.0"
+cronyx  = "0.0.23"
+
+[dependencies]

@@ -1,0 +1,39 @@
+import { ai_names, ai_named } from "battler/agents/agent";
+import { Seat, play_match } from "battler/game/game";
+import { silent_screen } from "battler/ui/display";
+import { barbarian, cleric, knight, witch, monk, ranger, shaman, assassin } from "battler/content/roster";
+
+@test
+fn every_listed_ai_can_be_built() {
+    for (name in ai_names()) {
+        match ai_named(name) {
+            Option.Some(_) => {}
+            Option.None => { assert(false, name); }
+        }
+    }
+    match ai_named("nobody") {
+        Option.Some(_) => { assert(false, "unknown name"); }
+        Option.None => {}
+    }
+}
+
+@test
+fn two_ais_play_a_match_to_the_end() {
+    var names = ai_names();
+    for (home in names) {
+        for (away in names) {
+            match ai_named(home) {
+                Option.Some(h) => {
+                    match ai_named(away) {
+                        Option.Some(a) => {
+                            var o = play_match(Seat { agent: h, name: home }, Seat { agent: a, name: away }, [barbarian(), cleric(), knight(), witch()], [monk(), ranger(), shaman(), assassin()], silent_screen());
+                            assert(o.rounds >= 1 && o.rounds <= 20, home + " vs " + away + " ends by fatigue");
+                        }
+                        Option.None => { assert(false, away); }
+                    }
+                }
+                Option.None => { assert(false, home); }
+            }
+        }
+    }
+}

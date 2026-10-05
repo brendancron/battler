@@ -1,0 +1,42 @@
+import { Game, game_line, parse_game, shares } from "battler/balance/jobs";
+
+fn sample(): Game {
+    return Game { home_ai: "Greedy", away_ai: "Tactician", home: ["Grim Reaper", "Monk", "Knight", "Cleric"], away: ["Witch", "Ranger", "Paladin", "Shaman"], winner: 1, rounds: 14, took: 0.25 };
+}
+
+@test
+fn a_game_survives_the_trip_through_a_line() {
+    match parse_game(game_line(sample())) {
+        Option.Some(g) => {
+            assert(g.home_ai == "Greedy" && g.away_ai == "Tactician", "AIs");
+            assert(g.home.len() == 4 && g.home[0] == "Grim Reaper" && g.away[3] == "Shaman", "teams, names with spaces");
+            assert(g.winner == 1 && g.rounds == 14, "result");
+            assert(g.took > 0.24 && g.took < 0.26, "time");
+        }
+        Option.None => { assert(false, "didn't parse"); }
+    }
+}
+
+@test
+fn draws_survive_too() {
+    var d = sample();
+    d.winner = -1;
+    match parse_game(game_line(d)) {
+        Option.Some(g) => { assert(g.winner == -1, "draw"); }
+        Option.None => { assert(false, "didn't parse"); }
+    }
+}
+
+@test
+fn other_lines_are_not_games() {
+    assert(parse_game("hello") == Option.None, "not a game");
+    assert(parse_game("game|a|b|c|d|x|1|0.1") == Option.None, "bad winner");
+}
+
+@test
+fn games_are_shared_out_in_whole_blocks() {
+    var s = shares(40, 3);
+    assert(s.len() == 3 && s[0] == 16 && s[1] == 12 && s[2] == 12, "10 blocks: 4, 3, 3");
+    var few = shares(8, 4);
+    assert(few.len() == 2 && few[0] == 4 && few[1] == 4, "more jobs than blocks: two workers");
+}

@@ -1,0 +1,30 @@
+import { Stream, read_line } from "std/io/Console";
+import { pad_left } from "std/text/String";
+
+/** Asks until a listed number comes back; -1 once the input has ended. */
+fn ask(question: string, options: List<string>): int {
+    print(question);
+    // Right-align the numbers so the options line up past 9.
+    var digits = str(options.len()).len();
+    var i = 0;
+    while (i < options.len()) {
+        print("  " + pad_left(str(i + 1), digits, " ") + ") " + options[i]);
+        i = i + 1;
+    }
+    while (true) {
+        write(Stream.Out, "> ");
+        match (read_line()) {
+            Option.Some(line) => {
+                match (line.trim().to_int()) {
+                    Option.Some(n) => {
+                        if (n >= 1 && n <= options.len()) { return n - 1; }
+                    }
+                    Option.None => {}
+                }
+                print("Pick a number from 1 to " + str(options.len()) + ".");
+            }
+            Option.None => { return -1; }
+        }
+    }
+    return -1;
+}

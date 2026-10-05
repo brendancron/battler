@@ -1,0 +1,254 @@
+import { Character, Action, EventKind, Tier, character } from "battler/core/creature";
+import { Battle, Side, Slot, new_battle } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { MoveDef, use_move, damage } from "battler/core/move";
+import { Choice, has_targets } from "battler/core/target";
+import { start_round, begin_phase, next_actor } from "battler/core/order";
+import { sanguine, heal_block, shield, vigil } from "battler/content/effects";
+import { wither, raise_dead, puppeteer, final_offering, bite, hemorrhage, ancestral_call } from "battler/content/moves";
+import { Fighter, jester, cleric } from "battler/content/roster";
+import { moves_at } from "battler/game/game";
+import {
+    wither_power, skeleton_hp, bone_claw_power, puppet_percent, puppeteer_cooldown, final_offering_power,
+    sanguine_percent, bite_power, hemorrhage_power, hemorrhage_bleed, hemorrhage_rounds
+} from "battler/content/tuning";
+import { duel, who, slot, has_effect, sturdy } from "support";
+
+// The Necromancer, the Jester's puppets, the Warlock's Final Offering, and the Vampire.
+
+fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+fn no_teams(): List<List<Fighter>> { return [[], []]; }
+
+// Necromancer
+
+@test
+fn wither_hits_every_foe_and_takes_the_corpse_of_one_it_knocks_out() {
+    var b = duel(["Necromancer"], ["B", "C"]);
+    who(b, slot(1, 0)).hp = 1;
+    var each = damage(who(b, slot(0, 0)), who(b, slot(1, 1)), wither_power());
+    use_move(engine(), b, slot(0, 0), wither(), Choice.NoTarget);
+    assert(who(b, slot(1, 0)).fainted() && !who(b, slot(1, 0)).corpse, "no corpse");
+    assert(who(b, slot(1, 1)).hp == 100 - each, "the other was hit");
+}
+
+@test
+fn a_foe_that_falls_to_something_else_keeps_its_corpse() {
+    var b = duel(["Necromancer"], ["B"]);
+    add(b, [Action.Damage(who(b, slot(1, 0)), Option.Some(who(b, slot(0, 0))), 100, true)]);
+    assert(who(b, slot(1, 0)).corpse, "a corpse");
+}
+
+@test
+fn raise_dead_turns_an_allys_corpse_into_a_skeleton() {
+    var b = duel(["Necromancer", "Ally"], ["Foe"]);
+    add(b, [Action.KnockOut(who(b, slot(0, 1)))]);
+    assert(use_move(engine(), b, slot(0, 0), raise_dead(), at(slot(0, 1))), "used");
+    assert(!who(b, slot(0, 1)).corpse, "the corpse is used up");
+    var s = who(b, slot(0, 2));
+    assert(s.name == "Skeleton" && s.hp == skeleton_hp() && s.is_minion() && s.takes_turns(), "a skeleton that fights");
+    var moves = moves_at(b, no_teams(), slot(0, 2));
+    assert(moves.len() == 1 && moves[0].basic, "only a basic attack");
+    var expected = damage(s, who(b, slot(1, 0)), bone_claw_power());
+    use_move(engine(), b, slot(0, 2), moves[0], at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 100 - expected, "it hits");
+}
+
+@test
+fn a_raised_corpse_cant_be_resurrected() {
+    var b = duel(["Necromancer", "Ally", "Shaman"], ["Foe"]);
+    add(b, [Action.KnockOut(who(b, slot(0, 1)))]);
+    use_move(engine(), b, slot(0, 0), raise_dead(), at(slot(0, 1)));
+    assert(!use_move(engine(), b, slot(0, 2), ancestral_call(), at(slot(0, 1))), "nothing to bring back");
+}
+
+@test
+fn a_skeleton_acts_after_its_teams_characters_in_its_phase() {
+    var b = duel(["Necromancer", "Ally"], ["Foe"]);
+    add(b, [Action.KnockOut(who(b, slot(0, 1)))]);
+    use_move(engine(), b, slot(0, 0), raise_dead(), at(slot(0, 1)));
+    start_round(b);
+    who(b, slot(0, 0)).acted = true;
+    who(b, slot(1, 0)).acted = true;
+    var cursor = begin_phase(b, Tier.Normal);
+    match next_actor(b, cursor) {
+        Option.Some(s) => { assert(s.side == 0 && s.index == 2, "the skeleton takes a turn"); }
+        Option.None => { assert(false, "someone acts"); }
+    }
+}
+
+// Jester
+
+/** A Jester against a Cleric, built from the roster, so the puppet's moves can be looked up. */
+fn jester_game(): Battle {
+    return new_battle([Side { active: [jester().body] }, Side { active: [cleric().body] }], 0);
+}
+
+fn jester_teams(): List<List<Fighter>> { return [[jester()], [cleric()]]; }
+
+@test
+fn puppeteer_raises_a_fallen_foe_on_the_jesters_side() {
+    var b = jester_game();
+    var foe = who(b, slot(1, 0));
+    foe.start_cooldown("Prayer", 2);
+    add(b, [Action.KnockOut(foe)]);
+    assert(use_move(engine(), b, slot(0, 0), puppeteer(), at(slot(1, 0))), "used");
+    assert(!foe.corpse, "the corpse is used up");
+    var p = who(b, slot(0, 1));
+    assert(p.is_minion() && p.is_puppet() && p.takes_turns(), "a puppet that fights");
+    assert(p.hp == p.max_health() * puppet_percent() / 100, "at its share of max HP");
+    assert(p.cooldown_left("Prayer") == 2, "its cooldowns as they were");
+    assert(has_effect(p, "Vigil"), "its passive");
+    var moves = moves_at(b, jester_teams(), slot(0, 1));
+    assert(moves.len() == cleric().moves.len() && moves[1].name == cleric().moves[1].name, "its own moves");
+}
+
+@test
+fn a_puppets_passive_works_for_the_jesters_side() {
+    var b = jester_game();
+    add(b, [Action.KnockOut(who(b, slot(1, 0)))]);
+    use_move(engine(), b, slot(0, 0), puppeteer(), at(slot(1, 0)));
+    var j = who(b, slot(0, 0));
+    // Vigil heals the lowest ally: put the Jester below the puppet.
+    j.hp = 1;
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(j.hp > 1, "the puppet's Vigil heals the Jester");
+}
+
+@test
+fn one_puppet_at_a_time_and_the_cooldown_starts_when_it_falls() {
+    var b = duel(["Jester"], ["B", "C"]);
+    add(b, [Action.KnockOut(who(b, slot(1, 0))), Action.KnockOut(who(b, slot(1, 1)))]);
+    use_move(engine(), b, slot(0, 0), puppeteer(), at(slot(1, 0)));
+    assert(!has_targets(b, slot(0, 0), puppeteer().shape), "not while a puppet stands");
+    assert(who(b, slot(0, 0)).cooldown_left("Puppeteer") == 0, "no cooldown yet");
+    add(b, [Action.KnockOut(who(b, slot(0, 1)))]);
+    assert(who(b, slot(0, 0)).cooldown_left("Puppeteer") == puppeteer_cooldown(), "the cooldown starts");
+}
+
+@test
+fn when_the_jester_falls_its_puppet_falls() {
+    var b = duel(["Jester", "Ally"], ["B"]);
+    add(b, [Action.KnockOut(who(b, slot(1, 0)))]);
+    use_move(engine(), b, slot(0, 0), puppeteer(), at(slot(1, 0)));
+    add(b, [Action.KnockOut(who(b, slot(0, 0)))]);
+    assert(who(b, slot(0, 2)).fainted(), "the strings are cut");
+    assert(who(b, slot(0, 0)).cooldown_left("Puppeteer") == puppeteer_cooldown(), "the cooldown starts");
+}
+
+@test
+fn a_puppet_doesnt_count_for_winning() {
+    var b = duel(["Jester"], ["B"]);
+    add(b, [Action.KnockOut(who(b, slot(1, 0)))]);
+    use_move(engine(), b, slot(0, 0), puppeteer(), at(slot(1, 0)));
+    add(b, [Action.Damage(who(b, slot(0, 0)), Option.None, 100, true)]);
+    assert(b.defeated(0), "only a puppet left: lost");
+}
+
+// Warlock
+
+@test
+fn the_final_offering_hits_every_foe_then_the_warlock_falls() {
+    var b = duel(["Warlock", "Ally"], ["B", "C"]);
+    sturdy(who(b, slot(1, 0)));
+    sturdy(who(b, slot(1, 1)));
+    var each = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), final_offering_power());
+    use_move(engine(), b, slot(0, 0), final_offering(), Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 1000 - each && who(b, slot(1, 1)).hp == 1000 - each, "a hit on each");
+    assert(who(b, slot(0, 0)).fainted() && who(b, slot(0, 0)).corpse, "fallen, with a corpse");
+}
+
+@test
+fn the_warlock_is_spared_if_the_offering_ends_the_foes() {
+    var b = duel(["Warlock"], ["B"]);
+    who(b, slot(1, 0)).hp = 1;
+    use_move(engine(), b, slot(0, 0), final_offering(), Choice.NoTarget);
+    assert(!who(b, slot(0, 0)).fainted() && b.winner() == 0, "its team wins");
+}
+
+// Vampire
+
+@test
+fn sanguine_heals_a_share_of_the_hp_the_foe_lost() {
+    var b = duel(["Vampire"], ["B"]);
+    var v = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(v, sanguine()), Action.AddEffect(foe, shield(10))]);
+    v.take(60);
+    var d = damage(v, foe, bite_power());
+    use_move(engine(), b, slot(0, 0), bite(), at(slot(1, 0)));
+    assert(v.hp == 40 + (d - 10) * sanguine_percent() / 100, "only what got past the shield");
+}
+
+@test
+fn sanguine_doesnt_count_damage_past_the_foes_last_hp() {
+    var b = duel(["Vampire"], ["B"]);
+    var v = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(v, sanguine())]);
+    v.take(60);
+    who(b, slot(1, 0)).hp = 10;
+    add(b, [Action.Damage(who(b, slot(1, 0)), Option.Some(v), 90, true)]);
+    assert(v.hp == 40 + 10 * sanguine_percent() / 100, "10 lost");
+}
+
+@test
+fn heal_block_shuts_sanguine_off() {
+    var b = duel(["Vampire"], ["B"]);
+    var v = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(v, sanguine()), Action.AddEffect(v, heal_block(2))]);
+    v.take(60);
+    use_move(engine(), b, slot(0, 0), bite(), at(slot(1, 0)));
+    assert(v.hp == 40, "no healing");
+}
+
+@test
+fn hemorrhage_bleeds_and_the_vampire_heals_from_each_tick() {
+    var b = duel(["Vampire"], ["B"]);
+    var v = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(v, sanguine())]);
+    sturdy(foe);
+    v.take(90);
+    var d = damage(v, foe, hemorrhage_power());
+    use_move(engine(), b, slot(0, 0), hemorrhage(), at(slot(1, 0)));
+    assert(foe.hp == 1000 - d && has_effect(foe, "Bleed"), "hit and bleeding");
+    var vamp = v.hp;
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(foe.hp == 1000 - d - hemorrhage_bleed(), "a tick");
+    assert(v.hp == vamp + hemorrhage_bleed() * sanguine_percent() / 100, "the Vampire fed on it");
+    var n = 1;
+    while (n < hemorrhage_rounds()) {
+        announce(engine(), b, EventKind.RoundEnded);
+        n = n + 1;
+    }
+    assert(!has_effect(foe, "Bleed") && foe.hp == 1000 - d - hemorrhage_bleed() * hemorrhage_rounds(), "all its rounds, then gone");
+}
+
+@test
+fn bleeding_again_resets_it_instead_of_adding() {
+    var b = duel(["Vampire"], ["B"]);
+    var foe = who(b, slot(1, 0));
+    use_move(engine(), b, slot(0, 0), hemorrhage(), at(slot(1, 0)));
+    announce(engine(), b, EventKind.RoundEnded);
+    who(b, slot(0, 0)).cooldowns = [];
+    use_move(engine(), b, slot(0, 0), hemorrhage(), at(slot(1, 0)));
+    match foe.find_effect("Bleed") {
+        Option.Some(e) => { assert(e.rounds == hemorrhage_rounds() && e.power == hemorrhage_bleed(), "back to the start"); }
+        Option.None => { assert(false, "bleeding"); }
+    }
+}
+
+@test
+fn a_bleed_goes_on_after_the_vampire_falls_but_nobody_heals() {
+    var b = duel(["Vampire"], ["B"]);
+    var v = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(v, sanguine())]);
+    use_move(engine(), b, slot(0, 0), hemorrhage(), at(slot(1, 0)));
+    var before = foe.hp;
+    add(b, [Action.KnockOut(v)]);
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(foe.hp == before - hemorrhage_bleed() && v.hp == 0, "still bleeding; no heal");
+}

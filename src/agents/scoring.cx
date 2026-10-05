@@ -1,0 +1,415 @@
+import { Character, Effect, Action } from "../core/creature";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef, usable } from "../core/move";
+import { TargetShape, Choice, bind, has_targets } from "../core/target";
+import { potion_line_percent, energize_bonus_percent } from "../content/tuning";
+
+/**
+ * Scoring shared by the AIs (docs/balance.md lists them). Every move is tried
+ * against every target it allows, the actions it would take are scored by
+ * what they'd do right now, and the best score wins.
+ */
+type Pick { move: MoveDef, choice: Choice, score: int }
+
+/** Every target choice the move allows from the slot. */
+fn choices(battle: Battle, user: Slot, move: MoveDef): List<Choice> {
+    var out: List<Choice> = [];
+    match move.shape {
+        TargetShape.SingleFoe => {
+            for (s in battle.targetable_foes(user)) { out.push(Choice.Slots([s])); }
+        }
+        TargetShape.SingleAlly => {
+            for (s in battle.ally_slots(user)) { out.push(Choice.Slots([s])); }
+        }
+        TargetShape.AllyCorpse => {
+            for (s in battle.corpse_slots(user.side)) { out.push(Choice.Slots([s])); }
+        }
+        TargetShape.FoeCorpse => {
+            for (s in battle.corpse_slots(1 - user.side)) { out.push(Choice.Slots([s])); }
+        }
+        TargetShape.OtherAlly => {
+            for (s in battle.ally_slots(user)) {
+                if (s.index != user.index) { out.push(Choice.Slots([s])); }
+            }
+        }
+        TargetShape.PuppetCorpse => {
+            if (has_targets(battle, user, move.shape)) {
+                for (s in battle.corpse_slots(1 - user.side)) { out.push(Choice.Slots([s])); }
+            }
+        }
+        TargetShape.ChainPicks(n) => {
+            // Each foe that may go first, then the lowest HP each time after: the big bolt
+            // where it's chosen, the small ones finishing off the weak.
+            for (first in battle.next_in_chain(user, [])) {
+                var picks: List<Slot> = [first];
+                var going = true;
+                while (going && picks.len() < n) {
+                    var next = by_hp(battle, battle.next_in_chain(user, picks));
+                    if (next.len() == 0) { going = false; } else { picks.push(next[0]); }
+                }
+                out.push(Choice.Slots(picks));
+            }
+        }
+        TargetShape.FoePicks(n) => {
+            // Every pick on one foe, for each foe; then one pick each on the
+            // weakest foes, which finishes off the low ones first.
+            var foes = battle.targetable_foes(user);
+            for (s in foes) {
+                var same_foe: List<Slot> = [];
+                var i = 0;
+                while (i < n) { same_foe.push(s); i = i + 1; }
+                out.push(Choice.Slots(same_foe));
+            }
+            var spread: List<Slot> = [];
+            var weakest = by_hp(battle, foes);
+            var i = 0;
+            while (i < n) { spread.push(weakest[i % weakest.len()]); i = i + 1; }
+            out.push(Choice.Slots(spread));
+        }
+        _ => { out.push(Choice.NoTarget); }
+    }
+    return out;
+}
+
+/** The slots ordered by their character's HP, lowest first. */
+fn by_hp(battle: Battle, slots: List<Slot>): List<Slot> {
+    var out: List<Slot> = [];
+    for (s in slots) {
+        var placed = false;
+        var merged: List<Slot> = [];
+        for (o in out) {
+            if (!placed && hp_at(battle, s) < hp_at(battle, o)) { merged.push(s); placed = true; }
+            merged.push(o);
+        }
+        if (!placed) { merged.push(s); }
+        out = merged;
+    }
+    return out;
+}
+
+fn hp_at(battle: Battle, s: Slot): int { return battle.sides[s.side].active[s.index].hp; }
+
+fn has(c: Character, kind: string): bool {
+    match c.find_effect(kind) {
+        Option.Some(_) => { return true; }
+        Option.None => { return false; }
+    }
+    return false;
+}
+
+fn shield_on(c: Character): int {
+    var total = 0;
+    for (e in c.effects) {
+        if (e.absorbs) { total = total + e.power; }
+    }
+    return total;
+}
+
+/** What damage would really do to the character: HP it would lose, and a big bonus for a knockout. */
+fn harm(c: Character, amount: int): int {
+    if (c.untouchable()) { return 0; }
+    var through = c.capped(amount) - shield_on(c);
+    if (through <= 0) { return amount / 4; }
+    if (through >= c.hp) { return c.hp + 50; }
+    return through;
+}
+
+/**
+ * HP a heal could restore: none while Heal Block is on, unless an earlier
+ * action in the same move cleansed the character and the block can be
+ * cleansed.
+ */
+fn missing(c: Character, cleansed: List<Character>): int {
+    if (c.heal_blocked() && !(contains(cleansed, c) && block_is_cleansable(c))) { return 0; }
+    return c.max_health() - c.hp;
+}
+
+fn contains(cs: List<Character>, c: Character): bool {
+    for (x in cs) {
+        if (same(x, c)) { return true; }
+    }
+    return false;
+}
+
+/** Whether a cleanse would remove every heal-blocking effect on the character. */
+fn block_is_cleansable(c: Character): bool {
+    for (e in c.effects) {
+        if (e.blocks_healing && (e.buff || e.immune)) { return false; }
+    }
+    return true;
+}
+
+fn smaller(a: int, b: int): int {
+    if (a < b) { return a; }
+    return b;
+}
+
+/** How good one action would be for `user`'s side. Help to a foe or harm to an ally counts against. */
+fn worth(battle: Battle, user: Character, action: Action, cleansed: List<Character>): int {
+    match action {
+        Action.Damage(target, _, amount, _) => { return side_sign(user, target) * harm(target, amount); }
+        Action.AreaDrain(_, targets, amounts, percent) => {
+            var total = 0;
+            var lost = 0;
+            var i = 0;
+            while (i < targets.len()) {
+                total = total + side_sign(user, targets[i]) * harm(targets[i], amounts[i]);
+                lost = lost + smaller(amounts[i], targets[i].hp);
+                i = i + 1;
+            }
+            // Each standing ally heals the share; only the HP it's missing counts.
+            var share = lost * percent / 100;
+            for (ally in battle.sides[user.team].active) {
+                if (!ally.fainted()) { total = total + smaller(share, missing(ally, cleansed)); }
+            }
+            return total;
+        }
+        Action.Drain(target, _, amount, percent) => {
+            var lost = smaller(amount, target.hp);
+            return side_sign(user, target) * harm(target, amount) + smaller(lost * percent / 100, missing(user, cleansed));
+        }
+        Action.Heal(target, amount) => { return -side_sign(user, target) * smaller(amount, missing(target, cleansed)); }
+        Action.HealLowestAlly(_, amount) => { return amount / 2; }
+        Action.ResurrectFirstFallen(_, _) => { return 0; }
+        Action.Dispel(target) => { return side_sign(user, target) * buffs_worth(target, false); }
+        Action.Wound(target, amount) => {
+            if (target.untouchable()) { return 0; }
+            return side_sign(user, target) * amount / 2;
+        }
+        Action.KnockOut(target) => {
+            if (target.fainted()) { return 0; }
+            return side_sign(user, target) * (target.hp + 50);
+        }
+        // Spending the Warlock: worth as much against as a knockout would be for.
+        Action.Sacrifice(target) => { return -(target.hp + 50); }
+        Action.Steal(target, _) => { return 2 * side_sign(user, target) * buffs_worth(target, true); }
+        Action.HealTeam(_, amount) => { return amount; }
+        Action.ShortenCooldowns(target, turns) => {
+            var running = 0;
+            for (c in target.cooldowns) {
+                if (c.turns > 0) { running = running + 1; }
+            }
+            return -side_sign(user, target) * running * turns * 5;
+        }
+        Action.Cleanse(target) => {
+            var debuffs = 0;
+            for (e in target.effects) {
+                if (!e.buff && !e.immune) { debuffs = debuffs + 1; }
+            }
+            return -side_sign(user, target) * debuffs * 15;
+        }
+        Action.AddEffect(target, fx) => { return effect_worth(user, target, fx); }
+        Action.RemoveEffect(_, _) => { return 0; }
+        Action.Resurrect(target, percent) => {
+            // A character back in the fight is worth a lot more than its HP.
+            if (!target.fainted() || !target.corpse) { return 0; }
+            return -side_sign(user, target) * (target.max_health() * percent / 100 + 40);
+        }
+        // A minion is worth more the more HP it brings, and more again if it fights.
+        Action.Summon(_, minion) => {
+            if (minion.takes_turns()) { return 15 + minion.hp; }
+            return 15;
+        }
+        Action.RemoveFromTeam(_, _) => { return 0; }
+        Action.AddToTeam(_, _) => { return 0; }
+        Action.StartCooldown(_, _, _) => { return 0; }
+        Action.RemoveCorpse(target) => {
+            if (!target.fainted() || !target.corpse) { return 0; }
+            return side_sign(user, target) * 15;
+        }
+    }
+    return 0;
+}
+
+/**
+ * What the character's removable buffs are worth to it: a shield half its
+ * size, a barrier a hit, anything else a flat 10. `stealing` leaves out the
+ * ones that can't be stolen.
+ */
+fn buffs_worth(target: Character, stealing: bool): int {
+    var total = 0;
+    for (e in target.effects) {
+        if (e.buff && !e.immune && !(stealing && e.unstealable)) {
+            if (e.absorbs) { total = total + e.power / 2; }
+            else if (e.blocks_hits) { total = total + 15 * e.charges; }
+            else { total = total + 10; }
+        }
+    }
+    return total;
+}
+
+/** +1 when the character is on the other side from `user`, -1 when on the same side. */
+fn side_sign(user: Character, c: Character): int {
+    if (c.team == user.team) { return -1; }
+    return 1;
+}
+
+fn effect_worth(user: Character, target: Character, fx: Effect): int {
+    var mine = target.team == user.team;
+    if (fx.buff) {
+        if (!mine) { return -10; }
+        if (fx.kind == "Energize") { return energize_worth(user, target); }
+        if (fx.kind == "Greater Health Potion") { return health_potion_worth(target, fx); }
+        // A barrier is worth about one blocked hit, which may be a while coming; a second one even later.
+        if (fx.blocks_hits) {
+            if (has(target, fx.kind)) { return 6; }
+            return 15;
+        }
+        // Potions stack as charges and shields add up, so holding one already
+        // only makes another worth a bit less; anything else is wasted.
+        if (has(target, fx.kind)) {
+            if (fx.charges > 0 || fx.absorbs) { return 4; }
+            return 0;
+        }
+        if (fx.absorbs) { return fx.power / 2; }
+        if (fx.prevents_damage) { return 15; }
+        return 10;
+    }
+    if (mine) { return -10; }
+    // A Panacea would block it.
+    if (has(target, "Panacea")) { return 0; }
+    if (fx.kind == "Poison") { return poison_worth(target, fx); }
+    // A debuff it already has doesn't stack.
+    if (has(target, fx.kind)) { return 0; }
+    if (fx.skips) { return 25; }
+    return 12;
+}
+
+/**
+ * Energize is worth what it adds to the ally's next hit, and the hard hitters
+ * gain the most: its bonus on a 30-power hit. An ally still to
+ * act this round uses it right away, so it's worth twice as much as one that has to wait for next round (the user
+ * included). A second charge only boosts a later hit, so it counts as waiting.
+ */
+fn energize_worth(user: Character, target: Character): int {
+    var soon = !target.acted && !same(target, user) && !has(target, "Energize");
+    // The bonus on a typical 30-power hit, which deals about attack ÷ 3.
+    var gain = target.attack * energize_bonus_percent() / 300;
+    if (soon) { return gain; }
+    return gain / 2;
+}
+
+/** The damage n poison deals before it wears off: n + (n - 1) + ... + 1. */
+fn poison_total(n: int): int { return n * (n + 1) / 2; }
+
+/**
+ * Poison is worth the damage it adds over the rounds, a quarter less since it
+ * comes slowly, and no more than the target's HP. Adding to poison it already
+ * has counts only the extra.
+ */
+fn poison_worth(target: Character, fx: Effect): int {
+    var before = 0;
+    match target.find_effect(fx.kind) {
+        Option.Some(e) => { before = e.power; }
+        Option.None => {}
+    }
+    var added = smaller(poison_total(before + fx.power) - poison_total(before), target.hp);
+    return added * 3 / 4;
+}
+
+/**
+ * A Greater Health Potion heals at once on an ally already below the line
+ * (`potion_line_percent` of max HP). Otherwise it's worth what it would heal when it fires (the
+ * heal past max HP is lost), by how soon a foe is likely to take the ally
+ * below the line: in full if one hit (about 25) would, half if two would, and
+ * little if it's further off. A taunter gets hit, so it counts as twice as close.
+ */
+fn health_potion_worth(target: Character, fx: Effect): int {
+    if (has(target, fx.kind)) { return 4; }
+    if (target.hp * 100 < target.max_health() * potion_line_percent()) { return smaller(fx.power, missing(target, [])); }
+    var line = target.max_health() * potion_line_percent() / 100;
+    var heal = smaller(fx.power, target.max_health() - line);
+    var gap = target.hp - line;
+    if (target.targeting_tier() > 0) { gap = gap / 2; }
+    if (gap <= 25) { return heal; }
+    if (gap <= 50) { return heal / 2; }
+    return 6;
+}
+
+/** The Greedy value of every effect: nothing is revalued. */
+fn as_is(user: Character, target: Character, fx: Effect): Option<int> { return Option.None; }
+
+/** The Greedy score of using the move with the choice, or None if the choice doesn't bind. */
+fn score(battle: Battle, user: Slot, move: MoveDef, choice: Choice): Option<int> {
+    return score_by(battle, user, move, choice, as_is);
+}
+
+/**
+ * The score of using the move with the choice, or None if the choice doesn't
+ * bind. `revalue(user, target, fx)` can replace the value of putting an effect
+ * on someone (the Tactician's way); None keeps the Greedy value.
+ */
+fn score_by(battle: Battle, user: Slot, move: MoveDef, choice: Choice, revalue: (Character, Character, Effect) -> Option<int>): Option<int> {
+    var c = battle.sides[user.side].active[user.index];
+    match bind(move.shape, choice, battle, user) {
+        Option.Some(target) => {
+            var apply = move.apply;
+            var total = 0;
+            // Actions are scored in order, remembering who an earlier action
+            // cleansed, so a heal after a cleanse isn't written off by Heal Block.
+            var cleansed: List<Character> = [];
+            for (a in apply(battle, c, target)) {
+                var value = worth(battle, c, a, cleansed);
+                match a {
+                    Action.AddEffect(t, fx) => {
+                        match revalue(c, t, fx) {
+                            Option.Some(v) => { value = v; }
+                            Option.None => {}
+                        }
+                    }
+                    _ => {}
+                }
+                total = total + value;
+                match a {
+                    Action.Cleanse(t) => { cleansed.push(t); }
+                    _ => {}
+                }
+            }
+            return Option.Some(total);
+        }
+        Option.None => { return Option.None; }
+    }
+    return Option.None;
+}
+
+/**
+ * The best-scoring move and target for the slot, scored by `score_by` with
+ * `revalue`. `jitter` adds up to that much noise to each score; `noise(n)`
+ * answers a random number from 0 up to n.
+ */
+fn best_by<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, revalue: (Character, Character, Effect) -> Option<int>, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
+    return best_adjusted(battle, user, moveset, revalue, unadjusted, jitter, noise);
+}
+
+/** Leaves a score as it is. */
+fn unadjusted(move: MoveDef, choice: Choice, score: int): int { return score; }
+
+/**
+ * Like `best_by`, but `adjust(move, choice, score)` gets the last word on each
+ * score before the noise, for an AI that weighs something the scores don't
+ * (the Strategist's cooldown cost).
+ */
+fn best_adjusted<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, revalue: (Character, Character, Effect) -> Option<int>, adjust: (MoveDef, Choice, int) -> int, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
+    var found: Option<Pick> = Option.None;
+    var top = 0;
+    var c = battle.sides[user.side].active[user.index];
+    for (m in moveset) {
+        if (!usable(c, m)) { continue; }
+        for (choice in choices(battle, user, m)) {
+            match score_by(battle, user, m, choice, revalue) {
+                Option.Some(s) => {
+                    var total = adjust(m, choice, s);
+                    if (jitter > 0) { total = total + noise(jitter); }
+                    match found {
+                        Option.Some(_) => {
+                            if (total > top) { found = Option.Some(Pick { move: m, choice: choice, score: total }); top = total; }
+                        }
+                        Option.None => { found = Option.Some(Pick { move: m, choice: choice, score: total }); top = total; }
+                    }
+                }
+                Option.None => {}
+            }
+        }
+    }
+    return found;
+}

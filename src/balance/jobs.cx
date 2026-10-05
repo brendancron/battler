@@ -1,0 +1,66 @@
+import { fixed } from "ratings";
+
+// What the balance checker's worker processes send back (src/balance.cx,
+// --jobs): one line per game, and how the games are shared out between them.
+
+/** A played game: who played it, the teams by character name, and how it ended. */
+type Game { home_ai: string, away_ai: string, home: List<string>, away: List<string>, winner: int, rounds: int, took: float }
+
+/** A game as one line of worker output: `game|home AI|away AI|home names|away names|winner|rounds|seconds`. */
+fn game_line(g: Game): string {
+    return "game|" + g.home_ai + "|" + g.away_ai + "|" + joined_plain(g.home) + "|" + joined_plain(g.away) + "|" + str(g.winner) + "|" + str(g.rounds) + "|" + fixed(g.took, 3);
+}
+
+fn joined_plain(xs: List<string>): string {
+    var out = "";
+    for (x in xs) {
+        if (out != "") { out = out + ","; }
+        out = out + x;
+    }
+    return out;
+}
+
+fn listed(xs: Array<string>): List<string> {
+    var out: List<string> = [];
+    for (x in xs) { out.push(x); }
+    return out;
+}
+
+/** The game in a line written by `game_line`, or None if it isn't one. */
+fn parse_game(line: string): Option<Game> {
+    var parts = line.trim().split('|');
+    if (parts.len() != 8 || parts[0] != "game") { return Option.None; }
+    var winner = 0;
+    var rounds = 0;
+    match parts[5].to_int() {
+        Option.Some(n) => { winner = n; }
+        Option.None => { return Option.None; }
+    }
+    match parts[6].to_int() {
+        Option.Some(n) => { rounds = n; }
+        Option.None => { return Option.None; }
+    }
+    var took = 0.0;
+    match parts[7].to_float() {
+        Option.Some(t) => { took = t; }
+        Option.None => {}
+    }
+    return Option.Some(Game {
+        home_ai: parts[1], away_ai: parts[2], home: listed(parts[3].split(',')), away: listed(parts[4].split(',')),
+        winner: winner, rounds: rounds, took: took
+    });
+}
+
+/** How many games each of `jobs` workers plays: whole blocks, as evenly as they go. Workers with none are left out. */
+fn shares(games: int, jobs: int): List<int> {
+    var blocks = games / 4;
+    var out: List<int> = [];
+    var i = 0;
+    while (i < jobs) {
+        var n = blocks / jobs;
+        if (i < blocks % jobs) { n = n + 1; }
+        if (n > 0) { out.push(n * 4); }
+        i = i + 1;
+    }
+    return out;
+}

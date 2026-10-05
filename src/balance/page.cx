@@ -1,0 +1,28 @@
+import { substring } from "std/text/String";
+
+/**
+ * The report page (docs/balance.md#report-page): report.html copied next to
+ * the totals file, and the totals beside it as a script the page loads. The
+ * data goes in its own file so a save never has to splice a big string,
+ * which is slow in Cronyx (about 5 s for a 46K-character ledger).
+ */
+
+/** Where the page template lives, from the project's root. */
+fn page_template(): string { return "src/balance/report.html"; }
+
+/** The totals file's name without `.json`. */
+fn base_of(file: string): string {
+    if (file.ends_with(".json")) { return substring(file, 0, file.len() - 5); }
+    return file;
+}
+
+/** The page goes next to the totals: balance.json gives balance.html. */
+fn page_path(file: string): string { return base_of(file) + ".html"; }
+
+/** The data the page loads: balance.json gives balance.data.js. */
+fn data_path(file: string): string { return base_of(file) + ".data.js"; }
+
+/** The data script: the totals, as `json`, and when they were saved, in Unix seconds. */
+fn data_script(json: string, saved: int): string {
+    return "window.BALANCE_DATA = " + json + ";\nwindow.BALANCE_WRITTEN = " + str(saved) + ";\n";
+}

@@ -1,0 +1,125 @@
+import { Character, Action, EventKind, Tier, character } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { MoveDef, use_move, usable, turn_over } from "battler/core/move";
+import { Choice, has_targets } from "battler/core/target";
+import { phases, start_round, begin_phase, next_actor } from "battler/core/order";
+import { totem_move, brimstone, prayer, cleave } from "battler/content/moves";
+import { totem_hp, totem_bonus_percent, totem_cooldown } from "battler/content/tuning";
+import { duel, who, slot, logged, has_effect } from "support";
+
+/** Shaman in slot 0 with an ally, against one foe, with the totem summoned into slot 2. */
+fn with_totem(): Battle {
+    var b = duel(["Shaman", "Ally"], ["Foe"]);
+    use_move(engine(), b, slot(0, 0), totem_move(), Choice.NoTarget);
+    return b;
+}
+
+fn totem(b: Battle): Character { return who(b, slot(0, 2)); }
+
+@test
+fn the_totem_joins_its_team_as_an_idle_minion() {
+    var b = with_totem();
+    assert(b.sides[0].active.len() == 3, "a third slot");
+    var t = totem(b);
+    assert(t.name == "Totem" && t.hp == totem_hp() && t.max_health() == totem_hp(), "full at its HP");
+    assert(t.is_minion() && !t.takes_turns(), "an idle minion");
+    assert(logged(b, "Shaman summoned a Totem (" + str(totem_hp()) + "/" + str(totem_hp()) + ")."), "logged");
+}
+
+@test
+fn the_team_gets_more_attack_and_defense() {
+    var b = with_totem();
+    var shaman = who(b, slot(0, 0));
+    var ally = who(b, slot(0, 1));
+    var blessed = 100 * (100 + totem_bonus_percent()) / 100;
+    assert(ally.current_attack() == blessed && ally.current_defense() == blessed, "the bonus on both");
+    assert(has_effect(shaman, "Totem's Blessing"), "the Shaman too");
+    assert(!has_effect(who(b, slot(1, 0)), "Totem's Blessing"), "not the foe");
+}
+
+@test
+fn foes_can_target_the_totem_and_area_moves_hit_it() {
+    var b = with_totem();
+    var picks = b.targetable_foes(slot(1, 0));
+    assert(picks.len() == 3, "Shaman, Ally and Totem");
+    use_move(engine(), b, slot(1, 0), brimstone(), Choice.NoTarget);
+    assert(totem(b).hp < totem_hp(), "Brimstone hit it");
+}
+
+@test
+fn allies_can_heal_the_totem() {
+    var b = with_totem();
+    totem(b).take(totem_hp() - 1);
+    use_move(engine(), b, slot(0, 1), prayer(), Choice.NoTarget);
+    assert(totem(b).hp > 1, "Prayer reached it");
+}
+
+@test
+fn destroying_the_totem_ends_the_bonus_and_starts_the_cooldown() {
+    var b = with_totem();
+    var shaman = who(b, slot(0, 0));
+    assert(shaman.cooldown_left("Totem") == 0, "no cooldown while it stands");
+    perform(engine(), b, "test", [Action.Damage(totem(b), Option.None, 1000, false)]);
+    assert(totem(b).fainted() && !totem(b).corpse, "destroyed, no corpse");
+    assert(logged(b, "Totem was destroyed!"), "logged");
+    assert(!has_effect(who(b, slot(0, 1)), "Totem's Blessing") && who(b, slot(0, 1)).current_attack() == 100, "bonus gone");
+    assert(shaman.cooldown_left("Totem") == totem_cooldown() && !usable(shaman, totem_move()), "cooling down");
+    var i = 0;
+    while (i < totem_cooldown()) { turn_over(shaman, Option.None); i = i + 1; }
+    assert(usable(shaman, totem_move()), "ready after that many of the Shaman's turns");
+}
+
+@test
+fn one_totem_at_a_time() {
+    var b = with_totem();
+    assert(!has_targets(b, slot(0, 0), totem_move().shape), "can't summon while one stands");
+    assert(!use_move(engine(), b, slot(0, 0), totem_move(), Choice.NoTarget), "refused");
+}
+
+@test
+fn a_new_totem_takes_the_old_ones_slot() {
+    var b = with_totem();
+    perform(engine(), b, "test", [Action.Damage(totem(b), Option.None, 1000, false)]);
+    who(b, slot(0, 0)).cooldowns = [];
+    assert(use_move(engine(), b, slot(0, 0), totem_move(), Choice.NoTarget), "summoned again");
+    assert(b.sides[0].active.len() == 3 && totem(b).hp == totem_hp(), "same slot, fresh totem");
+}
+
+@test
+fn the_totem_does_not_count_for_winning_or_losing() {
+    var b = with_totem();
+    perform(engine(), b, "test", [Action.Damage(who(b, slot(0, 0)), Option.None, 200, false), Action.Damage(who(b, slot(0, 1)), Option.None, 200, false)]);
+    assert(!totem(b).fainted(), "the totem still stands");
+    assert(b.defeated(0), "but the team has lost");
+}
+
+@test
+fn the_totem_never_takes_a_turn() {
+    var b = with_totem();
+    start_round(b);
+    var seen = 0;
+    for (phase in phases()) {
+        var cursor = begin_phase(b, phase);
+        var going = true;
+        while (going) {
+            match next_actor(b, cursor) {
+                Option.Some(s) => {
+                    assert(!(s.side == 0 && s.index == 2), "not the totem");
+                    b.sides[s.side].active[s.index].acted = true;
+                    seen = seen + 1;
+                }
+                Option.None => { going = false; }
+            }
+        }
+    }
+    assert(seen == 3, "Shaman, Ally and Foe");
+}
+
+@test
+fn an_ally_resurrected_while_the_totem_stands_gets_the_blessing() {
+    var b = with_totem();
+    var ally = who(b, slot(0, 1));
+    perform(engine(), b, "test", [Action.Damage(ally, Option.None, 200, false), Action.Resurrect(ally, 50)]);
+    assert(!ally.fainted() && has_effect(ally, "Totem's Blessing"), "blessed again");
+}

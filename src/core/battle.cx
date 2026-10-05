@@ -1,0 +1,190 @@
+import { Character, Tier, tier_name } from "creature";
+
+type Slot { side: int, index: int }
+
+type Side { active: List<Character> }
+
+type Battle {
+    sides: List<Side>,
+    /** The side that is home for the whole battle; the other is away. */
+    home: int,
+    log: List<string>,
+    /** One per log line: how everyone stood just after it, so the display can step through a turn. */
+    frames: List<Frame>,
+}
+
+/** How a character stood at one moment. */
+type Look { name: string, tier: string, hp: int, max: int, base: int, acted: bool, effects: string, corpse: bool }
+
+/** A log line and how everyone stood just after it, by side and slot. */
+type Frame { line: string, looks: List<List<Look>> }
+
+/** A battle between the sides, home on side `home`, with every character tagged with its side. */
+fn new_battle(sides: List<Side>, home: int): Battle {
+    var b = Battle { sides: sides, home: home, log: [], frames: [] };
+    b.place();
+    return b;
+}
+
+/** The effects' labels, joined with " · ". */
+fn effect_text(c: Character): string {
+    var out = "";
+    for (e in c.effects) {
+        var label = e.label;
+        if (out != "") { out = out + " · "; }
+        out = out + label(c, e);
+    }
+    return out;
+}
+
+impl Battle {
+    /** How everyone stands right now. */
+    fn looks(self): List<List<Look>> {
+        var out: List<List<Look>> = [];
+        for (s in self.sides) {
+            var side: List<Look> = [];
+            for (c in s.active) { side.push(Look { name: c.name, tier: tier_name(c.current_tier()), hp: c.hp, max: c.max_health(), base: c.base_max_hp, acted: c.acted, effects: effect_text(c), corpse: c.corpse }); }
+            out.push(side);
+        }
+        return out;
+    }
+
+    fn at(self, slot: Slot): Option<Character> {
+        if (slot.side < 0 || slot.side >= self.sides.len()) { return Option.None; }
+        var active = self.sides[slot.side].active;
+        if (slot.index < 0 || slot.index >= active.len()) { return Option.None; }
+        var p = active[slot.index];
+        if (p.fainted()) { return Option.None; }
+        return Option.Some(p);
+    }
+
+    fn foes(self, of: Slot): List<Character> {
+        var out: List<Character> = [];
+        var side = 0;
+        for (s in self.sides) {
+            if (side != of.side) {
+                for (p in s.active) {
+                    if (!p.fainted()) { out.push(p); }
+                }
+            }
+            side = side + 1;
+        }
+        return out;
+    }
+
+    fn foe_slots(self, of: Slot): List<Slot> {
+        var out: List<Slot> = [];
+        var side = 0;
+        while (side < self.sides.len()) {
+            if (side != of.side) {
+                var index = 0;
+                while (index < self.sides[side].active.len()) {
+                    if (!self.sides[side].active[index].fainted()) { out.push(Slot { side: side, index: index }); }
+                    index = index + 1;
+                }
+            }
+            side = side + 1;
+        }
+        return out;
+    }
+
+    /** The foes the slot may pick for a single-target move: those in the highest targeting tier, or all of them if it ignores targeting. */
+    fn targetable_foes(self, of: Slot): List<Slot> {
+        var all = self.foe_slots(of);
+        if (self.sides[of.side].active[of.index].ignores_targeting()) { return all; }
+        var top = 0;
+        var first = true;
+        for (s in all) {
+            var tier = self.sides[s.side].active[s.index].targeting_tier();
+            if (first || tier > top) { top = tier; first = false; }
+        }
+        var out: List<Slot> = [];
+        for (s in all) {
+            if (self.sides[s.side].active[s.index].targeting_tier() == top) { out.push(s); }
+        }
+        return out;
+    }
+
+    /**
+     * The foes the slot may pick next for a move that picks in order, given
+     * the picks so far: those not yet picked, in the highest targeting tier
+     * among them (all of them, if it ignores targeting).
+     */
+    fn next_in_chain(self, of: Slot, picked: List<Slot>): List<Slot> {
+        var left: List<Slot> = [];
+        for (s in self.foe_slots(of)) {
+            var taken = false;
+            for (p in picked) {
+                if (p.side == s.side && p.index == s.index) { taken = true; }
+            }
+            if (!taken) { left.push(s); }
+        }
+        if (self.sides[of.side].active[of.index].ignores_targeting()) { return left; }
+        var top = 0;
+        var first = true;
+        for (s in left) {
+            var tier = self.sides[s.side].active[s.index].targeting_tier();
+            if (first || tier > top) { top = tier; first = false; }
+        }
+        var out: List<Slot> = [];
+        for (s in left) {
+            if (self.sides[s.side].active[s.index].targeting_tier() == top) { out.push(s); }
+        }
+        return out;
+    }
+
+    /** The corpses on a side, by slot. */
+    fn corpse_slots(self, side: int): List<Slot> {
+        var out: List<Slot> = [];
+        var index = 0;
+        while (index < self.sides[side].active.len()) {
+            var c = self.sides[side].active[index];
+            if (c.fainted() && c.corpse) { out.push(Slot { side: side, index: index }); }
+            index = index + 1;
+        }
+        return out;
+    }
+
+    /** The slot's own side, itself included, that are still standing. */
+    fn ally_slots(self, of: Slot): List<Slot> {
+        var out: List<Slot> = [];
+        var index = 0;
+        while (index < self.sides[of.side].active.len()) {
+            if (!self.sides[of.side].active[index].fainted()) { out.push(Slot { side: of.side, index: index }); }
+            index = index + 1;
+        }
+        return out;
+    }
+
+    /** Whether every character on the side has fallen. Minions don't count. */
+    fn defeated(self, side: int): bool {
+        for (p in self.sides[side].active) {
+            if (!p.fainted() && !p.is_minion()) { return false; }
+        }
+        return true;
+    }
+
+    /** The side that has won (0 home, 1 away), or -1: no winner yet, or both sides fell at once, which is a draw. */
+    fn winner(self): int {
+        var home_down = self.defeated(0);
+        var away_down = self.defeated(1);
+        if (away_down && !home_down) { return 0; }
+        if (home_down && !away_down) { return 1; }
+        return -1;
+    }
+
+    fn say(self, line: string) {
+        self.log.push(line);
+        self.frames.push(Frame { line: line, looks: self.looks() });
+    }
+
+    /** Tags every character with the side it is on. Call once the sides are set up. */
+    fn place(self) {
+        var side = 0;
+        while (side < self.sides.len()) {
+            for (c in self.sides[side].active) { c.team = side; }
+            side = side + 1;
+        }
+    }
+}
+

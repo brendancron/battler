@@ -1,0 +1,217 @@
+import { fatigue } from "../game/fatigue";
+import { pad_left, pad_right, repeat } from "std/text/String";
+import { Console, Stream } from "std/io/Console";
+import { Character, EventKind, tier_name, max_hp } from "../core/creature";
+import { Battle, Slot, Look, Frame } from "../core/battle";
+import { MoveDef, use_move, turn_over } from "../core/move";
+import { Engine, announce } from "../core/engine";
+import { Choice } from "../core/target";
+import { wait_key, clear_screen } from "term";
+
+/**
+ * The battle screen. A turn is shown a step at a time, one log line per step,
+ * with everyone's HP and effects as they stood just after that line. When
+ * `stepping` is on, each step replaces the last on screen and waits for a key;
+ * otherwise the steps are printed one after another. A `silent` screen shows
+ * nothing at all, for games between AIs.
+ *
+ * `bottom` is the side drawn at the bottom of the box, and `labels` names each
+ * side by its index, e.g. ["PLAYER", "FOE"].
+ */
+type Screen { stepping: bool, silent: bool, bottom: int, labels: List<string> }
+
+/** A screen that shows nothing, for simulated games. */
+fn silent_screen(): Screen { return Screen { stepping: false, silent: true, bottom: 0, labels: ["HOME", "AWAY"] }; }
+
+fn width(): int { return 60; }
+fn bar_len(): int { return 16; }
+
+/** The HP bar, scaled to the character's own base max HP (a 30-HP totem's full bar is full). */
+fn hp_bar(look: Look): string {
+    var filled = look.hp * bar_len() / look.base;
+    if (look.hp > 0 && filled == 0) { filled = 1; }
+    // Max HP lost for good shows as ╳ at the end of the bar.
+    var lost = (look.base - look.max) * bar_len() / look.base;
+    if (filled + lost > bar_len()) { lost = bar_len() - filled; }
+    var fill = "█";
+    if (look.hp * 2 <= look.base) { fill = "▓"; }
+    if (look.hp * 5 <= look.base) { fill = "▒"; }
+    return "[" + repeat(fill, filled) + repeat("·", bar_len() - filled - lost) + repeat("╳", lost) + "]";
+}
+
+fn row(text: string): string {
+    return "║ " + pad_right(text, width() - 4, " ") + " ║";
+}
+
+/** The text broken at spaces into lines no wider than `limit`. A word longer than that gets a line of its own. */
+fn wrap(text: string, limit: int): List<string> {
+    var out: List<string> = [];
+    var line = "";
+    for (word in text.split(' ')) {
+        if (line == "") {
+            line = word;
+        } else if (line.len() + 1 + word.len() <= limit) {
+            line = line + " " + word;
+        } else {
+            out.push(line);
+            line = word;
+        }
+    }
+    out.push(line);
+    return out;
+}
+
+/** A log line as rows of the box: "» " first, then continuation lines indented under it. */
+fn log_rows(text: string): List<string> {
+    var out: List<string> = [];
+    var first = true;
+    for (part in wrap(text, width() - 6)) {
+        if (first) { out.push(row("» " + part)); } else { out.push(row("  " + part)); }
+        first = false;
+    }
+    return out;
+}
+
+fn rule(left: string, fill: string, right: string): string {
+    return left + repeat(fill, width() - 2) + right;
+}
+
+fn status(look: Look, acting: bool, before: Look): string {
+    var marker = "  ";
+    if (look.acted && look.hp > 0) { marker = "✓ "; }
+    if (acting) { marker = "▶ "; }
+    var line = marker + pad_right(look.name, 12, " ") + pad_right(look.tier, 7, " ") + hp_bar(look) + " " + pad_left(str(look.hp), 3, " ") + "/" + pad_left(str(look.max), 3, " ");
+    if (look.hp <= 0) {
+        // A corpse can still be resurrected; GONE can't.
+        if (look.corpse) { line = line + "  FNT"; } else { line = line + "  GONE"; }
+    } else {
+        if (before.hp > look.hp) { line = line + "  -" + str(before.hp - look.hp); }
+        if (before.hp < look.hp) { line = line + "  +" + str(look.hp - before.hp); }
+    }
+    return line;
+}
+
+/**
+ * One side's rows, from a snapshot. A slot that didn't exist in the earlier
+ * snapshot (a minion summoned this step) is compared with itself.
+ */
+fn side_rows(battle: Battle, side: int, user: Slot, now: List<List<Look>>, before: List<List<Look>>): List<string> {
+    var out: List<string> = [];
+    var index = 0;
+    for (look in now[side]) {
+        var acting = side == user.side && index == user.index;
+        var earlier = look;
+        if (index < before[side].len()) { earlier = before[side][index]; }
+        out.push(row(status(look, acting, earlier)));
+        if (look.effects != "" && look.hp > 0) { out.push(row("    ↳ " + look.effects)); }
+        index = index + 1;
+    }
+    return out;
+}
+
+fn field(screen: Screen, battle: Battle, title: string, user: Slot, now: List<List<Look>>, before: List<List<Look>>) {
+    print(rule("╔", "═", "╗"));
+    print(row(pad_left(title, (width() - 4 + title.len()) / 2, " ")));
+    print(rule("╠", "═", "╣"));
+    var top = 1 - screen.bottom;
+    print(row(screen.labels[top]));
+    for (line in side_rows(battle, top, user, now, before)) { print(line); }
+    print(row(""));
+    print(row(screen.labels[screen.bottom]));
+    for (line in side_rows(battle, screen.bottom, user, now, before)) { print(line); }
+}
+
+/**
+ * Shows the log lines from `log_from` on, a step each. Each step draws the
+ * field as it stood after its line, marks what changed since the step before,
+ * and lists the turn's lines so far.
+ */
+fn steps(screen: Screen, battle: Battle, title: string, user: Slot, start: List<List<Look>>, log_from: int) {
+    if (screen.silent) { return; }
+    var before = start;
+    var i = log_from;
+    while (i < battle.frames.len()) {
+        var frame = battle.frames[i];
+        if (screen.stepping) { clear_screen(); }
+        field(screen, battle, title, user, frame.looks, before);
+        print(rule("╟", "─", "╢"));
+        var j = log_from;
+        while (j <= i) {
+            for (r in log_rows(battle.frames[j].line)) { print(r); }
+            j = j + 1;
+        }
+        print(rule("╚", "═", "╝"));
+        if (screen.stepping) {
+            write(Stream.Out, "  ▼");
+            wait_key();
+        } else {
+            print("");
+        }
+        before = frame.looks;
+        i = i + 1;
+    }
+}
+
+/** Draws the field as it stands, with the slot about to act marked. */
+fn show(screen: Screen, battle: Battle, title: string, user: Slot) {
+    if (screen.silent) { return; }
+    if (screen.stepping) { clear_screen(); }
+    var now = battle.looks();
+    field(screen, battle, title, user, now, now);
+    print(rule("╚", "═", "╝"));
+}
+
+/** Uses the move, then steps through what happened. */
+fn play(screen: Screen, engine: Engine, battle: Battle, title: string, user: Slot, move: MoveDef, choice: Choice): bool {
+    var start = battle.looks();
+    var log_from = battle.log.len();
+    announce(engine, battle, EventKind.TurnStarted(battle.sides[user.side].active[user.index]));
+    var used = use_move(engine, battle, user, move, choice);
+    var c = battle.sides[user.side].active[user.index];
+    announce(engine, battle, EventKind.TurnEnded(c));
+    if (used) { turn_over(c, Option.Some(move)); } else { turn_over(c, Option.None); }
+    steps(screen, battle, title, user, start, log_from);
+    return used;
+}
+
+/** Starts the round and steps through what the start-of-round triggers did, if anything. */
+fn begin_round(screen: Screen, engine: Engine, battle: Battle, title: string) {
+    var start = battle.looks();
+    var log_from = battle.log.len();
+    announce(engine, battle, EventKind.RoundStarted);
+    steps(screen, battle, title, Slot { side: -1, index: -1 }, start, log_from);
+}
+
+/** Ends round number `round` and steps through what the end-of-round triggers and fatigue did, if anything. */
+fn end_round(screen: Screen, engine: Engine, battle: Battle, title: string, round: int) {
+    var start = battle.looks();
+    var log_from = battle.log.len();
+    announce(engine, battle, EventKind.RoundEnded);
+    fatigue(engine, battle, round);
+    steps(screen, battle, title, Slot { side: -1, index: -1 }, start, log_from);
+}
+
+/** Why the character loses its turn, after its name: the first effect that makes it skip. */
+fn lost_turn_line(c: Character): string {
+    for (e in c.effects) {
+        if (e.skips) {
+            if (e.kind == "Hex") { return " is a frog and loses its turn!"; }
+            if (e.kind == "Freeze") { return " is frozen and loses its turn!"; }
+            if (e.kind == "Cryosleep") { return " sleeps in the ice and loses its turn."; }
+            return " loses its turn (" + e.kind + ").";
+        }
+    }
+    return " loses its turn.";
+}
+
+/** Steps through a turn the character loses, such as to a Hex. */
+fn lose_turn(screen: Screen, engine: Engine, battle: Battle, title: string, user: Slot) {
+    var start = battle.looks();
+    var log_from = battle.log.len();
+    var c = battle.sides[user.side].active[user.index];
+    battle.say(c.name + lost_turn_line(c));
+    announce(engine, battle, EventKind.TurnStarted(c));
+    announce(engine, battle, EventKind.TurnEnded(c));
+    turn_over(c, Option.None);
+    steps(screen, battle, title, user, start, log_from);
+}

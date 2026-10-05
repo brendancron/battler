@@ -1,0 +1,54 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random } from "std/random/Random";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef } from "../core/move";
+import { Choice } from "../core/target";
+import { Fighter } from "../content/roster";
+import { GreedyAgent } from "greedy";
+import { RandomAgent } from "random";
+import { TacticianAgent } from "tactician";
+import { StrategistAgent } from "strategist";
+
+/**
+ * Whoever decides for one side: a person at the console, an AI, or later a
+ * player over the network. The game asks, the agent answers, and the game
+ * checks the answer is legal before doing anything with it.
+ *
+ * Every method declares every effect any agent may need, since a call through
+ * an `Agent` value is compiled for all of them. A new kind of agent that needs
+ * a new effect (a network one, say) adds it here.
+ */
+trait Agent {
+    /** The move and targets for the character whose turn it is, or None if the agent has left the game. */
+    fn choose_move(self, turn: Turn): <async, Console, Stdin, Random, Throw<IoError>> Option<Plan>;
+
+    /** Which of `available` to draft as pick number `pick` (1 to 8); -1 if the agent has left the game. */
+    fn choose_pick(self, available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): <async, Console, Stdin, Random, Throw<IoError>> int;
+}
+
+/** A move and its targets, decided for the character in `slot`. */
+type Plan { slot: Slot, move: MoveDef, choice: Choice }
+
+/**
+ * What an agent is asked: it's the turn of the character in `slot`, which has
+ * `moves`. `kits` has every character's moves, by side and slot, for an agent
+ * that plans around what the others can do. `title` names the moment, e.g.
+ * "ROUND 2 · FAST PHASE".
+ */
+type Turn { battle: Battle, slot: Slot, moves: List<MoveDef>, kits: List<List<List<MoveDef>>>, title: string }
+
+/** The names of the AIs, as `ai_named` knows them. */
+fn ai_names(): List<string> { return ["Greedy", "Random", "Tactician", "Strategist"]; }
+
+/** The AI with this name (any case), or None. */
+fn ai_named(name: string): Option<Agent> {
+    var wanted = name.to_lower();
+    if (wanted == "greedy") { var a: Agent = GreedyAgent; return Option.Some(a); }
+    if (wanted == "random") { var a: Agent = RandomAgent; return Option.Some(a); }
+    if (wanted == "tactician") { var a: Agent = TacticianAgent; return Option.Some(a); }
+    if (wanted == "strategist") { var a: Agent = StrategistAgent; return Option.Some(a); }
+    return Option.None;
+}

@@ -1,0 +1,202 @@
+import { Character } from "creature";
+import { Battle, Slot } from "battle";
+
+type TargetShape {
+    User,
+    SingleFoe,
+    /** One character on the user's side, the user included. */
+    SingleAlly,
+    AllFoes,
+    /** Everyone on the user's side who is standing, the user included. */
+    AllAllies,
+    /** Pick a foe this many times; the same foe may be picked again. */
+    FoePicks(int),
+    /**
+     * The move picks its own targets among the foes standing, weakest first
+     * (the Assassin's Execution). Like an area move, it ignores targeting tiers.
+     */
+    Weakest,
+    /** A fainted ally whose corpse is still there. */
+    AllyCorpse,
+    /** Summons the named minion; can't be used while the user's side already has one standing. */
+    Summon(string),
+    /** A fainted foe whose corpse is still there. */
+    FoeCorpse,
+    /** One standing ally other than the user. */
+    OtherAlly,
+    /**
+     * Up to this many different foes, picked in order. Each pick must be from
+     * the highest targeting tier among the foes standing not yet picked
+     * (docs/targeting.md#picking-in-order). Picks stop when no foes are left.
+     */
+    ChainPicks(int),
+    /** A fainted foe whose corpse is still there, while the user's side has no puppet standing (docs/summons.md). */
+    PuppetCorpse,
+}
+
+fn contains(slots: List<Slot>, slot: Slot): bool {
+    for (s in slots) {
+        if (s.side == slot.side && s.index == slot.index) { return true; }
+    }
+    return false;
+}
+
+type Choice {
+    NoTarget,
+    Slots(List<Slot>),
+}
+
+type Target {
+    User(Character),
+    Single(Character),
+    Spread(List<Character>),
+}
+
+fn bind(shape: TargetShape, choice: Choice, battle: Battle, user: Slot): Option<Target> {
+    match shape {
+        TargetShape.User => {
+            match battle.at(user) {
+                Option.Some(p) => { return Option.Some(Target.User(p)); }
+                Option.None => { return Option.None; }
+            }
+        }
+        TargetShape.SingleFoe => {
+            match choice {
+                Choice.Slots(slots) => {
+                    if (slots.len() != 1 || !contains(battle.targetable_foes(user), slots[0])) { return Option.None; }
+                    match battle.at(slots[0]) {
+                        Option.Some(p) => { return Option.Some(Target.Single(p)); }
+                        Option.None => { return Option.None; }
+                    }
+                }
+                Choice.NoTarget => { return Option.None; }
+            }
+        }
+        TargetShape.SingleAlly => {
+            match choice {
+                Choice.Slots(slots) => {
+                    if (slots.len() != 1 || slots[0].side != user.side) { return Option.None; }
+                    match battle.at(slots[0]) {
+                        Option.Some(p) => { return Option.Some(Target.Single(p)); }
+                        Option.None => { return Option.None; }
+                    }
+                }
+                Choice.NoTarget => { return Option.None; }
+            }
+        }
+        TargetShape.AllFoes => {
+            var standing = battle.foes(user);
+            if (standing.len() == 0) { return Option.None; }
+            return Option.Some(Target.Spread(standing));
+        }
+        TargetShape.FoePicks(n) => {
+            match choice {
+                Choice.Slots(slots) => {
+                    if (slots.len() != n) { return Option.None; }
+                    var allowed = battle.targetable_foes(user);
+                    var picked: List<Character> = [];
+                    for (s in slots) {
+                        if (!contains(allowed, s)) { return Option.None; }
+                        picked.push(battle.sides[s.side].active[s.index]);
+                    }
+                    return Option.Some(Target.Spread(picked));
+                }
+                Choice.NoTarget => { return Option.None; }
+            }
+        }
+        TargetShape.Weakest => {
+            var standing = battle.foes(user);
+            if (standing.len() == 0) { return Option.None; }
+            return Option.Some(Target.Spread(standing));
+        }
+        TargetShape.AllyCorpse => { return bind_corpse(choice, battle, user, true); }
+        TargetShape.Summon(name) => {
+            if (!has_targets(battle, user, shape)) { return Option.None; }
+            match battle.at(user) {
+                Option.Some(p) => { return Option.Some(Target.User(p)); }
+                Option.None => { return Option.None; }
+            }
+        }
+        TargetShape.FoeCorpse => { return bind_corpse(choice, battle, user, false); }
+        TargetShape.OtherAlly => {
+            match choice {
+                Choice.Slots(slots) => {
+                    if (slots.len() != 1 || slots[0].side != user.side || slots[0].index == user.index) { return Option.None; }
+                    match battle.at(slots[0]) {
+                        Option.Some(p) => { return Option.Some(Target.Single(p)); }
+                        Option.None => { return Option.None; }
+                    }
+                }
+                Choice.NoTarget => { return Option.None; }
+            }
+        }
+        TargetShape.ChainPicks(n) => {
+            match choice {
+                Choice.Slots(slots) => {
+                    var wanted = battle.foe_slots(user).len();
+                    if (wanted > n) { wanted = n; }
+                    if (wanted == 0 || slots.len() != wanted) { return Option.None; }
+                    var picked: List<Slot> = [];
+                    var hit: List<Character> = [];
+                    for (s in slots) {
+                        if (!contains(battle.next_in_chain(user, picked), s)) { return Option.None; }
+                        picked.push(s);
+                        hit.push(battle.sides[s.side].active[s.index]);
+                    }
+                    return Option.Some(Target.Spread(hit));
+                }
+                Choice.NoTarget => { return Option.None; }
+            }
+        }
+        TargetShape.PuppetCorpse => {
+            if (!has_targets(battle, user, shape)) { return Option.None; }
+            return bind_corpse(choice, battle, user, false);
+        }
+        TargetShape.AllAllies => {
+            var allies: List<Character> = [];
+            for (s in battle.ally_slots(user)) { allies.push(battle.sides[s.side].active[s.index]); }
+            return Option.Some(Target.Spread(allies));
+        }
+    }
+    return Option.None;
+}
+
+/** One picked slot holding a corpse, on the user's side or the other. */
+fn bind_corpse(choice: Choice, battle: Battle, user: Slot, ally: bool): Option<Target> {
+    match choice {
+        Choice.Slots(slots) => {
+            if (slots.len() != 1) { return Option.None; }
+            var s = slots[0];
+            if ((s.side == user.side) != ally) { return Option.None; }
+            if (s.side < 0 || s.side >= battle.sides.len() || s.index < 0 || s.index >= battle.sides[s.side].active.len()) { return Option.None; }
+            var c = battle.sides[s.side].active[s.index];
+            if (!c.fainted() || !c.corpse) { return Option.None; }
+            return Option.Some(Target.Single(c));
+        }
+        Choice.NoTarget => { return Option.None; }
+    }
+    return Option.None;
+}
+
+/** Whether the move has anything to target right now: a corpse move needs a corpse on the right side. */
+fn has_targets(battle: Battle, user: Slot, shape: TargetShape): bool {
+    match shape {
+        TargetShape.AllyCorpse => { return battle.corpse_slots(user.side).len() > 0; }
+        TargetShape.FoeCorpse => { return battle.corpse_slots(1 - user.side).len() > 0; }
+        TargetShape.PuppetCorpse => {
+            for (c in battle.sides[user.side].active) {
+                if (!c.fainted() && c.is_puppet()) { return false; }
+            }
+            return battle.corpse_slots(1 - user.side).len() > 0;
+        }
+        TargetShape.OtherAlly => { return battle.ally_slots(user).len() > 1; }
+        TargetShape.Summon(name) => {
+            for (c in battle.sides[user.side].active) {
+                if (c.name == name && !c.fainted()) { return false; }
+            }
+            return true;
+        }
+        _ => { return true; }
+    }
+    return true;
+}

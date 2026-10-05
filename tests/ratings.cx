@@ -1,0 +1,196 @@
+import {
+    Pool, Rating, new_pool, rating, expected, side_elo, record, recenter,
+    Mixes, new_mixes, mix, credit, score, mix_name, count_name, fixed, pool_table, mix_table, ranked, pair_name, pairs_of, ends_table,
+    Ledger, new_ledger, ledger_data, ledger_from
+} from "battler/balance/ratings";
+import { write_json, parse_json } from "std/encoding/Json";
+
+fn near(x: float, y: float, within: float): bool { return x - y < within && y - x < within; }
+
+@test
+fn equal_ratings_expect_an_even_game() {
+    assert(near(expected(1500.0, 1500.0), 0.5, 0.0001), "50/50");
+}
+
+@test
+fn four_hundred_points_is_ten_to_one() {
+    assert(near(expected(1900.0, 1500.0), 10.0 / 11.0, 0.0001), "10:11");
+}
+
+@test
+fn an_even_win_moves_sixteen_points() {
+    var p = new_pool();
+    record(p, ["A"], ["B"]);
+    assert(near(rating(p, "A").elo, 1016.0, 0.001) && near(rating(p, "B").elo, 984.0, 0.001), "K/2 each way");
+    assert(rating(p, "A").wins == 1 && rating(p, "B").games == 1, "counted");
+}
+
+@test
+fn a_side_is_rated_by_its_average_and_moves_together() {
+    var p = new_pool();
+    rating(p, "Strong").elo = 1200.0;
+    assert(near(side_elo(p, ["Strong", "Weak"]), 1100.0, 0.001), "average of 1200 and 1000");
+    record(p, ["X", "Y"], ["Strong", "Weak"]);
+    // Re-centring shifts everyone equally, so compare gaps, not raw ratings.
+    assert(near(rating(p, "X").elo, rating(p, "Y").elo, 0.001), "a side moves together");
+    assert(near(rating(p, "Strong").elo - rating(p, "Weak").elo, 200.0, 0.001), "and so does the other");
+    assert(rating(p, "X").elo - rating(p, "Weak").elo > 32.0, "beating a stronger side is worth more than 16 each way");
+}
+
+@test
+fn a_name_twice_on_a_side_moves_twice() {
+    var p = new_pool();
+    record(p, ["Mage", "Mage"], ["Tank", "Support"]);
+    assert(near(rating(p, "Mage").elo - rating(p, "Tank").elo, 48.0, 0.001), "Mage moved up twice, Tank down once");
+}
+
+@test
+fn mix_names_sort_so_order_does_not_matter() {
+    assert(mix_name(["Tank", "Mage", "Support", "Mage"]) == "Mage, Mage, Support, Tank", "sorted");
+    assert(mix_name(["Support", "Tank", "Mage", "Mage"]) == mix_name(["Mage", "Tank", "Mage", "Support"]), "same mix");
+}
+
+@test
+fn count_names_say_how_many() {
+    assert(count_name(["Support", "Mage", "Support", "Tank"], "Support") == "Support ×2", "two");
+    assert(count_name(["Support", "Mage", "Support", "Tank"], "Rogue") == "Rogue ×0", "none");
+}
+
+@test
+fn composition_score_is_actual_minus_expected() {
+    var all = new_mixes();
+    credit(all, "M", true, 0.75);
+    credit(all, "M", false, 0.25);
+    var m = mix(all, "M");
+    assert(m.games == 2 && m.wins == 1, "counted");
+    assert(near(score(m), 0.0, 0.001), "+25 and -25 average to 0");
+    credit(all, "N", false, 0.6);
+    assert(near(score(mix(all, "N")), -60.0, 0.001), "a loss it was expected to win");
+}
+
+@test
+fn fixed_rounds_to_places() {
+    assert(fixed(1516.4, 0) == "1516" && fixed(1516.5, 0) == "1517", "whole");
+    assert(fixed(-6.25, 1) == "-6.3" && fixed(0.04, 1) == "0.0", "one place");
+}
+
+@test
+fn tables_list_best_first() {
+    var p = new_pool();
+    record(p, ["B"], ["A"]);
+    var t = pool_table("T", p);
+    assert(t.len() == 4 && t[2].contains("B") && t[3].contains("A"), "B above A");
+    var all = new_mixes();
+    credit(all, "Low", false, 0.5);
+    credit(all, "High", true, 0.5);
+    credit(all, "Rare", true, 0.5);
+    var mt = mix_table("M", all, 1);
+    assert(mt[2].contains("High") || mt[2].contains("Rare"), "best first");
+    assert(mix_table("M", all, 2).len() == 2, "too few games are left out");
+}
+
+@test
+fn ranked_puts_the_highest_first() {
+    var p = new_pool();
+    record(p, ["B"], ["A"]);
+    record(p, ["C"], ["B"]);
+    var r = ranked(p);
+    assert(r.len() == 3 && r[0].name == "C" && r[2].name == "A", "C, B, A");
+}
+
+@test
+fn a_ledger_survives_a_round_trip_through_json() {
+    var l = new_ledger();
+    l.games = 8;
+    l.draws = 1;
+    record(l.characters, ["Monk", "Knight"], ["Witch", "Shaman"]);
+    record(l.agents, ["Greedy"], ["Random"]);
+    credit(l.mixes, "Tank, Warrior", true, 0.4);
+    credit(l.pairs, "Fairy + Warlock", false, 0.25);
+    var back = ledger_from(parse_json(write_json(ledger_data(l))));
+    assert(near(score(mix(back.pairs, "Fairy + Warlock")), -25.0, 0.001), "pair score");
+    assert(back.games == 8 && back.draws == 1, "totals");
+    assert(near(rating(back.characters, "Monk").elo, rating(l.characters, "Monk").elo, 0.0001), "elo kept exactly");
+    assert(rating(back.characters, "Witch").games == 1 && rating(back.agents, "Greedy").wins == 1, "counts");
+    assert(near(score(mix(back.mixes, "Tank, Warrior")), 60.0, 0.001), "mix score");
+    assert(back.sides.ratings.len() == 0 && back.counts.mixes.len() == 0, "empty parts stay empty");
+}
+
+@test
+fn an_empty_document_is_a_fresh_ledger() {
+    var back = ledger_from(parse_json("{}"));
+    assert(back.games == 0 && back.characters.ratings.len() == 0, "fresh");
+}
+
+fn average(p: Pool): float {
+    var total = 0.0;
+    for (r in p.ratings) { total = total + r.elo; }
+    return total / p.ratings.len().to_float();
+}
+
+@test
+fn ratings_start_at_a_thousand() {
+    assert(near(rating(new_pool(), "New").elo, 1000.0, 0.001), "1000");
+}
+
+@test
+fn the_average_stays_at_a_thousand() {
+    var p = new_pool();
+    record(p, ["A", "B", "C", "D"], ["E", "F", "G", "H"]);
+    record(p, ["A", "E", "C", "G"], ["B", "F", "D", "H"]);
+    record(p, ["A", "B", "E", "F"], ["C", "D", "G", "H"]);
+    assert(near(average(p), 1000.0, 0.0001), "after games");
+}
+
+@test
+fn recentering_pulls_the_average_back_without_changing_gaps() {
+    var p = new_pool();
+    rating(p, "Old").elo = 1300.0;
+    rating(p, "Older").elo = 1100.0;
+    rating(p, "New").elo = 1000.0;
+    recenter(p);
+    assert(near(average(p), 1000.0, 0.0001), "average 1000");
+    assert(near(rating(p, "Old").elo - rating(p, "Older").elo, 200.0, 0.0001), "gap kept");
+    assert(near(rating(p, "Old").elo, 1166.6667, 0.001), "shifted down by 133.3");
+}
+
+// Character pairs
+
+@test
+fn a_pair_reads_the_same_whichever_way_round() {
+    assert(pair_name("Warlock", "Fairy") == "Fairy + Warlock" && pair_name("Fairy", "Warlock") == "Fairy + Warlock", "alphabetical");
+}
+
+@test
+fn a_team_of_four_has_six_pairs() {
+    var pairs = pairs_of(["Monk", "Fairy", "Warlock", "Knight"]);
+    assert(pairs.len() == 6, "4 choose 2");
+    var found = false;
+    for (p in pairs) {
+        if (p == "Fairy + Warlock") { found = true; }
+    }
+    assert(found, "every pair is there");
+}
+
+@test
+fn a_pair_scores_what_its_team_did_above_expectation() {
+    var all = new_mixes();
+    // A team expected to win 40% wins once and loses once: +60 and -40, averaging +10.
+    credit(all, "Fairy + Warlock", true, 0.4);
+    credit(all, "Fairy + Warlock", false, 0.4);
+    assert(near(score(mix(all, "Fairy + Warlock")), 10.0, 0.001), "average surprise");
+}
+
+@test
+fn the_ends_table_keeps_the_best_and_worst() {
+    var all = new_mixes();
+    var i = 0;
+    while (i < 10) {
+        credit(all, "P" + str(i), i % 2 == 0, i.to_float() / 10.0);
+        i = i + 1;
+    }
+    var lines = ends_table("PAIRS", all, 1, 2);
+    // Title, header, 2 best, "...", 2 worst.
+    assert(lines.len() == 7 && lines[4] == "  ...", "trimmed to the ends");
+    assert(ends_table("PAIRS", all, 1, 5).len() == 12, "short lists are shown whole");
+}

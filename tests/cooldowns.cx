@@ -1,0 +1,101 @@
+import { Character, Action, EventKind } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { MoveDef, use_move, usable, unavailable, turn_over, basic_attack } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { silence } from "battler/content/effects";
+import { Pick } from "battler/agents/scoring";
+import { best } from "battler/agents/greedy";
+import { cleave, prayer } from "battler/content/moves";
+import { duel, who, slot, logged } from "support";
+
+fn foe(): Choice { return Choice.Slots([slot(1, 0)]); }
+
+/** The move with the cooldown the test needs, whatever its tuning. */
+fn with_cooldown(m: MoveDef, turns: int): MoveDef {
+    return MoveDef { name: m.name, shape: m.shape, apply: m.apply, cooldown: turns, basic: false };
+}
+
+fn strike(): MoveDef { return with_cooldown(cleave(), 1); }
+
+/** Uses the move as the slot's turn, then ends the turn, as the game does. */
+fn take_turn(b: Battle, user: Slot, move: MoveDef, choice: Choice): bool {
+    var used = use_move(engine(), b, user, move, choice);
+    if (used) { turn_over(who(b, user), Option.Some(move)); } else { turn_over(who(b, user), Option.None); }
+    return used;
+}
+
+@test
+fn a_cooldown_of_one_skips_the_next_turn() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    assert(take_turn(b, slot(0, 0), strike(), foe()), "turn 1: used");
+    assert(!usable(a, strike()) && unavailable(a, strike()) == "ready next turn", "turn 2: cooling");
+    assert(!take_turn(b, slot(0, 0), strike(), foe()), "turn 2: refused");
+    assert(usable(a, strike()), "turn 3: ready");
+    assert(take_turn(b, slot(0, 0), strike(), foe()), "turn 3: used");
+}
+
+@test
+fn a_cooldown_of_two_skips_two_turns() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    var pray = with_cooldown(prayer(), 2);
+    take_turn(b, slot(0, 0), pray, Choice.NoTarget);
+    assert(a.cooldown_left("Prayer") == 2, "two turns");
+    turn_over(a, Option.None);
+    assert(!usable(a, pray), "one turn gone, still cooling");
+    turn_over(a, Option.None);
+    assert(usable(a, pray), "ready");
+}
+
+@test
+fn a_lost_turn_still_counts() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    take_turn(b, slot(0, 0), strike(), foe());
+    turn_over(a, Option.None);
+    assert(usable(a, strike()), "the lost turn was the cooldown turn");
+}
+
+@test
+fn basic_attacks_have_no_cooldown() {
+    var b = duel(["A"], ["B"]);
+    var jab = basic_attack("Jab", 10);
+    assert(take_turn(b, slot(0, 0), jab, foe()), "turn 1");
+    assert(take_turn(b, slot(0, 0), jab, foe()), "turn 2");
+    assert(who(b, slot(1, 0)).hp == 80, "10 each");
+}
+
+@test
+fn a_refused_move_is_logged() {
+    var b = duel(["A"], ["B"]);
+    take_turn(b, slot(0, 0), strike(), foe());
+    take_turn(b, slot(0, 0), strike(), foe());
+    assert(logged(b, "A can't use Cleave (ready next turn)."), "logged");
+}
+
+@test
+fn silence_leaves_only_the_basic_attack_for_a_turn() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    perform(engine(), b, "test", [Action.AddEffect(a, silence(1))]);
+    assert(a.silenced(), "silenced");
+    assert(!usable(a, cleave()) && unavailable(a, cleave()) == "silenced", "no cleave");
+    assert(usable(a, basic_attack("Jab", 10)), "jab is fine");
+    announce(engine(), b, EventKind.TurnEnded(a));
+    assert(!a.silenced() && usable(a, cleave()), "over after its turn");
+}
+
+fn none(n: int): int { return 0; }
+
+@test
+fn the_ai_skips_moves_that_are_cooling_down() {
+    var b = duel(["A"], ["B"]);
+    var moves = [basic_attack("Jab", 10), cleave()];
+    take_turn(b, slot(0, 0), cleave(), foe());
+    match best(b, slot(0, 0), moves, 0, none) {
+        Option.Some(p) => { assert(p.move.name == "Jab", "cleave is cooling"); }
+        Option.None => { assert(false, "a pick"); }
+    }
+}

@@ -1,0 +1,698 @@
+import { random_int } from "std/random/Random";
+import { pad_left } from "std/text/String";
+import { Args } from "std/os/Args";
+import { Time, Instant, Duration } from "std/os/Time";
+import { Throw } from "std/core/Error";
+import { flush } from "std/io/Console";
+import { lines, IoError, using } from "std/io/Io";
+import { Command, Stdio, Child, spawn, status } from "std/os/Process";
+import { interleaved } from "std/async/Task";
+import { exists, read_text, write_text, move_path, open_file, Mode } from "std/fs/File";
+import { parse_json, __pretty } from "std/encoding/Json";
+import { silent_screen } from "ui/display";
+import { Agent, ai_names, ai_named } from "agents/agent";
+import { Seat, Outcome, play_match } from "game/game";
+import { Fighter, roster } from "content/roster";
+import { Game, game_line, parse_game, shares } from "balance/jobs";
+import { page_template, page_path, data_path, data_script } from "balance/page";
+import {
+    Interval, new_interval, count_game, snapshot_every, games_log_path, timeline_path, game_record, snapshot_record, start_record,
+    rss_from_status
+} from "balance/logs";
+import {
+    Pool, Rating, new_pool, side_elo, expected, record, ranked, fixed, Mixes, new_mixes, credit, mix_name, count_name,
+    pool_table, mix_table, ends_table, pairs_of, Ledger, new_ledger, ledger_data, ledger_from
+} from "balance/ratings";
+
+// The balance checker (docs/balance.md). Plays games between AIs on random
+// teams and keeps running Elo ratings and win rates for characters,
+// archetypes, team mixes, home and away, and the AIs themselves.
+//
+//     cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--file PATH] [--jobs N] [quiet]
+//
+//   --games N    how many games to play this run (default 100), in blocks of 4;
+//                0 just prints the report from the file; `forever` plays
+//                until cancelled (Ctrl+C), in batches (`play_forever`)
+//   --ai LIST    which AIs may be drawn for a block (default Greedy)
+//   --file PATH  where the running totals live (default balance.json)
+//   --jobs N     run N worker processes at once (default 1)
+//   quiet        leave out the per-game lines
+//   --batch      (from `play_forever`) print one line at the end instead of the report
+//
+// The totals are read from the file at the start, if it's there, and saved
+// after every block, so runs add up and an interrupted run keeps what it did.
+// Delete the file to start over, e.g. after rebalancing a character.
+//
+// A block is two random teams and two AIs drawn from --ai. Each AI plays each
+// team from each side, so AI skill, team strength and home priority all cancel
+// out: the same 4 games rate the characters and the AIs together.
+//
+// The games are played by worker processes, each this same program run with
+// --worker, while this process only records them. --jobs N runs N lanes at
+// once, sharing the games out in whole blocks; each lane runs workers one
+// after another, each playing at most `worker_games`. A worker plays its games and prints one line per game
+// (`game_line`); it never touches the file. This process reads every worker at
+// once and records each game as it arrives, so the totals are kept in one
+// place and Elo is applied one game at a time.
+
+/** An AI that can be drawn for a block. */
+type Entrant { name: string, agent: Agent }
+
+/** This run: the totals so far, the AIs allowed, and progress. */
+type Run {
+    ledger: Ledger,
+    allowed: List<Entrant>,
+    file: string,
+    planned: int,
+    done: int,
+    started: Instant,
+    quiet: bool,
+    /** A save is being written (saves can overlap when games come from several workers). */
+    saving: bool,
+    /** Games were recorded while that save was being written, so it goes again. */
+    stale: bool,
+    /** Game-log lines waiting for the next save to append them. */
+    pending: List<string>,
+    /** Games since the last timeline snapshot, and when that snapshot was. */
+    interval: Interval,
+    interval_started: Instant,
+    /** How long the last save took, in milliseconds. */
+    save_ms: int,
+    /** Worker processes started so far. */
+    workers: int,
+}
+
+// --- Arguments
+
+/** The value after `--name`, or `fallback`. */
+fn option(name: string, fallback: string): string {
+    var given = args();
+    var i = 0;
+    while (i + 1 < given.len()) {
+        if (given[i] == "--" + name) { return given[i + 1]; }
+        i = i + 1;
+    }
+    return fallback;
+}
+
+/** The command-line arguments, space-separated, for the timeline's start line. */
+fn joined_args(): string {
+    var out = "";
+    for (a in args()) {
+        if (out != "") { out = out + " "; }
+        out = out + a;
+    }
+    return out;
+}
+
+fn flag(name: string): bool {
+    for (a in args()) {
+        if (a == name) { return true; }
+    }
+    return false;
+}
+
+/** The number after `--name`, or `fallback`; -1 if it isn't a number. */
+fn number(name: string, fallback: int): int {
+    match option(name, str(fallback)).to_int() {
+        Option.Some(n) => { return n; }
+        Option.None => { return -1; }
+    }
+    return -1;
+}
+
+/** What `games_wanted` answers for `--games forever`. */
+fn forever(): int { return 0 - 2; }
+
+/** The games asked for, in whole blocks; `forever()` for --games forever, or -1 if it isn't a number. */
+fn games_wanted(): int {
+    if (option("games", "100") == "forever") { return forever(); }
+    match option("games", "100").to_int() {
+        Option.Some(n) => {
+            // Whole blocks of 4, rounding up.
+            return (n + 3) / 4 * 4;
+        }
+        Option.None => { return -1; }
+    }
+    return 0;
+}
+
+/** The AIs named in --ai, or None and a message if one isn't known. */
+fn allowed_ais(known: List<Entrant>): Option<List<Entrant>> {
+    var out: List<Entrant> = [];
+    for (wanted in option("ai", "Greedy").split(',')) {
+        var name = wanted.trim();
+        var found = false;
+        for (e in known) {
+            if (e.name.to_lower() == name.to_lower()) { out.push(e); found = true; }
+        }
+        if (!found) {
+            var names = "";
+            for (e in known) {
+                if (names != "") { names = names + ", "; }
+                names = names + e.name;
+            }
+            printerr("Unknown AI '" + name + "'. Known: " + names + ".");
+            return Option.None;
+        }
+    }
+    return Option.Some(out);
+}
+
+// --- The running totals file
+
+/** The totals in the file, a fresh ledger if there's no file, or None if the file can't be read. */
+fn load(path: string): Option<Ledger> {
+    if (!exists(path)) { return Option.Some(new_ledger()); }
+    // Reading and parsing throw different errors, so each gets its own handler.
+    var text: Option<string> = Option.None;
+    run {
+        text = Option.Some(read_text(path));
+    } handle Throw {
+        final ctl throw(e) { printerr("Can't read " + path + ": " + str(e) + "."); }
+    }
+    var out: Option<Ledger> = Option.None;
+    match text {
+        Option.Some(t) => {
+            run {
+                out = Option.Some(ledger_from(parse_json(t)));
+            } handle Throw {
+                final ctl throw(e) { printerr(path + " isn't valid JSON: " + str(e) + ". Delete it to start over."); }
+            }
+        }
+        Option.None => {}
+    }
+    return out;
+}
+
+/**
+ * Saves the totals, and the report page next to them. Each is written to a
+ * temporary file that is then renamed over the real one: a rename replaces
+ * the file in one step, so cancelling mid-save leaves either the old version
+ * or the new one, never half a file.
+ */
+fn save(r: Run) {
+    // Writing waits on the disk, and meanwhile another worker's game can come
+    // in and ask to save. Only one save writes at a time; a later ask marks the
+    // totals stale, and the save in progress writes them again.
+    if (r.saving) {
+        r.stale = true;
+        return;
+    }
+    r.saving = true;
+    var again = true;
+    while (again) {
+        r.stale = false;
+        var began = instant();
+        var temporary = r.file + ".tmp";
+        var json = __pretty(ledger_data(r.ledger), 0);
+        run {
+            write_text(temporary, json + "\n");
+            move_path(temporary, r.file);
+        } handle Throw {
+            final ctl throw(e) { printerr("Can't save " + r.file + ": " + str(e)); }
+        }
+        write_data(r, json);
+        // The games recorded since the last save, taken before the write so
+        // games that come in meanwhile wait for the next one.
+        var lines_out = r.pending;
+        r.pending = [];
+        append_lines(games_log_path(r.file), lines_out);
+        r.save_ms = (instant() - began).as_millis();
+        again = r.stale;
+    }
+    r.saving = false;
+}
+
+/** Writes the totals, as `json`, to the script the report page loads. */
+fn write_data(r: Run, json: string) {
+    var path = data_path(r.file);
+    run {
+        write_text(path + ".tmp", data_script(json, now().unix_seconds()));
+        move_path(path + ".tmp", path);
+    } handle Throw {
+        final ctl throw(e) { printerr("Can't write the report data " + path + ": " + str(e)); }
+    }
+}
+
+/** Copies the report page next to the totals file. It loads the totals from the data script. */
+fn write_page(r: Run) {
+    var html = page_path(r.file);
+    run {
+        write_text(html + ".tmp", read_text(page_template()));
+        move_path(html + ".tmp", html);
+    } handle Throw {
+        final ctl throw(e) { printerr("Can't write the report page " + html + ": " + str(e)); }
+    }
+}
+
+/** Adds the lines to the end of the file, creating it if need be. */
+fn append_lines(path: string, lines_in: List<string>) {
+    if (lines_in.len() == 0) { return; }
+    var text = "";
+    for (l in lines_in) { text = text + l + "\n"; }
+    run {
+        using(open_file(path, Mode.Append)) { f -> f.write(text.bytes()); };
+    } handle Throw {
+        final ctl throw(e) { printerr("Can't append to " + path + ": " + str(e)); }
+    }
+}
+
+/** This process's memory in MB, or -1 where /proc isn't there. */
+fn memory_mb(): int {
+    var mb = 0 - 1;
+    run {
+        mb = rss_from_status(read_text("/proc/self/status"));
+    } handle Throw {
+        final ctl throw(e) {}
+    }
+    return mb;
+}
+
+/** Appends a timeline snapshot of the run so far, and starts a new interval. */
+fn snapshot(r: Run) {
+    if (r.interval.games == 0) { return; }
+    var l = r.ledger;
+    var line = snapshot_record(now().unix_seconds(), l.games, r.done, (instant() - r.started).as_seconds(), r.interval,
+        (instant() - r.interval_started).as_seconds(), memory_mb(), r.save_ms, r.workers, l.characters, l.archetypes, l.agents);
+    append_lines(timeline_path(r.file), [line]);
+    r.interval = new_interval();
+    r.interval_started = instant();
+}
+
+// --- Teams
+
+/** Eight different roster positions in random order: the first four are one team, the rest the other. */
+fn random_split(): List<int> {
+    var left: List<int> = [];
+    var i = 0;
+    while (i < roster().len()) { left.push(i); i = i + 1; }
+    var out: List<int> = [];
+    while (out.len() < 8) {
+        var pick = random_int(0, left.len());
+        out.push(left[pick]);
+        var rest: List<int> = [];
+        var j = 0;
+        while (j < left.len()) {
+            if (j != pick) { rest.push(left[j]); }
+            j = j + 1;
+        }
+        left = rest;
+    }
+    return out;
+}
+
+/** Fresh fighters for the given roster positions: characters carry HP and effects, so every game needs new ones. */
+fn team(positions: List<int>, from: int): List<Fighter> {
+    var all = roster();
+    var out: List<Fighter> = [];
+    var i = from;
+    while (i < from + 4) { out.push(all[positions[i]]); i = i + 1; }
+    return out;
+}
+
+fn names(t: List<Fighter>): List<string> {
+    var out: List<string> = [];
+    for (f in t) { out.push(f.body.name); }
+    return out;
+}
+
+fn archetypes(t: List<Fighter>): List<string> {
+    var out: List<string> = [];
+    for (f in t) { out.push(f.archetype); }
+    return out;
+}
+
+/** The archetypes of the characters with these names, from the roster. */
+fn archetypes_of(names: List<string>): List<string> {
+    var out: List<string> = [];
+    for (n in names) {
+        for (f in roster()) {
+            if (f.body.name == n) { out.push(f.archetype); }
+        }
+    }
+    return out;
+}
+
+fn all_archetypes(): List<string> { return ["Warrior", "Rogue", "Tank", "Mage", "Support"]; }
+
+// --- Logging
+
+/** Prints a progress line, flushed so it shows up straight away. */
+fn progress(line: string) {
+    print(line);
+    flush();
+}
+
+fn seconds(d: Duration): string { return fixed(d.as_seconds(), 1) + "s"; }
+
+fn joined(xs: List<string>): string {
+    var out = "";
+    for (x in xs) {
+        if (out != "") { out = out + ", "; }
+        out = out + x;
+    }
+    return out;
+}
+
+fn log_game(r: Run, g: Game) {
+    if (r.quiet) { return; }
+    var result = "draw in " + str(g.rounds) + " rounds";
+    if (g.winner == 0) { result = "home won in " + str(g.rounds) + " rounds"; }
+    if (g.winner == 1) { result = "away won in " + str(g.rounds) + " rounds"; }
+    var count = "[" + pad_left(str(r.done), str(r.planned).len(), " ") + "/" + str(r.planned) + "]";
+    progress(count + " " + g.home_ai + ": " + joined(g.home) + "  vs  " + g.away_ai + ": " + joined(g.away) + "  ->  " + result + " (" + fixed(g.took, 1) + "s)");
+}
+
+fn top_and_bottom(pool: Pool): string {
+    var all = ranked(pool);
+    var top = "";
+    var bottom = "";
+    var i = 0;
+    while (i < all.len()) {
+        var entry = all[i].name + " " + fixed(all[i].elo, 0);
+        if (i < 3) {
+            if (top != "") { top = top + ", "; }
+            top = top + entry;
+        }
+        if (i >= all.len() - 3 && i >= 3) {
+            if (bottom != "") { bottom = bottom + ", "; }
+            bottom = bottom + entry;
+        }
+        i = i + 1;
+    }
+    if (bottom == "") { return top; }
+    return "Top: " + top + ".  Bottom: " + bottom;
+}
+
+fn log_standings(r: Run) {
+    if (r.done % 20 != 0 && r.done != r.planned) { return; }
+    var line = "  -- " + str(r.done) + " of " + str(r.planned) + " games, " + seconds(instant() - r.started) + ". " + top_and_bottom(r.ledger.characters) + ".";
+    if (r.ledger.agents.ratings.len() > 0) { line = line + "  AIs: " + top_and_bottom(r.ledger.agents) + "."; }
+    progress(line);
+}
+
+// --- Playing
+
+/** Plays one game. */
+fn play_game(home: Entrant, away: Entrant, home_team: List<Fighter>, away_team: List<Fighter>): Game {
+    var began = instant();
+    var o = play_match(Seat { agent: home.agent, name: home.name }, Seat { agent: away.agent, name: away.name }, home_team, away_team, silent_screen());
+    return Game {
+        home_ai: home.name, away_ai: away.name, home: names(home_team), away: names(away_team),
+        winner: o.winner, rounds: o.rounds, took: (instant() - began).as_seconds()
+    };
+}
+
+/** Two random teams and two drawn AIs: each AI plays each team from each side. */
+fn block(allowed: List<Entrant>): List<Game> {
+    var split = random_split();
+    var a = allowed[random_int(0, allowed.len())];
+    var b = allowed[random_int(0, allowed.len())];
+    return [
+        play_game(a, b, team(split, 0), team(split, 4)),
+        play_game(b, a, team(split, 4), team(split, 0)),
+        play_game(a, b, team(split, 4), team(split, 0)),
+        play_game(b, a, team(split, 0), team(split, 4))
+    ];
+}
+
+/** Adds a played game to the totals, logs it, and saves after every 4. */
+fn tally(r: Run, g: Game) {
+    var l = r.ledger;
+    var home_kinds = archetypes_of(g.home);
+    var away_kinds = archetypes_of(g.away);
+    // What the character ratings expected, before this game moves them.
+    var home_expected = expected(side_elo(l.characters, g.home), side_elo(l.characters, g.away));
+    r.done = r.done + 1;
+    l.games = l.games + 1;
+    log_game(r, g);
+    r.pending.push(game_record(g, now().unix_seconds()));
+    count_game(r.interval, g);
+    if (g.winner < 0) {
+        l.draws = l.draws + 1;
+    } else {
+        var home_won = g.winner == 0;
+        if (home_won) {
+            record(l.characters, g.home, g.away);
+            record(l.archetypes, home_kinds, away_kinds);
+            record(l.sides, ["Home"], ["Away"]);
+        } else {
+            record(l.characters, g.away, g.home);
+            record(l.archetypes, away_kinds, home_kinds);
+            record(l.sides, ["Away"], ["Home"]);
+        }
+        // AIs are only rated against a different AI.
+        if (g.home_ai != g.away_ai) {
+            if (home_won) { record(l.agents, [g.home_ai], [g.away_ai]); } else { record(l.agents, [g.away_ai], [g.home_ai]); }
+        }
+        credit(l.mixes, mix_name(home_kinds), home_won, home_expected);
+        credit(l.mixes, mix_name(away_kinds), !home_won, 1.0 - home_expected);
+        for (k in all_archetypes()) {
+            credit(l.counts, count_name(home_kinds, k), home_won, home_expected);
+            credit(l.counts, count_name(away_kinds, k), !home_won, 1.0 - home_expected);
+        }
+        for (p in pairs_of(g.home)) { credit(l.pairs, p, home_won, home_expected); }
+        for (p in pairs_of(g.away)) { credit(l.pairs, p, !home_won, 1.0 - home_expected); }
+    }
+    log_standings(r);
+    if (r.done % snapshot_every() == 0) { snapshot(r); }
+    if (r.done % 4 == 0 || r.done == r.planned) { save(r); }
+}
+
+// --- Workers (--jobs)
+
+/** A worker: plays its games and prints each one as a line, flushed so the main process sees it straight away. */
+fn work(allowed: List<Entrant>, games: int) {
+    var played = 0;
+    while (played < games) {
+        for (g in block(allowed)) {
+            print(game_line(g));
+            flush();
+        }
+        played = played + 4;
+    }
+}
+
+/** Reads one worker's games as they arrive and records each, then waits for it to finish. */
+fn follow(r: Run, child: Child, n: int) {
+    match child.stdout() {
+        Option.Some(out) => {
+            for (line in lines(out)) {
+                match parse_game(line) {
+                    Option.Some(g) => { tally(r, g); }
+                    Option.None => { printerr("Worker " + str(n) + " said something unexpected: " + line); }
+                }
+            }
+        }
+        Option.None => {}
+    }
+    var exit_code = child.wait();
+    if (exit_code != 0) { printerr("Worker " + str(n) + " stopped with exit code " + str(exit_code) + "."); }
+}
+
+/**
+ * The most games one worker process plays before it exits and a fresh one
+ * takes over; a whole number of blocks of 4. Before cx 0.0.27 a process kept
+ * every finished battle in memory (CronyxLang#144, #147) and slowed down the
+ * longer it played, so this was 24. Now one worker per lane plays a whole
+ * normal run; the cap is only a safety net.
+ */
+fn worker_games(): int { return 1000; }
+
+/**
+ * Plays `total` games in lane `n`: one worker process after another, each
+ * playing at most `worker_games`, recorded as they arrive.
+ */
+fn lane(r: Run, total: int, n: int) {
+    var left = total;
+    while (left > 0) {
+        var games = left;
+        if (games > worker_games()) { games = worker_games(); }
+        var child = spawn(Command.new("cx").arg("run").arg("src/balance.cx").arg("--").arg("--worker")
+            .arg("--games").arg(str(games)).arg("--ai").arg(option("ai", "Greedy")).stdout(Stdio.Piped));
+        r.workers = r.workers + 1;
+        follow(r, child, n);
+        left = left - games;
+    }
+}
+
+/**
+ * Plays the run's games in `jobs` lanes at once, each running worker
+ * processes (`cx run src/balance.cx -- --worker ...`) one after another.
+ */
+fn play_in_jobs(r: Run, jobs: int) {
+    run {
+        var tasks = [];
+        var n = 1;
+        for (share in shares(r.planned, jobs)) {
+            var lane_games = share;
+            var lane_number = n;
+            tasks.push(() => lane(r, lane_games, lane_number));
+            n = n + 1;
+        }
+        interleaved(tasks);
+    } handle Throw {
+        final ctl throw(e) { printerr("Couldn't run the workers: " + str(e) + ". Run the checker from the project's root, with cx on PATH."); }
+    }
+}
+
+// --- Report
+
+/** A pair needs this many games together to be listed: fewer is mostly noise. */
+fn pair_min_games(): int { return 30; }
+
+/** How many of the best and of the worst pairs the report lists. */
+fn pair_ends(): int { return 10; }
+
+fn report(r: Run) {
+    var l = r.ledger;
+    // A run's saves wrote the page already; with no games played, write it now.
+    if (r.done == 0) {
+        write_page(r);
+        write_data(r, __pretty(ledger_data(l), 0));
+    }
+    print("");
+    if (r.done == 0) {
+        print("Totals: " + str(l.games) + " games in " + r.file + ".");
+    } else {
+        print("Totals: " + str(l.games) + " games in " + r.file + " (" + str(r.done) + " this run, " + seconds(instant() - r.started) + ").");
+    }
+    print("");
+    for (line in pool_table("CHARACTERS", l.characters)) { print(line); }
+    print("");
+    for (line in pool_table("ARCHETYPES", l.archetypes)) { print(line); }
+    print("");
+    for (line in pool_table("SIDES", l.sides)) { print(line); }
+    print("");
+    for (line in mix_table("ARCHETYPE COUNTS (score: win % above what the characters predict)", l.counts, 1)) { print(line); }
+    print("");
+    for (line in mix_table("TEAM MIXES WITH 10+ GAMES", l.mixes, 10)) { print(line); }
+    print("");
+    for (line in ends_table("CHARACTER PAIRS WITH " + str(pair_min_games()) + "+ GAMES (best and worst " + str(pair_ends()) + ")", l.pairs, pair_min_games(), pair_ends())) { print(line); }
+    if (l.agents.ratings.len() > 0) {
+        print("");
+        for (line in pool_table("AGENTS", l.agents)) { print(line); }
+    }
+    print("");
+    print("Draws (both teams fell at once, or the 100-round limit): " + str(l.draws) + ".");
+    print("Report page: " + page_path(r.file) + " (open it in a browser).");
+}
+
+fn start(known: List<Entrant>) {
+    var file = option("file", "balance.json");
+    var planned = games_wanted();
+    var endless = planned == forever();
+    if (planned < 0 && !endless) {
+        printerr("--games needs a number of games, e.g. --games 100 (0 for just the report, forever to play until cancelled).");
+        return;
+    }
+    var jobs = number("jobs", 1);
+    if (jobs < 1) {
+        printerr("--jobs needs a number of worker processes, 1 or more.");
+        return;
+    }
+    if (endless) {
+        play_forever(file);
+        return;
+    }
+    match allowed_ais(known) {
+        Option.Some(allowed) => {
+            if (flag("--worker")) {
+                work(allowed, planned);
+                return;
+            }
+            match load(file) {
+                Option.Some(ledger) => {
+                    if (planned == 0 && ledger.games == 0) {
+                        printerr("No games in " + file + " yet: run some with --games N first.");
+                        return;
+                    }
+                    var r = Run { ledger: ledger, allowed: allowed, file: file, planned: planned, done: 0, started: instant(), quiet: flag("quiet"), saving: false, stale: false,
+                        pending: [], interval: new_interval(), interval_started: instant(), save_ms: 0, workers: 0 };
+                    var who = "";
+                    for (e in allowed) {
+                        if (who != "") { who = who + ", "; }
+                        who = who + e.name;
+                    }
+                    var how = "";
+                    if (jobs > 1) { how = " in " + str(shares(planned, jobs).len()) + " jobs"; }
+                    if (planned > 0) {
+                        progress("Playing " + str(planned) + " games" + how + " with " + who + ", adding to " + str(ledger.games) + " already in " + file + "...");
+                        write_page(r);
+                        append_lines(timeline_path(file), [start_record(now().unix_seconds(), joined_args(), ledger.games)]);
+                        play_in_jobs(r, jobs);
+                        // In case a worker stopped early, short of a save point.
+                        save(r);
+                        snapshot(r);
+                    }
+                    // A batch of --games forever leaves the full report to the end of the night.
+                    if (flag("--batch")) {
+                        progress("Batch done: " + str(r.done) + " games in " + seconds(instant() - r.started) + "; " + str(ledger.games) + " in " + file + " now.");
+                    } else {
+                        report(r);
+                    }
+                }
+                Option.None => {}
+            }
+        }
+        Option.None => {}
+    }
+}
+
+/** Games in each batch of --games forever. */
+fn batch_games(): int { return 1000; }
+
+/**
+ * --games forever: runs the checker again and again, `batch_games` at a time,
+ * with the same options, until cancelled. Each batch is a run of its own that
+ * loads the totals, adds to them and exits. A long-lived Cronyx process keeps
+ * memory from before each file write it waits on (CronyxLang#151), and the
+ * main process saves every few games, so one endless run would grow without
+ * bound; a batch frees it all when it exits. This process only waits.
+ */
+fn play_forever(file: string) {
+    var passed: List<string> = [];
+    var given = args();
+    var i = 0;
+    while (i < given.len()) {
+        // Drop `--games forever`; every other option goes to each batch.
+        if (given[i] == "--games") { i = i + 2; continue; }
+        passed.push(given[i]);
+        i = i + 1;
+    }
+    progress("Playing until cancelled (Ctrl+C), " + str(batch_games()) + " games a batch. Totals, " + page_path(file) + " and the logs are saved every few games.");
+    var batch = 1;
+    while (true) {
+        var command = Command.new("cx").arg("run").arg("src/balance.cx").arg("--").arg("--games").arg(str(batch_games())).arg("--batch");
+        for (p in passed) { command = command.arg(p); }
+        var exit_code = 0;
+        run {
+            exit_code = status(command);
+        } handle Throw {
+            final ctl throw(e) {
+                printerr("Couldn't start a batch: " + str(e) + ". Run the checker from the project's root, with cx on PATH.");
+                exit_code = 1;
+            }
+        }
+        if (exit_code != 0) {
+            printerr("Batch " + str(batch) + " stopped with exit code " + str(exit_code) + "; stopping.");
+            return;
+        }
+        batch = batch + 1;
+    }
+}
+
+/** Every AI the checker can draw, by name. */
+fn known_ais(): List<Entrant> {
+    var out: List<Entrant> = [];
+    for (name in ai_names()) {
+        match ai_named(name) {
+            Option.Some(agent) => { out.push(Entrant { name: name, agent: agent }); }
+            Option.None => {}
+        }
+    }
+    return out;
+}
+
+start(known_ais());

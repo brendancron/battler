@@ -1,0 +1,39 @@
+import { random_int } from "std/random/Random";
+import { Screen } from "ui/display";
+import { interactive } from "ui/term";
+import { Agent } from "agents/agent";
+import { ConsoleAgent } from "agents/console";
+import { GreedyAgent } from "agents/greedy";
+import { Seat, run_draft, play_match } from "game/game";
+
+// A coin flip makes you home or away (docs/draft.md).
+var you_are_home = random_int(0, 2) == 0;
+
+// You're drawn at the bottom of the box whichever side you're on. At a
+// terminal, each step of a turn waits for a key; piped input gets the plain
+// transcript.
+var your_side = 1;
+var labels = ["FOE", "PLAYER"];
+if (you_are_home) { your_side = 0; labels = ["PLAYER", "FOE"]; }
+var screen = Screen { stepping: interactive(), silent: false, bottom: your_side, labels: labels };
+
+var you = Seat { agent: ConsoleAgent { screen: screen }, name: "you" };
+var foe = Seat { agent: GreedyAgent, name: "the foe" };
+var home = foe;
+var away = you;
+if (you_are_home) {
+    home = you;
+    away = foe;
+    print("Coin flip: you're home. You get priority in the Fast and Slow phases; the foe picks first.");
+} else {
+    print("Coin flip: you're away. You pick first; the foe gets priority in the Fast and Slow phases.");
+}
+
+match run_draft(home, away, screen) {
+    Option.Some(teams) => {
+        var outcome = play_match(home, away, teams.home, teams.away, screen);
+        if (outcome.winner == your_side) { print("You won!"); }
+        if (outcome.winner == 1 - your_side) { print("You lost..."); }
+    }
+    Option.None => {}
+}

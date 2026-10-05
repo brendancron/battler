@@ -1,0 +1,136 @@
+import { async } from "std/async/Task";
+import { Character, tier_name } from "../core/creature";
+import { Battle, Side, Slot, new_battle } from "../core/battle";
+import { Screen, play, begin_round, end_round, lose_turn } from "../ui/display";
+import { engine } from "../core/engine";
+import { MoveDef } from "../core/move";
+import { Fighter, roster, minion_moves } from "../content/roster";
+import { Teams, pick_order, without } from "draft";
+import { Agent, Turn, Plan } from "../agents/agent";
+import { phases, start_round, begin_phase, next_actor } from "../core/order";
+
+/** One side of a game: who decides for it, and what to call it in messages. */
+type Seat { agent: Agent, name: string }
+
+// Agent calls are async, so an agent may suspend (to wait on a network peer,
+// say).
+
+/**
+ * Runs the draft between two seats, `home` and `away` (docs/draft.md), and
+ * announces each pick on the screen. Answers None if either agent leaves
+ * before it is done.
+ */
+fn run_draft(home: Seat, away: Seat, screen: Screen): Option<Teams> {
+    var available = roster();
+    var home_team: List<Fighter> = [];
+    var away_team: List<Fighter> = [];
+    var pick = 1;
+    for (home_picks in pick_order()) {
+        var seat = away;
+        var mine = away_team;
+        var theirs = home_team;
+        if (home_picks) { seat = home; mine = home_team; theirs = away_team; }
+        var index = seat.agent.choose_pick(available, mine, theirs, pick);
+        if (index < 0 || index >= available.len()) { return Option.None; }
+        if (!screen.silent) { print("Pick " + str(pick) + " of 8: " + seat.name + " took the " + available[index].body.name + "."); }
+        mine.push(available[index]);
+        available = without(available, index);
+        pick = pick + 1;
+    }
+    return Option.Some(Teams { home: home_team, away: away_team });
+}
+
+fn bodies(team: List<Fighter>): List<Character> {
+    var out: List<Character> = [];
+    for (f in team) { out.push(f.body); }
+    return out;
+}
+
+/**
+ * The moves of the character in the slot. A team's own characters have their
+ * fighter's; a minion that takes turns, summoned mid-game, has its own (a
+ * skeleton's basic attack), or the puppeted character's if it's a puppet.
+ */
+fn moves_at(battle: Battle, teams: List<List<Fighter>>, slot: Slot): List<MoveDef> {
+    if (slot.index < teams[slot.side].len()) { return teams[slot.side][slot.index].moves; }
+    var c = battle.sides[slot.side].active[slot.index];
+    if (c.is_puppet()) {
+        for (t in teams) {
+            for (f in t) {
+                if ("Puppet " + f.body.name == c.name) { return f.moves; }
+            }
+        }
+    }
+    return minion_moves(c.name);
+}
+
+/** Every slot's moves, by side and slot, minions included. */
+fn all_kits(battle: Battle, teams: List<List<Fighter>>): List<List<List<MoveDef>>> {
+    var out: List<List<List<MoveDef>>> = [];
+    var side = 0;
+    while (side < battle.sides.len()) {
+        var kits: List<List<MoveDef>> = [];
+        var index = 0;
+        while (index < battle.sides[side].active.len()) {
+            kits.push(moves_at(battle, teams, Slot { side: side, index: index }));
+            index = index + 1;
+        }
+        out.push(kits);
+        side = side + 1;
+    }
+    return out;
+}
+
+fn over(battle: Battle): bool { return battle.defeated(0) || battle.defeated(1); }
+
+/** How a match ended: the side that won (0 home, 1 away, -1 for no winner), after how many rounds. */
+type Outcome { winner: int, rounds: int }
+
+/** A match still going after this many rounds is a draw. Fatigue (docs/fatigue.md) ends games by round 20; this is a safety net. */
+fn max_rounds(): int { return 100; }
+
+/**
+ * Plays a match between two teams, each with an agent deciding for it. The
+ * home team is side 0. Teams are used as given, so they can come from a draft
+ * or be built by hand, e.g. for balance testing with two AIs and a
+ * `silent_screen()`.
+ */
+fn play_match(home: Seat, away: Seat, home_team: List<Fighter>, away_team: List<Fighter>, screen: Screen): Outcome {
+    var seats = [home, away];
+    var teams = [home_team, away_team];
+    var battle = new_battle([Side { active: bodies(home_team) }, Side { active: bodies(away_team) }], 0);
+    var rules = engine();
+    var round = 1;
+    var quit = false;
+    while (!quit && !over(battle) && round <= max_rounds()) {
+        start_round(battle);
+        begin_round(screen, rules, battle, "ROUND " + str(round) + " · START");
+        for (phase in phases()) {
+            var title = "ROUND " + str(round) + " · " + tier_name(phase).to_upper() + " PHASE";
+            var cursor = begin_phase(battle, phase);
+            var going = true;
+            while (going && !quit && !over(battle)) {
+                match next_actor(battle, cursor) {
+                    Option.Some(slot) => {
+                        if (battle.sides[slot.side].active[slot.index].skips_turn()) {
+                            lose_turn(screen, rules, battle, title, slot);
+                        } else {
+                            var moves = moves_at(battle, teams, slot);
+                            var turn = Turn { battle: battle, slot: slot, moves: moves, kits: all_kits(battle, teams), title: title };
+                            match seats[slot.side].agent.choose_move(turn) {
+                                Option.Some(plan) => { play(screen, rules, battle, title, slot, plan.move, plan.choice); }
+                                Option.None => { quit = true; }
+                            }
+                        }
+                        battle.sides[slot.side].active[slot.index].acted = true;
+                    }
+                    Option.None => { going = false; }
+                }
+            }
+        }
+        if (!quit && !over(battle)) { end_round(screen, rules, battle, "ROUND " + str(round) + " · END", round); }
+        round = round + 1;
+    }
+    // No winner if an agent left, the round limit was reached, or both teams fell at once.
+    return Outcome { winner: battle.winner(), rounds: round - 1 };
+}

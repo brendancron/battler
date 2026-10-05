@@ -1,0 +1,128 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random } from "std/random/Random";
+import { Character } from "../core/creature";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef, unavailable } from "../core/move";
+import { TargetShape, Choice, has_targets } from "../core/target";
+import { Fighter } from "../content/roster";
+import { ask_pick } from "../game/draft";
+import { Screen, show } from "../ui/display";
+import { ask } from "../ui/prompt";
+import { Agent, Plan, Turn } from "agent";
+
+/** A person playing at this terminal. */
+type ConsoleAgent { screen: Screen }
+
+impl Agent for ConsoleAgent {
+    fn choose_move(self, turn: Turn): <async, Console, Stdin, Random, Throw<IoError>> Option<Plan> {
+        show(self.screen, turn.battle, turn.title, turn.slot);
+        var plan = pick_action(turn.battle, turn.slot, turn.moves);
+        print("");
+        return plan;
+    }
+
+    fn choose_pick(self, available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): <async, Console, Stdin, Random, Throw<IoError>> int {
+        return ask_pick(available, mine, theirs, pick);
+    }
+}
+
+fn slot_names(battle: Battle, slots: List<Slot>): List<string> {
+    var names: List<string> = [];
+    for (s in slots) {
+        var p = battle.sides[s.side].active[s.index];
+        names.push(p.name + " (" + str(p.hp) + "/" + str(p.max_health()) + ")");
+    }
+    return names;
+}
+
+fn pick_slot(battle: Battle, slots: List<Slot>, question: string): Option<Choice> {
+    var picked = ask(question, slot_names(battle, slots));
+    if (picked < 0) { return Option.None; }
+    return Option.Some(Choice.Slots([slots[picked]]));
+}
+
+/** The target the move's shape calls for, asking only when there is a choice to make. */
+fn pick_choice(battle: Battle, user: Slot, move: MoveDef): Option<Choice> {
+    match move.shape {
+        TargetShape.SingleFoe => { return pick_slot(battle, battle.targetable_foes(user), move.name + " which foe?"); }
+        TargetShape.SingleAlly => { return pick_slot(battle, battle.ally_slots(user), move.name + " which ally?"); }
+        TargetShape.AllyCorpse => { return pick_slot(battle, battle.corpse_slots(user.side), move.name + " which fallen ally?"); }
+        TargetShape.FoeCorpse => { return pick_slot(battle, battle.corpse_slots(1 - user.side), move.name + " which fallen foe?"); }
+        TargetShape.OtherAlly => {
+            var others: List<Slot> = [];
+            for (s in battle.ally_slots(user)) {
+                if (s.index != user.index) { others.push(s); }
+            }
+            return pick_slot(battle, others, move.name + " which ally?");
+        }
+        TargetShape.PuppetCorpse => { return pick_slot(battle, battle.corpse_slots(1 - user.side), move.name + " which fallen foe?"); }
+        TargetShape.ChainPicks(n) => {
+            var picks: List<Slot> = [];
+            var going = true;
+            while (going && picks.len() < n) {
+                var targets = battle.next_in_chain(user, picks);
+                if (targets.len() == 0) {
+                    going = false;
+                } else {
+                    var question = move.name + ", bolt " + str(picks.len() + 1) + " of " + str(n) + ": which foe?";
+                    var picked = ask(question, slot_names(battle, targets));
+                    if (picked < 0) { return Option.None; }
+                    picks.push(targets[picked]);
+                }
+            }
+            return Option.Some(Choice.Slots(picks));
+        }
+        TargetShape.FoePicks(n) => {
+            var picks: List<Slot> = [];
+            var i = 0;
+            while (i < n) {
+                var question = move.name + ", hit " + str(i + 1) + " of " + str(n) + ": which foe?";
+                var targets = battle.targetable_foes(user);
+                var picked = ask(question, slot_names(battle, targets));
+                if (picked < 0) { return Option.None; }
+                picks.push(targets[picked]);
+                i = i + 1;
+            }
+            return Option.Some(Choice.Slots(picks));
+        }
+        _ => { return Option.Some(Choice.NoTarget); }
+    }
+    return Option.None;
+}
+
+/** Why the move can't be used now (cooling down, silenced, nothing to target), or "" if it can. */
+fn why_not(battle: Battle, user: Slot, c: Character, move: MoveDef): string {
+    var why = unavailable(c, move);
+    if (why != "") { return why; }
+    if (!has_targets(battle, user, move.shape)) { return "no one to target"; }
+    return "";
+}
+
+/** One action for the player's character in the slot; None once the input has ended. */
+fn pick_action(battle: Battle, user: Slot, moveset: List<MoveDef>): Option<Plan> {
+    var p = battle.sides[user.side].active[user.index];
+    var names: List<string> = [];
+    for (m in moveset) {
+        var why = why_not(battle, user, p, m);
+        if (why == "") { names.push(m.name); } else { names.push(m.name + " (" + why + ")"); }
+    }
+    var picked = -1;
+    while (picked < 0) {
+        picked = ask("What will " + p.name + " do?", names);
+        if (picked < 0) { return Option.None; }
+        var why = why_not(battle, user, p, moveset[picked]);
+        if (why != "") {
+            print(moveset[picked].name + " can't be used: " + why + ".");
+            picked = -1;
+        }
+    }
+    var move = moveset[picked];
+    match pick_choice(battle, user, move) {
+        Option.Some(choice) => { return Option.Some(Plan { slot: user, move: move, choice: choice }); }
+        Option.None => { return Option.None; }
+    }
+    return Option.None;
+}

@@ -1,0 +1,118 @@
+import { substring } from "std/text/String";
+import { Game } from "jobs";
+import { Pool, fixed } from "ratings";
+
+/**
+ * The balance checker's logs (docs/balance.md#logs), written next to the
+ * totals file as JSON lines, one object per line, appended and never
+ * rewritten:
+ *
+ * - `balance.games.jsonl`: every game, as it was recorded.
+ * - `balance.timeline.jsonl`: a line when a run starts, and a snapshot every
+ *   `snapshot_every` games: throughput, game speed, memory, save time, and
+ *   every rating at that moment.
+ *
+ * They're for looking at a long run afterwards (how ratings settle, whether
+ * anything slows down), not for the checker itself, which only reads the
+ * totals.
+ */
+
+/** Games between timeline snapshots. */
+fn snapshot_every(): int { return 100; }
+
+/** The totals file's name without `.json`: balance.json gives balance. */
+fn log_base(file: string): string {
+    if (file.ends_with(".json")) { return substring(file, 0, file.len() - 5); }
+    return file;
+}
+
+fn games_log_path(file: string): string { return log_base(file) + ".games.jsonl"; }
+fn timeline_path(file: string): string { return log_base(file) + ".timeline.jsonl"; }
+
+/** The string as a JSON string literal. */
+fn quoted(s: string): string { return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; }
+
+fn names_json(xs: List<string>): string {
+    var out = "";
+    for (x in xs) {
+        if (out != "") { out = out + ","; }
+        out = out + quoted(x);
+    }
+    return "[" + out + "]";
+}
+
+/** One game as a line of the game log. `time` is in Unix seconds. */
+fn game_record(g: Game, time: int): string {
+    return "{\"time\":" + str(time) + ",\"home_ai\":" + quoted(g.home_ai) + ",\"away_ai\":" + quoted(g.away_ai)
+        + ",\"home\":" + names_json(g.home) + ",\"away\":" + names_json(g.away)
+        + ",\"winner\":" + str(g.winner) + ",\"rounds\":" + str(g.rounds) + ",\"secs\":" + fixed(g.took, 3) + "}";
+}
+
+/** What happened since the last snapshot. */
+type Interval { games: int, secs: float, rounds: int, draws: int, home_wins: int }
+
+fn new_interval(): Interval { return Interval { games: 0, secs: 0.0, rounds: 0, draws: 0, home_wins: 0 }; }
+
+/** Counts one game into the interval. */
+fn count_game(iv: Interval, g: Game) {
+    iv.games = iv.games + 1;
+    iv.secs = iv.secs + g.took;
+    iv.rounds = iv.rounds + g.rounds;
+    if (g.winner < 0) { iv.draws = iv.draws + 1; }
+    if (g.winner == 0) { iv.home_wins = iv.home_wins + 1; }
+}
+
+/** A pool as `{"name": [elo, games, wins], ...}`. */
+fn pool_json(pool: Pool): string {
+    var out = "";
+    for (r in pool.ratings) {
+        if (out != "") { out = out + ","; }
+        out = out + quoted(r.name) + ":[" + fixed(r.elo, 1) + "," + str(r.games) + "," + str(r.wins) + "]";
+    }
+    return "{" + out + "}";
+}
+
+fn ratio(a: float, b: float): float {
+    if (b == 0.0) { return 0.0; }
+    return a / b;
+}
+
+/**
+ * A timeline snapshot. `wall` is the seconds the interval took on the clock,
+ * `elapsed` the seconds since the run started; `rss_mb` is the main process's
+ * memory (-1 if unknown), `save_ms` how long the last save took, `workers`
+ * how many worker processes the run has started.
+ */
+fn snapshot_record(time: int, total: int, done: int, elapsed: float, iv: Interval, wall: float, rss_mb: int, save_ms: int, workers: int, characters: Pool, archetypes: Pool, agents: Pool): string {
+    var n = iv.games.to_float();
+    return "{\"time\":" + str(time) + ",\"kind\":\"snapshot\",\"games\":" + str(total) + ",\"this_run\":" + str(done)
+        + ",\"elapsed_s\":" + fixed(elapsed, 1)
+        + ",\"interval\":{\"games\":" + str(iv.games) + ",\"wall_s\":" + fixed(wall, 1)
+        + ",\"games_per_min\":" + fixed(ratio(n * 60.0, wall), 1)
+        + ",\"avg_game_s\":" + fixed(ratio(iv.secs, n), 3)
+        + ",\"avg_rounds\":" + fixed(ratio(iv.rounds.to_float(), n), 2)
+        + ",\"draws\":" + str(iv.draws)
+        + ",\"home_win_pct\":" + fixed(ratio(100.0 * iv.home_wins.to_float(), n - iv.draws.to_float()), 1) + "}"
+        + ",\"main_rss_mb\":" + str(rss_mb) + ",\"last_save_ms\":" + str(save_ms) + ",\"workers_started\":" + str(workers)
+        + ",\"characters\":" + pool_json(characters) + ",\"archetypes\":" + pool_json(archetypes) + ",\"agents\":" + pool_json(agents) + "}";
+}
+
+/** The line a run starts with: when, what it was asked to do, and how much was in the totals already. */
+fn start_record(time: int, args: string, total: int): string {
+    return "{\"time\":" + str(time) + ",\"kind\":\"start\",\"args\":" + quoted(args) + ",\"games\":" + str(total) + "}";
+}
+
+/** The resident memory in MB from the text of /proc/self/status, or -1 if it isn't there. */
+fn rss_from_status(status: string): int {
+    for (line in status.split('\n')) {
+        if (line.starts_with("VmRSS:")) {
+            for (part in line.split(' ')) {
+                match part.trim().to_int() {
+                    Option.Some(kb) => { return kb / 1024; }
+                    Option.None => {}
+                }
+            }
+        }
+    }
+    return 0 - 1;
+}

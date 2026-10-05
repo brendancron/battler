@@ -1,0 +1,156 @@
+import { Character, Action, EventKind } from "creature";
+import { Battle, Slot } from "battle";
+import { TargetShape, Choice, Target, bind } from "target";
+import { Engine, perform, announce_from } from "engine";
+
+/**
+ * A move: who it can target, and the actions it takes against them. After it
+ * is used, it can't be used again for `cooldown` of the user's turns. A
+ * `basic` move is the character's basic attack: no cooldown, and still usable
+ * while silenced. See docs/moves.md.
+ */
+type MoveDef {
+    name: string,
+    shape: TargetShape,
+    apply: (Battle, Character, Target) -> List<Action>,
+    cooldown: int,
+    basic: bool,
+}
+
+/** Why the character can't use the move right now, or "" if it can. */
+fn unavailable(c: Character, move: MoveDef): string {
+    if (c.silenced() && !move.basic) { return "silenced"; }
+    var left = c.cooldown_left(move.name);
+    if (left == 1) { return "ready next turn"; }
+    if (left > 1) { return "ready in " + str(left) + " turns"; }
+    return "";
+}
+
+fn usable(c: Character, move: MoveDef): bool { return unavailable(c, move) == ""; }
+
+/** Ends the character's turn: its cooldowns tick, and the move it used, if any, starts cooling down. */
+fn turn_over(c: Character, used: Option<MoveDef>) {
+    c.tick_cooldowns();
+    match used {
+        Option.Some(m) => { c.start_cooldown(m.name, m.cooldown); }
+        Option.None => {}
+    }
+}
+
+/** Who a move went to, for the log: " on Monk", " on the whole team", or nothing for a move on the user. */
+fn aimed_at(shape: TargetShape, target: Target, user: Character): string {
+    match shape {
+        TargetShape.AllFoes => { return " on every foe"; }
+        TargetShape.Weakest => { return ""; }
+        TargetShape.AllAllies => { return " on the whole team"; }
+        _ => {}
+    }
+    match target {
+        Target.Single(c) => {
+            if (same(c, user)) { return " on itself"; }
+            return " on " + c.name;
+        }
+        Target.Spread(cs) => {
+            var out = "";
+            var i = 0;
+            while (i < cs.len()) {
+                if (i > 0 && i == cs.len() - 1) { out = out + " and "; } else if (i > 0) { out = out + ", "; }
+                out = out + cs[i].name;
+                i = i + 1;
+            }
+            return " on " + out;
+        }
+        Target.User(_) => { return ""; }
+    }
+    return "";
+}
+
+fn use_move(engine: Engine, battle: Battle, user: Slot, move: MoveDef, choice: Choice): bool {
+    match battle.at(user) {
+        Option.Some(attacker) => {
+            if (!usable(attacker, move)) {
+                battle.say(attacker.name + " can't use " + move.name + " (" + unavailable(attacker, move) + ").");
+                return false;
+            }
+            match bind(move.shape, choice, battle, user) {
+                Option.Some(target) => {
+                    battle.say(attacker.name + " used " + move.name + aimed_at(move.shape, target, attacker) + "!");
+                    var apply = move.apply;
+                    var origin = attacker.name + ": " + move.name;
+                    var actions = apply(battle, attacker, target);
+                    perform(engine, battle, origin, actions);
+                    announce_from(engine, battle, origin, EventKind.MoveUsed(attacker, deals_damage(attacker, actions)));
+                    return true;
+                }
+                Option.None => {
+                    battle.say(attacker.name + " has no valid target for " + move.name + ".");
+                    return false;
+                }
+            }
+        }
+        Option.None => { return false; }
+    }
+    return false;
+}
+
+/** Power is the percentage of HP taken off when attack equals defense. See docs/damage.md. */
+/** Whether any of the actions is a direct hit from the attacker, drains included. */
+fn deals_damage(attacker: Character, actions: List<Action>): bool {
+    for (a in actions) {
+        match a {
+            Action.Damage(_, source, _, direct) => {
+                match source {
+                    Option.Some(s) => {
+                        if (direct && same(s, attacker)) { return true; }
+                    }
+                    Option.None => {}
+                }
+            }
+            Action.Drain(_, from, _, _) => {
+                if (same(from, attacker)) { return true; }
+            }
+            Action.AreaDrain(from, _, _, _) => {
+                if (same(from, attacker)) { return true; }
+            }
+            _ => {}
+        }
+    }
+    return false;
+}
+
+fn damage(attacker: Character, defender: Character, power: int): int {
+    return damage_from(attacker, attacker.current_attack(), defender, power);
+}
+
+/** Damage with the given attack value, then each of the attacker's effects' `scale_hit` against this defender. */
+fn damage_from(attacker: Character, attack: int, defender: Character, power: int): int {
+    var d = power * attack / defender.current_defense();
+    for (e in attacker.effects) {
+        var scale = e.scale_hit;
+        d = scale(attacker, e, defender, d);
+    }
+    if (d < 1) { return 1; }
+    return d;
+}
+
+/** A later hit of a move that hits the same target more than once: first-hit-only boosts don't apply. */
+fn follow_up_hit(attacker: Character, defender: Character, power: int): Action {
+    return Action.Damage(defender, Option.Some(attacker), damage_from(attacker, attacker.follow_up_attack(), defender, power), true);
+}
+
+/** A basic attack: a direct hit on one foe with no cooldown. */
+fn basic_attack(name: string, power: int): MoveDef {
+    fn strike(battle: Battle, user: Character, target: Target): List<Action> {
+        match target {
+            Target.Single(defender) => { return [hit(user, defender, power)]; }
+            _ => { return []; }
+        }
+        return [];
+    }
+    return MoveDef { name: name, shape: TargetShape.SingleFoe, apply: strike, cooldown: 0, basic: true };
+}
+
+/** A direct hit from the attacker. */
+fn hit(attacker: Character, defender: Character, power: int): Action {
+    return Action.Damage(defender, Option.Some(attacker), damage(attacker, defender, power), true);
+}

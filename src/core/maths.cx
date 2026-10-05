@@ -1,0 +1,45 @@
+/** e^x, by halving x until it is small, summing the series, then squaring back up. */
+fn exp(x: float): float {
+    var halvings = 0;
+    var y = x;
+    while (y > 0.5 || y < -0.5) { y = y / 2.0; halvings = halvings + 1; }
+    var term = 1.0;
+    var sum = 1.0;
+    var n = 1;
+    while (n < 20) {
+        term = term * y / n.to_float();
+        sum = sum + term;
+        n = n + 1;
+    }
+    while (halvings > 0) { sum = sum * sum; halvings = halvings - 1; }
+    return sum;
+}
+
+/** The natural log of a positive x, as ln(m) + k ln 2 with m in [0.5, 1]. */
+fn ln(x: float): float {
+    var m = x;
+    var k = 0;
+    while (m > 1.0) { m = m / 2.0; k = k + 1; }
+    while (m < 0.5) { m = m * 2.0; k = k - 1; }
+    // ln(m) = 2 atanh(z) for z = (m - 1) / (m + 1), which is small here.
+    var z = (m - 1.0) / (m + 1.0);
+    var z2 = z * z;
+    var power = z;
+    var sum = 0.0;
+    var n = 1;
+    while (n < 40) {
+        sum = sum + power / n.to_float();
+        power = power * z2;
+        n = n + 2;
+    }
+    return 2.0 * sum + k.to_float() * 0.6931471805599453;
+}
+
+/** base^exponent for base >= 0. */
+fn pow(base: float, exponent: float): float {
+    if (base <= 0.0) {
+        if (exponent == 0.0) { return 1.0; }
+        return 0.0;
+    }
+    return exp(exponent * ln(base));
+}

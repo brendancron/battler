@@ -1,0 +1,20 @@
+import { wrap, log_rows, width } from "battler/ui/display";
+
+@test
+fn short_lines_stay_whole() {
+    var rows = log_rows("Ranger used Aimed Shot on Monk!");
+    assert(rows.len() == 1, "one row");
+}
+
+@test
+fn long_lines_wrap_inside_the_box() {
+    var rows = log_rows("Monk used Flurry of Blows on Grim Reaper, Grim Reaper and Alchemist!");
+    assert(rows.len() == 2, "two rows");
+    for (r in rows) { assert(r.len() == width(), "every row fits the box"); }
+}
+
+@test
+fn wrap_breaks_at_spaces() {
+    var lines = wrap("aa bb cc dd", 5);
+    assert(lines.len() == 2 && lines[0] == "aa bb" && lines[1] == "cc dd", "two lines");
+}

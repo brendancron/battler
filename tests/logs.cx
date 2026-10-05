@@ -1,0 +1,85 @@
+import { Game } from "battler/balance/jobs";
+import { Pool, Rating } from "battler/balance/ratings";
+import { parse_json } from "std/encoding/Json";
+import { Data } from "std/encoding/Codec";
+import {
+    games_log_path, timeline_path, game_record, snapshot_record, start_record, new_interval, count_game, rss_from_status
+} from "battler/balance/logs";
+
+fn sample(winner: int): Game {
+    return Game { home_ai: "Greedy", away_ai: "Tactician", home: ["Grim Reaper", "Monk"], away: ["Witch", "Ranger"], winner: winner, rounds: 12, took: 0.25 };
+}
+
+fn field(d: Data, key: string): Data {
+    match d {
+        Data.Map(entries) => {
+            for (e in entries) {
+                if (e.key == key) { return e.value; }
+            }
+        }
+        _ => {}
+    }
+    return Data.Null;
+}
+
+fn number(d: Data): float {
+    match d {
+        Data.Int(n) => { return n.to_float(); }
+        Data.Float(x) => { return x; }
+        _ => { return -1.0; }
+    }
+    return -1.0;
+}
+
+@test
+fn the_logs_sit_next_to_the_totals() {
+    assert(games_log_path("balance.json") == "balance.games.jsonl", "games");
+    assert(timeline_path("runs/x.json") == "runs/x.timeline.jsonl", "timeline, folder kept");
+}
+
+@test
+fn a_game_record_is_one_line_of_json() {
+    var line = game_record(sample(1), 1700000000);
+    assert(line.index_of("\n") < 0, "one line");
+    var d = parse_json(line);
+    assert(number(field(d, "time")) == 1700000000.0 && number(field(d, "winner")) == 1.0 && number(field(d, "rounds")) == 12.0, "fields");
+    match field(d, "home") {
+        Data.Seq(names) => { assert(names.len() == 2, "the home team"); }
+        _ => { assert(false, "home is a list"); }
+    }
+}
+
+@test
+fn a_snapshot_sums_up_its_interval() {
+    var iv = new_interval();
+    count_game(iv, sample(0));
+    count_game(iv, sample(1));
+    count_game(iv, sample(-1));
+    count_game(iv, sample(0));
+    var pool = Pool { ratings: [Rating { name: "Monk", elo: 1010.0, games: 4, wins: 3 }] };
+    var d = parse_json(snapshot_record(1700000000, 104, 4, 30.0, iv, 60.0, 40, 12, 2, pool, pool, pool));
+    var interval = field(d, "interval");
+    assert(number(field(interval, "games")) == 4.0 && number(field(interval, "draws")) == 1.0, "games and draws");
+    assert(number(field(interval, "games_per_min")) == 4.0, "4 games in 60 s");
+    assert(number(field(interval, "home_win_pct")) > 66.0 && number(field(interval, "home_win_pct")) < 67.0, "2 of the 3 decided");
+    assert(number(field(d, "main_rss_mb")) == 40.0, "memory");
+    match field(field(d, "characters"), "Monk") {
+        Data.Seq(v) => { assert(v.len() == 3, "elo, games, wins"); }
+        _ => { assert(false, "a rating"); }
+    }
+}
+
+@test
+fn a_start_record_quotes_its_arguments() {
+    var d = parse_json(start_record(1700000000, "--games \"forever\"", 40));
+    match field(d, "args") {
+        Data.Str(s) => { assert(s == "--games \"forever\"", "quotes survive"); }
+        _ => { assert(false, "args is a string"); }
+    }
+}
+
+@test
+fn memory_comes_from_the_vmrss_line() {
+    assert(rss_from_status("Name:\tcx\nVmRSS:\t   51200 kB\nThreads: 1\n") == 50, "51200 kB is 50 MB");
+    assert(rss_from_status("no such line") == -1, "unknown");
+}

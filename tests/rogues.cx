@@ -1,0 +1,165 @@
+import { Character, Action, EventKind, Tier, character } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform, announce } from "battler/core/engine";
+import { use_move, damage } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { shadowed, taunt, shield, attack_up, barrier, minion_marker } from "battler/content/effects";
+import { thunderstorm, chain_lightning, shuriken, plunder, trick_blade, smite } from "battler/content/moves";
+import { thunderstorm_power, chain_lightning_powers, shuriken_power, plunder_power, trick_blade_power } from "battler/content/tuning";
+import { duel, who, slot, has_effect, sturdy } from "support";
+
+// The Ninja (Shadowed), the Stormbringer (Chain Lightning picks in order), and the Swashbuckler (steal).
+
+fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
+
+fn at(s: Slot): Choice { return Choice.Slots([s]); }
+
+fn picks(slots: List<Slot>): Choice { return Choice.Slots(slots); }
+
+fn pickable(b: Battle, from: Slot, s: Slot): bool {
+    for (t in b.targetable_foes(from)) {
+        if (t.side == s.side && t.index == s.index) { return true; }
+    }
+    return false;
+}
+
+// Ninja
+
+@test
+fn a_shadowed_ninja_cant_be_picked_while_an_ally_stands() {
+    var b = duel(["A"], ["Ninja", "Ally"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), shadowed())]);
+    assert(!pickable(b, slot(0, 0), slot(1, 0)) && pickable(b, slot(0, 0), slot(1, 1)), "only the ally");
+    add(b, [Action.KnockOut(who(b, slot(1, 1)))]);
+    assert(pickable(b, slot(0, 0), slot(1, 0)), "alone, it can be picked");
+}
+
+@test
+fn area_moves_still_hit_a_shadowed_ninja() {
+    var b = duel(["A"], ["Ninja", "Ally"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), shadowed())]);
+    use_move(engine(), b, slot(0, 0), thunderstorm(), Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp < 100, "hit");
+}
+
+@test
+fn a_minion_keeps_the_ninja_hidden() {
+    var b = duel(["A"], ["Ninja", "Skeleton"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), shadowed()), Action.AddEffect(who(b, slot(1, 1)), minion_marker(false))]);
+    assert(!pickable(b, slot(0, 0), slot(1, 0)), "still hidden");
+}
+
+@test
+fn shuriken_and_trick_blade_are_plain_hits() {
+    var b = duel(["A"], ["B"]);
+    var foe = who(b, slot(1, 0));
+    sturdy(foe);
+    var first = damage(who(b, slot(0, 0)), foe, shuriken_power());
+    use_move(engine(), b, slot(0, 0), shuriken(), at(slot(1, 0)));
+    var second = damage(who(b, slot(0, 0)), foe, trick_blade_power());
+    use_move(engine(), b, slot(0, 0), trick_blade(), at(slot(1, 0)));
+    assert(foe.hp == 1000 - first - second, "two hits");
+}
+
+// Stormbringer
+
+@test
+fn thunderstorm_hits_every_foe() {
+    var b = duel(["Storm"], ["B", "C"]);
+    var each = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), thunderstorm_power());
+    use_move(engine(), b, slot(0, 0), thunderstorm(), Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 100 - each && who(b, slot(1, 1)).hp == 100 - each, "a hit on each");
+}
+
+@test
+fn chain_lightning_hits_each_pick_with_the_next_power() {
+    var b = duel(["Storm"], ["B", "C", "D", "E"]);
+    var powers = chain_lightning_powers();
+    var order: List<Slot> = [slot(1, 2), slot(1, 0), slot(1, 3), slot(1, 1)];
+    var expected: List<int> = [];
+    var i = 0;
+    while (i < order.len()) {
+        expected.push(damage(who(b, slot(0, 0)), who(b, order[i]), powers[i]));
+        i = i + 1;
+    }
+    assert(use_move(engine(), b, slot(0, 0), chain_lightning(), picks(order)), "used");
+    i = 0;
+    while (i < order.len()) {
+        assert(who(b, order[i]).hp == 100 - expected[i], "each bolt in turn");
+        i = i + 1;
+    }
+}
+
+@test
+fn chain_lightning_cant_pick_a_foe_twice() {
+    var b = duel(["Storm"], ["B", "C"]);
+    assert(!use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 0), slot(1, 0)])), "a repeat");
+}
+
+@test
+fn chain_lightning_stops_when_it_runs_out_of_foes() {
+    var b = duel(["Storm"], ["B", "C"]);
+    assert(!use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 0)])), "it must pick every foe it can");
+    assert(use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 0), slot(1, 1)])), "two picks against two foes");
+}
+
+@test
+fn chain_lightning_picks_a_taunter_first_and_a_shrouded_foe_last() {
+    var b = duel(["Storm"], ["B", "Tank", "Ninja"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 1)), taunt(2)), Action.AddEffect(who(b, slot(1, 2)), shadowed())]);
+    assert(!use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 0), slot(1, 1), slot(1, 2)])), "the taunter must come first");
+    assert(!use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 1), slot(1, 2), slot(1, 0)])), "the shrouded one must come last");
+    assert(use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 1), slot(1, 0), slot(1, 2)])), "taunter, then the rest, then the shroud");
+}
+
+// Swashbuckler
+
+@test
+fn plunder_steals_every_buff_then_hits() {
+    var b = duel(["Swash"], ["B"]);
+    var thief = who(b, slot(0, 0));
+    var foe = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(foe, shield(30)), Action.AddEffect(foe, attack_up()), Action.AddEffect(foe, barrier())]);
+    var expected = damage(thief, foe, plunder_power());
+    use_move(engine(), b, slot(0, 0), plunder(), at(slot(1, 0)));
+    assert(!has_effect(foe, "Shield") && !has_effect(foe, "Attack up") && !has_effect(foe, "Barrier"), "all gone from the foe");
+    assert(has_effect(thief, "Shield") && has_effect(thief, "Attack up") && has_effect(thief, "Barrier"), "all on the Swashbuckler");
+    assert(foe.hp == 100 - expected, "the hit landed: the shield and barrier went first");
+}
+
+@test
+fn a_stolen_shield_adds_to_the_thiefs_own() {
+    var b = duel(["Swash"], ["B"]);
+    var thief = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(thief, shield(10)), Action.AddEffect(who(b, slot(1, 0)), shield(30))]);
+    use_move(engine(), b, slot(0, 0), plunder(), at(slot(1, 0)));
+    match thief.find_effect("Shield") {
+        Option.Some(e) => { assert(e.power == 40, "added up"); }
+        Option.None => { assert(false, "shielded"); }
+    }
+}
+
+@test
+fn passives_cant_be_stolen() {
+    var b = duel(["Swash"], ["Ninja"]);
+    var ninja = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(ninja, shadowed())]);
+    use_move(engine(), b, slot(0, 0), plunder(), at(slot(1, 0)));
+    assert(has_effect(ninja, "Shadowed") && !has_effect(who(b, slot(0, 0)), "Shadowed"), "it stays");
+}
+
+@test
+fn plunder_steals_a_taunt() {
+    var b = duel(["Swash"], ["Tank"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), taunt(2))]);
+    use_move(engine(), b, slot(0, 0), plunder(), at(slot(1, 0)));
+    assert(!has_effect(who(b, slot(1, 0)), "Taunt") && who(b, slot(0, 0)).targeting_tier() > 0, "the Swashbuckler taunts now");
+}
+
+@test
+fn smite_removes_a_taunt() {
+    var b = duel(["Paladin"], ["Tank"]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), taunt(2))]);
+    use_move(engine(), b, slot(0, 0), smite(), at(slot(1, 0)));
+    assert(!has_effect(who(b, slot(1, 0)), "Taunt"), "taunt dispelled");
+}

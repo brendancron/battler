@@ -1,0 +1,166 @@
+import { async } from "std/async/Task";
+import { Throw } from "std/core/Error";
+import { Console, Stdin } from "std/io/Console";
+import { IoError } from "std/io/Io";
+import { Random, random_int } from "std/random/Random";
+import { Character, Effect, Action } from "../core/creature";
+import { Battle, Slot } from "../core/battle";
+import { MoveDef, usable } from "../core/move";
+import { Choice, bind } from "../core/target";
+import { Fighter } from "../content/roster";
+import { foe_pick, roll } from "../game/draft";
+import { Agent, Plan, Turn } from "agent";
+import { Pick, choices, has, shield_on, smaller, best_by } from "scoring";
+
+/**
+ * Like Greedy, but it sees what effects do to damage: a buff or debuff is
+ * worth how much it changes the damage each side can deal, for as long as it
+ * lasts. So it energizes the hitter about to act, and lowers the defense of
+ * the foe its team will hit. Drafts like Greedy.
+ */
+type TacticianAgent;
+
+impl Agent for TacticianAgent {
+    fn choose_move(self, turn: Turn): <async, Console, Stdin, Random, Throw<IoError>> Option<Plan> {
+        return Option.Some(tactician_action(turn.battle, turn.slot, turn.moves, turn.kits));
+    }
+
+    fn choose_pick(self, available: List<Fighter>, mine: List<Fighter>, theirs: List<Fighter>, pick: int): <async, Console, Stdin, Random, Throw<IoError>> int {
+        return foe_pick(available, mine, roll);
+    }
+}
+
+fn noise(n: int): int { return random_int(0, n + 1); }
+
+/** The Tactician's move: the best-scoring move and target, with a little noise. */
+fn tactician_action(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>): Plan {
+    match planned(battle, user, moveset, kits, 4, noise) {
+        Option.Some(p) => { return Plan { slot: user, move: p.move, choice: p.choice }; }
+        Option.None => { return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget }; }
+    }
+    return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget };
+}
+
+/**
+ * The best move and target for the slot, the Tactician way: the Greedy
+ * scores, except that an effect that changes attack or defense is worth what
+ * it does to `pressure`. `kits` holds every character's moves, by side and
+ * slot.
+ */
+fn planned<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
+    fn revalue(c: Character, target: Character, fx: Effect): Option<int> {
+        return scaling_worth(battle, c, target, fx, kits);
+    }
+    return best_by(battle, user, moveset, revalue, jitter, noise);
+}
+
+// What an effect does to the damage each side can deal.
+
+/** The slot's moves in `kits`; none for a slot added mid-game, like a summon. */
+fn kit_of(kits: List<List<List<MoveDef>>>, s: Slot): List<MoveDef> {
+    if (s.side >= kits.len() || s.index >= kits[s.side].len()) { return []; }
+    return kits[s.side][s.index];
+}
+
+/** What a hit can really take off the target: HP and shield, no more. */
+fn landed(target: Character, amount: int): int {
+    return smaller(amount, target.hp + shield_on(target));
+}
+
+/** Damage the actions deal to `user`'s foes, each hit capped at what it could take off. */
+fn foe_damage(user: Character, actions: List<Action>): int {
+    var total = 0;
+    for (a in actions) {
+        match a {
+            Action.Damage(target, _, amount, _) => {
+                if (target.team != user.team) { total = total + landed(target, amount); }
+            }
+            Action.Drain(target, _, amount, _) => {
+                if (target.team != user.team) { total = total + landed(target, amount); }
+            }
+            Action.AreaDrain(_, targets, amounts, _) => {
+                var i = 0;
+                while (i < targets.len()) {
+                    if (targets[i].team != user.team) { total = total + landed(targets[i], amounts[i]); }
+                    i = i + 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    return total;
+}
+
+/** The most damage the character in the slot could deal with one move right now. */
+fn output(battle: Battle, s: Slot, kit: List<MoveDef>): int {
+    var c = battle.sides[s.side].active[s.index];
+    if (c.fainted() || !c.takes_turns() || c.skips_turn()) { return 0; }
+    var top = 0;
+    for (m in kit) {
+        if (!usable(c, m)) { continue; }
+        for (choice in choices(battle, s, m)) {
+            match bind(m.shape, choice, battle, s) {
+                Option.Some(target) => {
+                    var apply = m.apply;
+                    var d = foe_damage(c, apply(battle, c, target));
+                    if (d > top) { top = d; }
+                }
+                Option.None => {}
+            }
+        }
+    }
+    return top;
+}
+
+/** The damage `side` could deal in one turn each, less what the other side could. */
+fn pressure(battle: Battle, side: int, kits: List<List<List<MoveDef>>>): int {
+    var total = 0;
+    var s = 0;
+    while (s < battle.sides.len()) {
+        var i = 0;
+        while (i < battle.sides[s].active.len()) {
+            var slot = Slot { side: s, index: i };
+            var d = output(battle, slot, kit_of(kits, slot));
+            if (s == side) { total = total + d; } else { total = total - d; }
+            i = i + 1;
+        }
+        s = s + 1;
+    }
+    return total;
+}
+
+/**
+ * What putting the effect on the target is worth to `user`'s side, by how
+ * much it changes `pressure` for each turn it lasts: nothing, if nobody's
+ * damage changes. None when it doesn't change attack or defense (poison,
+ * taunt, a shield...) or the target already has one, so the Greedy value
+ * stands.
+ *
+ * A one-use effect (a potion) counts once, and a quarter less when the target
+ * can't use it this round (it has acted, or it is the user, which is acting
+ * now). A timed one counts for each round it lasts; anything else, for 2.
+ */
+fn scaling_worth(battle: Battle, user: Character, target: Character, fx: Effect, kits: List<List<List<MoveDef>>>): Option<int> {
+    // A shield changes no hit, only how much of it reaches HP.
+    if (target.fainted() || fx.absorbs || has(target, fx.kind)) { return Option.None; }
+    if (!fx.buff && has(target, "Panacea")) { return Option.None; }
+    var before = pressure(battle, user.team, kits);
+    var attack = target.current_attack();
+    var defense = target.current_defense();
+    var original = target.effects;
+    var trial: List<Effect> = [];
+    for (e in original) { trial.push(e); }
+    trial.push(fx);
+    target.effects = trial;
+    var after = pressure(battle, user.team, kits);
+    var scales = target.current_attack() != attack || target.current_defense() != defense;
+    target.effects = original;
+    if (!scales) { return Option.None; }
+    var change = after - before;
+    if (fx.charges > 0) {
+        if (target.acted || same(target, user)) { return Option.Some(change * 3 / 4); }
+        return Option.Some(change);
+    }
+    if (fx.rounds > 0) { return Option.Some(change * fx.rounds); }
+    return Option.Some(change * 2);
+}
