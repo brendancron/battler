@@ -7,8 +7,10 @@ import {
     predator, predator_multiplier, barrier, retaliate
 } from "battler/content/effects";
 import { pow } from "battler/core/maths";
-import { rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, shield_decay, predator_bonus_percent, predator_line_percent, energizer_bonus_percent } from "battler/content/tuning";
+import { rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, shield_decay, predator_bonus_percent, predator_line_percent, energizer_bonus_percent, soul_harvest_heal } from "battler/content/tuning";
 import { duel, who, slot, transcript, logged, has_effect } from "support";
+import { smaller } from "battler/agents/scoring";
+import { smaller } from "battler/agents/scoring";
 
 fn add(b: Battle, c: Character, fx: List<Action>) { perform(engine(), b, "test", fx); }
 
@@ -276,25 +278,28 @@ fn soul_harvest_removes_the_corpse_of_a_foe_the_reaper_knocks_out() {
 }
 
 @test
-fn soul_harvest_counts_the_reapers_drain() {
-    var b = duel(["Reaper"], ["B", "C"]);
-    var reaper = who(b, slot(0, 0));
-    reaper.effects.push(soul_harvest());
-    var foe = who(b, slot(1, 0));
-    add(b, foe, [Action.Drain(foe, reaper, 200, 50)]);
-    assert(foe.fainted() && !foe.corpse, "no corpse");
-}
-
-@test
-fn soul_harvest_leaves_other_kills_alone() {
+fn soul_harvest_takes_every_foe_that_falls_however_it_falls() {
     var b = duel(["Reaper", "Ally"], ["B", "C", "D"]);
     var reaper = who(b, slot(0, 0));
     reaper.effects.push(soul_harvest());
     var ally = who(b, slot(0, 1));
     var by_ally = who(b, slot(1, 0));
     var by_poison = who(b, slot(1, 1));
-    add(b, by_ally, [Action.Damage(by_ally, Option.Some(ally), 200, true), Action.Damage(by_poison, Option.None, 200, false)]);
-    assert(by_ally.corpse && by_poison.corpse, "someone else's kill, and an indirect one, leave corpses");
+    var sacrificed = who(b, slot(1, 2));
+    add(b, by_ally, [Action.Damage(by_ally, Option.Some(ally), 200, true), Action.Damage(by_poison, Option.None, 200, false), Action.Sacrifice(sacrificed)]);
+    assert(by_ally.fainted() && !by_ally.corpse, "someone else's kill");
+    assert(by_poison.fainted() && !by_poison.corpse, "an indirect one");
+    assert(sacrificed.fainted() && !sacrificed.corpse, "a foe that sacrificed itself");
+}
+
+@test
+fn soul_harvest_heals_the_reaper_for_each_corpse() {
+    var b = duel(["Reaper"], ["B", "C", "D"]);
+    var reaper = who(b, slot(0, 0));
+    reaper.effects.push(soul_harvest());
+    reaper.hp = 10;
+    add(b, reaper, [Action.Damage(who(b, slot(1, 0)), Option.Some(reaper), 200, true), Action.Damage(who(b, slot(1, 1)), Option.None, 200, false)]);
+    assert(reaper.hp == smaller(reaper.max_health(), 10 + 2 * soul_harvest_heal()), "two corpses, two heals");
 }
 
 @test
@@ -302,11 +307,24 @@ fn soul_harvest_spares_its_own_team_and_survivors() {
     var b = duel(["Reaper", "Ally"], ["B"]);
     var reaper = who(b, slot(0, 0));
     reaper.effects.push(soul_harvest());
+    reaper.hp = 10;
     var ally = who(b, slot(0, 1));
     var foe = who(b, slot(1, 0));
     add(b, ally, [Action.Damage(ally, Option.Some(reaper), 200, true), Action.Damage(foe, Option.Some(reaper), 30, true)]);
     assert(ally.corpse, "an ally keeps its corpse");
     assert(foe.hp == 70 && !foe.fainted(), "a hit that doesn't knock out does nothing more");
+    assert(reaper.hp == 10, "and nothing is healed");
+}
+
+@test
+fn a_fallen_reaper_harvests_nothing() {
+    var b = duel(["Reaper"], ["B"]);
+    var reaper = who(b, slot(0, 0));
+    reaper.effects.push(soul_harvest());
+    var foe = who(b, slot(1, 0));
+    add(b, foe, [Action.KnockOut(reaper), Action.Damage(foe, Option.None, 200, false)]);
+    assert(foe.fainted() && foe.corpse, "the foe keeps its corpse");
+    assert(reaper.hp <= 0, "and the Reaper isn't healed back up");
 }
 
 // Hex

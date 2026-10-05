@@ -3,12 +3,12 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { use_move, damage } from "battler/core/move";
 import { Choice } from "battler/core/target";
-import { shadowed, taunt, shield, attack_up, barrier, minion_marker, parry, on_guard, poison } from "battler/content/effects";
-import { thunderstorm, chain_lightning, shuriken, plunder, trick_blade, smite, pistol_shot, en_garde } from "battler/content/moves";
-import { thunderstorm_power, chain_lightning_powers, shuriken_power, plunder_power, trick_blade_power, trick_blade_silence_turns, pistol_shot_power, riposte_power } from "battler/content/tuning";
+import { shadowed, shroud, taunt, shield, attack_up, barrier, minion_marker, parry, on_guard, poison } from "battler/content/effects";
+import { thunderstorm, chain_lightning, shuriken, shadow_strike, plunder, trick_blade, smite, pistol_shot, en_garde } from "battler/content/moves";
+import { thunderstorm_power, chain_lightning_powers, shuriken_power, shadow_strike_power, plunder_power, trick_blade_power, trick_blade_silence_turns, pistol_shot_power, riposte_power } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
-// The Ninja (Shadowed), the Stormbringer (Chain Lightning picks in order), and the Swashbuckler (steal).
+// The Ninja (Shroud), the Stormbringer (Chain Lightning picks in order), and the Swashbuckler (steal).
 
 fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
 
@@ -26,18 +26,18 @@ fn pickable(b: Battle, from: Slot, s: Slot): bool {
 // Ninja
 
 @test
-fn a_shadowed_ninja_cant_be_picked_while_an_ally_stands() {
+fn a_shrouded_ninja_cant_be_picked_while_an_ally_stands() {
     var b = duel(["A"], ["Ninja", "Ally"]);
-    add(b, [Action.AddEffect(who(b, slot(1, 0)), shadowed())]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), shroud())]);
     assert(!pickable(b, slot(0, 0), slot(1, 0)) && pickable(b, slot(0, 0), slot(1, 1)), "only the ally");
     add(b, [Action.KnockOut(who(b, slot(1, 1)))]);
     assert(pickable(b, slot(0, 0), slot(1, 0)), "alone, it can be picked");
 }
 
 @test
-fn area_moves_still_hit_a_shadowed_ninja() {
+fn area_moves_still_hit_a_shrouded_ninja() {
     var b = duel(["A"], ["Ninja", "Ally"]);
-    add(b, [Action.AddEffect(who(b, slot(1, 0)), shadowed())]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), shroud())]);
     use_move(engine(), b, slot(0, 0), thunderstorm(), Choice.NoTarget);
     assert(who(b, slot(1, 0)).hp < 100, "hit");
 }
@@ -45,8 +45,56 @@ fn area_moves_still_hit_a_shadowed_ninja() {
 @test
 fn a_minion_keeps_the_ninja_hidden() {
     var b = duel(["A"], ["Ninja", "Skeleton"]);
-    add(b, [Action.AddEffect(who(b, slot(1, 0)), shadowed()), Action.AddEffect(who(b, slot(1, 1)), minion_marker(false))]);
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), shroud()), Action.AddEffect(who(b, slot(1, 1)), minion_marker(false))]);
     assert(!pickable(b, slot(0, 0), slot(1, 0)), "still hidden");
+}
+
+@test
+fn a_shroud_lasts_until_its_holders_next_turn_starts() {
+    var b = duel(["A"], ["Ninja", "Ally"]);
+    var ninja = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(ninja, shroud())]);
+    announce(engine(), b, EventKind.TurnStarted(who(b, slot(1, 1))));
+    assert(!pickable(b, slot(0, 0), slot(1, 0)), "someone else's turn: still hidden");
+    announce(engine(), b, EventKind.TurnStarted(ninja));
+    assert(!has_effect(ninja, "Shroud") && pickable(b, slot(0, 0), slot(1, 0)), "its own turn: targeted as usual");
+}
+
+@test
+fn shadowed_shrouds_the_ninja_at_the_start_of_the_battle_only() {
+    var b = duel(["A"], ["Ninja", "Ally"]);
+    var ninja = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(ninja, shadowed())]);
+    announce(engine(), b, EventKind.RoundStarted);
+    assert(has_effect(ninja, "Shroud"), "shrouded from the start");
+    announce(engine(), b, EventKind.TurnStarted(ninja));
+    announce(engine(), b, EventKind.RoundStarted);
+    assert(!has_effect(ninja, "Shroud"), "not again the next round");
+}
+
+@test
+fn shadow_strike_hits_and_shrouds_the_ninja_again() {
+    var b = duel(["Ninja", "Ally"], ["B"]);
+    var foe = who(b, slot(1, 0));
+    sturdy(foe);
+    var ninja = who(b, slot(0, 0));
+    var d = damage(ninja, foe, shadow_strike_power());
+    use_move(engine(), b, slot(0, 0), shadow_strike(), at(slot(1, 0)));
+    assert(foe.hp == 1000 - d, "a hit");
+    assert(has_effect(ninja, "Shroud") && !pickable(b, slot(1, 0), slot(0, 0)), "hidden again");
+}
+
+@test
+fn a_shroud_can_be_stolen_once_the_ninja_can_be_picked() {
+    var b = duel(["Swash", "Ally"], ["Ninja"]);
+    var ninja = who(b, slot(1, 0));
+    add(b, [Action.AddEffect(ninja, shroud())]);
+    use_move(engine(), b, slot(0, 0), plunder(), at(slot(1, 0)));
+    var swash = who(b, slot(0, 0));
+    assert(!has_effect(ninja, "Shroud") && has_effect(swash, "Shroud"), "the Ninja stood alone, so Plunder took it");
+    assert(!pickable(b, slot(1, 0), slot(0, 0)), "now the Swashbuckler hides behind its ally");
+    announce(engine(), b, EventKind.TurnStarted(swash));
+    assert(!has_effect(swash, "Shroud"), "until its own turn starts");
 }
 
 @test
@@ -121,7 +169,7 @@ fn chain_lightning_stops_when_it_runs_out_of_foes() {
 @test
 fn chain_lightning_picks_a_taunter_first_and_a_shrouded_foe_last() {
     var b = duel(["Storm"], ["B", "Tank", "Ninja"]);
-    add(b, [Action.AddEffect(who(b, slot(1, 1)), taunt(2)), Action.AddEffect(who(b, slot(1, 2)), shadowed())]);
+    add(b, [Action.AddEffect(who(b, slot(1, 1)), taunt(2)), Action.AddEffect(who(b, slot(1, 2)), shroud())]);
     assert(!use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 0), slot(1, 1), slot(1, 2)])), "the taunter must come first");
     assert(!use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 1), slot(1, 2), slot(1, 0)])), "the shrouded one must come last");
     assert(use_move(engine(), b, slot(0, 0), chain_lightning(), picks([slot(1, 1), slot(1, 0), slot(1, 2)])), "taunter, then the rest, then the shroud");

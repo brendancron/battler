@@ -242,9 +242,9 @@ Each move brews something and throws it. Its potions go to its allies (or
 the Alchemist itself) and its acid goes on the foes. Since v0.0.7 its
 strength is scaling: Energizer Potion builds up an ally a little at a time
 for the rest of the battle, so the longer the fight goes, the more the
-Alchemist has added. It has almost no healing of its own (Panacea
-Mist's 15 per ally); that's the weakness, and healing can be revisited later
-if needed.
+Alchemist has added. Its healing is light: Panacea Mist's 15 per ally, and
+since v0.0.8 Energizer Potion's 30 on the ally it energizes. It can't keep a
+team up the way the Cleric or the Shaman can; that's the weakness.
 
 **Passive: Panacea Supply.** At the start of the battle, every teammate (the
 Alchemist included) gets a Panacea, which blocks the next debuff that would
@@ -256,7 +256,7 @@ more. (Until v0.0.3 it topped up every round, to one each.)
 | Move             | Target   | Potion |
 |------------------|----------|--------|
 | Panacea Mist     | all allies, itself too | Heals each ally 15 and gives it a Panacea, on top of any it holds. Cooldown 3. |
-| Energizer Potion | one ally, or itself | A stack of Energized: each stack multiplies the ally's attack and defense by 1.1 for the rest of the battle. Cooldown 3. |
+| Energizer Potion | one ally, or itself | A stack of Energized: each stack multiplies the ally's attack and defense by 1.1 for the rest of the battle. Then heals the ally 30 (placeholder; since v0.0.8). Cooldown 3. |
 | Acid Flask       | all foes | 6 poison on every foe standing ([effects.md](effects.md#poison)): 21 damage each over six rounds. Cooldown 4 (3 until v0.0.7). |
 
 Its basic attack is Bottle Bash (power 8). The 15, 6 poison and cooldowns
@@ -330,15 +330,23 @@ v0.0.2 it healed itself 8 instead.)
 
 Warrior ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md)).
 
-**Passive: Soul Harvest.** A foe the Grim Reaper knocks out leaves no
-corpse: it's removed at once, so the foe can never be resurrected
-([fainting.md](fainting.md#removing-corpses)). (The name is a placeholder.)
+**Passive: Soul Harvest.** Any foe that falls while the Grim Reaper is
+standing leaves no corpse: it's removed at once, so the foe can never be
+resurrected ([fainting.md](fainting.md#removing-corpses)), and the Grim
+Reaper heals 20 (placeholder) for each one. (The name is a placeholder.)
 
-- It counts any damage the Grim Reaper deals: its hits and Soul Siphon's
-  drain. A foe that falls to someone else, or to poison or fatigue, leaves a
-  corpse as usual.
-- It replaces Death's Door, which executed any foe left below 10% of its max
-  HP by anyone's damage. Execution is gone from the game.
+- It counts every fall, however it happens: the Grim Reaper's hits, an
+  ally's, poison, fatigue, and a foe that knocks itself out (the Warlock's
+  Final Offering). Until v0.0.8 it counted only foes the Grim Reaper's own
+  damage knocked out, and didn't heal.
+- No corpse, no heal: a minion (a skeleton, a totem, a puppet) leaves no
+  corpse, so it gives nothing, and neither does a foe whose max HP was down
+  to 0. A fallen Grim Reaper harvests nothing.
+- Heal Block stops the heal, as it stops any heal; the corpse still goes.
+- It takes corpses from the Grim Reaper's own allies' reach too: a Jester on
+  its team has no foe corpses to puppet.
+- It replaces Death's Door, which knocked out any foe left below 10% of its
+  max HP by anyone's damage. That mechanic is gone from the game.
 
 **Moves** (names and numbers are placeholders)
 
@@ -404,8 +412,8 @@ The Final Offering details:
 ### Shaman
 
 Support ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md)).
-Stats (placeholders): attack 65, defense 50 (75 until v0.0.3, 70 until
-v0.0.4).
+Stats (placeholders): attack 65, defense 55 (50 until v0.0.8; 75 until
+v0.0.3, 70 until v0.0.4).
 
 Balanced like the Warlock: if it gets its first turns in, its totem and
 Healing Rain carry the team, but it's frail and Slow, so the team has to keep
@@ -510,8 +518,10 @@ games.
 **Passive: Crescendo.** A team aura ([effects.md](effects.md#auras)) that
 builds with every kill. It starts with no stacks; each foe character that
 falls while the Bard stands adds one, and each stack gives the whole team,
-the Bard included, × 0.2 more attack and defense: × 1.2 after one kill,
-× 1.4 after two, × 1.6 after three. The 0.2 is a placeholder.
+the Bard included, × 0.17 more attack and × 0.2 more defense: × 1.17 attack
+and × 1.2 defense after one kill, × 1.34 and × 1.4 after two, × 1.51 and
+× 1.6 after three. Both are placeholders; until v0.0.8 attack also went up
+× 0.2 a stack.
 
 - **Any foe character counts,** whatever knocked it out: a hit, poison (which
   the engine doesn't tie to who applied it), fatigue, or a Warlock's Final
@@ -560,7 +570,7 @@ the Bard included, × 0.2 more attack and defense: × 1.2 after one kill,
 ### Fairy
 
 Support ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
-Stats (placeholders): attack 65, defense 70.
+Stats (placeholders): attack 65, defense 62 (70 until v0.0.8).
 
 The Fairy protects. Being Fast, it acts before nearly everyone, so its
 protection is in place before the foes swing.
@@ -580,8 +590,8 @@ Fairy's remaining HP (no more than its own max HP), and the Fairy faints.
 - **Instead, not after.** The ally never falls, so nothing that keys off a
   fall happens to it: no Soul Harvest on its corpse, no Crescendo stack for
   the foe's Bard, no Last Rites. The Fairy's fall is a fall like any other
-  (it counts for a foe's Crescendo), but it isn't the hitter's kill, so the
-  Fairy keeps its corpse even against the Grim Reaper.
+  (it counts for a foe's Crescendo, and a foe Grim Reaper harvests its
+  corpse).
 - **The Fairy's HP is the price and the prize.** A healthy Fairy saves an
   ally with a lot of HP; a Fairy chipped down saves one with little. Foes
   that want to get past it hit the Fairy first.
@@ -636,8 +646,8 @@ Stats (placeholders): attack 110, defense 60.
 | Raise Dead | an ally's corpse | Removes the corpse and summons a skeleton in its place ([summons.md](summons.md#the-necromancers-skeletons)): a minion with decent stats that only has a basic attack. Cooldown 5. |
 | —      |          | To be designed. |
 
-- Wither removes the corpse of a foe its own hit knocks out, like the Grim
-  Reaper's Soul Harvest but only for this move. A foe that falls to anything
+- Wither removes the corpse of a foe its own hit knocks out (the Grim
+  Reaper's Soul Harvest takes the corpse of any foe that falls). A foe that falls to anything
   else, the Necromancer's other moves and basic attack included, leaves a
   corpse as usual.
 - Its power is below Brimstone's 25 and Writhing Depths' 35: the corpse removal is
@@ -787,7 +797,7 @@ so its taunt and protection are up before their first hits land. (Normal
 until v0.0.2.) It's a **transient tank built to counter single-target
 burst**: Ironclad blunts the big hits its taunt draws, but it can't be
 healed, so it doesn't last. That's niche on purpose.
-Stats (placeholders): attack 75, defense 110 (85 and 120 until v0.0.3).
+Stats (placeholders): attack 71, defense 104 (75 and 110 until v0.0.8; 85 and 120 until v0.0.3).
 
 **Passive: Ironclad.** Two parts. (The name and the 25% are placeholders.)
 
@@ -882,13 +892,25 @@ anyone can act.
 
 Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md); the tier
 is a placeholder, as Rogues tend to be Fast).
-Stats (placeholders): attack 110, defense 50.
+Stats (placeholders): attack 110, defense 57 (50 until v0.0.8).
 
-**Passive: Shadowed.** The Ninja is always shrouded
-([targeting.md](targeting.md#shroud)): its targeting tier is -1, so foes can
-only pick it with a single-target move once no one else on its team is left
-standing. (The name is a placeholder.)
+The Ninja hides between strikes. Its shroud ([targeting.md](targeting.md#shroud))
+puts it in targeting tier -1, so foes can only pick it with a single-target
+move once no one else on its team is left standing. But a shroud lasts only
+until the start of the Ninja's next turn: then it drops, and the Ninja is
+targeted as usual until it uses Shadow Strike to hide again. Since v0.0.8;
+until then it was shrouded all the time.
 
+**Passive: Shadowed.** The Ninja starts the battle shrouded: at the start of
+the first round it gets a shroud, which drops when its first turn starts like
+any other. (The name is a placeholder.)
+
+**The shroud** ([effects.md](effects.md)):
+
+- **It ends when the Ninja's turn starts,** before it acts. A turn it loses
+  (frozen, hexed) still starts, so that ends it too. Used on a turn, Shadow
+  Strike hides the Ninja from then until its next turn: the rest of that
+  round and, the Ninja being Fast, little of the next.
 - **Only single-target picks.** Area moves hit it as usual, and so do moves
   that choose their own targets, like the Assassin's Execution. The Ranger's
   Keen Eye ignores targeting tiers, so the Ranger can pick it any time.
@@ -898,16 +920,22 @@ standing. (The name is a placeholder.)
   everyone else is down, foes can pick either.
 - In Chain Lightning, the Ninja can only be picked after every foe in a
   higher tier, so it takes the smallest bolt left.
-- It's a passive, so it can't be dispelled or stolen.
+- **It's a buff,** so a dispel (the Paladin's Smite) removes it and the
+  Swashbuckler's Plunder steals it, shroud and all, until the start of the
+  Swashbuckler's own next turn. Both are single-target moves, so they can
+  only reach a shrouded Ninja once it stands alone. A cleanse removes only
+  debuffs, so it leaves the shroud.
 
 **Moves** (names, powers and cooldowns are placeholders)
 
-| Move     | Target  | Effect |
-|----------|---------|--------|
-| Shuriken | one foe | A direct hit, power 25 ([damage.md](damage.md)). Cooldown 2. |
+| Move          | Target  | Effect |
+|---------------|---------|--------|
+| Shuriken      | one foe | A direct hit, power 25 ([damage.md](damage.md)). Cooldown 2. |
+| Shadow Strike | one foe | A direct hit, power 20, then the Ninja is shrouded until its next turn starts. Cooldown 2. Since v0.0.8. |
 
-Shuriken is a plain hit, a little under the Ranger's Aimed Shot (30): the
-Ninja's safety behind its shroud is worth something. More moves later.
+Shuriken is a plain hit, a little under the Ranger's Aimed Shot (30). Shadow
+Strike hits less (20) for the shroud. With both on cooldown 2 the Ninja can
+alternate them: hide one turn, hit harder the next.
 
 ### Swashbuckler
 
@@ -972,7 +1000,7 @@ won most of its games.
 Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
 
 Weak on its own on purpose: Puppeteer is the strongest thing it does, so its
-stats are low (placeholder: attack 94, defense 50; attack 90 until v0.0.6) and its hit is light.
+stats are low (placeholder: attack 94, defense 52; attack 90 until v0.0.6, defense 50 until v0.0.8) and its hit is light.
 
 **Passive:** to be designed.
 

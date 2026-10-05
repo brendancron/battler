@@ -140,14 +140,14 @@ fn the_fairy_doesnt_fall_for_itself_or_a_minion() {
 }
 
 @test
-fn a_soul_harvest_cant_take_a_saved_allys_corpse() {
+fn a_soul_harvest_takes_the_fairys_corpse_not_the_saved_allys() {
     var b = duel(["Fairy", "Ally"], ["Reaper"]);
     who(b, slot(0, 0)).effects.push(fae_bargain());
     var reaper = who(b, slot(1, 0));
     reaper.effects.push(soul_harvest());
     add(b, [Action.Damage(who(b, slot(0, 1)), Option.Some(reaper), 1000, true)]);
     assert(!who(b, slot(0, 1)).fainted(), "the ally never fell");
-    assert(who(b, slot(0, 0)).corpse, "and the Fairy's fall wasn't the Reaper's kill");
+    assert(who(b, slot(0, 0)).fainted() && !who(b, slot(0, 0)).corpse, "the Fairy fell in its place, and any foe's fall is harvested");
 }
 
 // Construct

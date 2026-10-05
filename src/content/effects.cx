@@ -3,8 +3,8 @@ import { pow } from "../core/maths";
 import { damage } from "../core/move";
 import {
     rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, energizer_bonus_percent, totem_bonus_percent, totem_cooldown,
-    predator_bonus_percent, predator_line_percent, shield_decay, crescendo_bonus_percent, sanguine_percent, chill_rounds, ironclad_cap_percent,
-    puppeteer_cooldown, riposte_power, spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds
+    predator_bonus_percent, predator_line_percent, shield_decay, crescendo_attack_percent, crescendo_defense_percent, sanguine_percent, chill_rounds, ironclad_cap_percent,
+    puppeteer_cooldown, riposte_power, spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds, soul_harvest_heal
 } from "tuning";
 
 fn never(owner: Character, fx: Effect, event: Event): bool { return false; }
@@ -638,16 +638,14 @@ fn inner_peace(): Effect {
     return e;
 }
 
-// Grim Reaper, Soul Harvest: a foe the Grim Reaper's damage knocks out loses its corpse.
+// Grim Reaper, Soul Harvest: any foe that falls, however it falls, loses its corpse, and the
+// Grim Reaper heals for it. A minion leaves no corpse, so it gives nothing, and a fallen Reaper
+// harvests nothing.
 
 fn soul_harvest_should(owner: Character, fx: Effect, event: Event): bool {
     match event.kind {
-        EventKind.Damaged(target, source, _, _, _) => {
-            if (target.team == owner.team || !target.fainted() || !target.corpse) { return false; }
-            match source {
-                Option.Some(attacker) => { return same(attacker, owner) && fresh(owner, fx, event); }
-                Option.None => { return false; }
-            }
+        EventKind.Fainted(c) => {
+            return c.team != owner.team && c.team >= 0 && !c.is_minion() && c.corpse && !owner.fainted() && fresh(owner, fx, event);
         }
         _ => { return false; }
     }
@@ -656,7 +654,7 @@ fn soul_harvest_should(owner: Character, fx: Effect, event: Event): bool {
 
 fn soul_harvest_react(owner: Character, fx: Effect, event: Event): List<Action> {
     match event.kind {
-        EventKind.Damaged(target, _, _, _, _) => { return [Action.RemoveCorpse(target)]; }
+        EventKind.Fainted(c) => { return [Action.RemoveCorpse(c), Action.Heal(owner, soul_harvest_heal())]; }
         _ => { return []; }
     }
     return [];
@@ -857,9 +855,15 @@ fn attack_up_next_turn(): Effect {
 // Bard, Crescendo: a team aura that builds a stack for every foe character that falls, each
 // adding a percent to attack and defense (docs/characters.md#bard).
 
-fn crescendo_percent(fx: Effect): int { return 100 + crescendo_bonus_percent() * fx.power; }
-fn crescendo_attack(owner: Character, fx: Effect, attack: int): int { return attack * crescendo_percent(fx) / 100; }
-fn crescendo_defense(owner: Character, fx: Effect, defense: int): int { return defense * crescendo_percent(fx) / 100; }
+fn crescendo_attack(owner: Character, fx: Effect, attack: int): int { return attack * (100 + crescendo_attack_percent() * fx.power) / 100; }
+fn crescendo_defense(owner: Character, fx: Effect, defense: int): int { return defense * (100 + crescendo_defense_percent() * fx.power) / 100; }
+
+/** A percent as a multiplier: 117 gives "×1.17". */
+fn times(percent: int): string {
+    var cents = str(percent % 100);
+    if (percent % 100 < 10) { cents = "0" + cents; }
+    return "×" + str(percent / 100) + "." + cents;
+}
 
 fn crescendo_should(owner: Character, fx: Effect, event: Event): bool {
     match event.kind {
@@ -875,10 +879,9 @@ fn crescendo_react(owner: Character, fx: Effect, event: Event): List<Action> {
 }
 
 fn crescendo_label(owner: Character, fx: Effect): string {
-    var hundredths = crescendo_percent(fx);
-    var cents = str(hundredths % 100);
-    if (hundredths % 100 < 10) { cents = "0" + cents; }
-    return "Crescendo ×" + str(hundredths / 100) + "." + cents + " (aura)";
+    var attack = times(100 + crescendo_attack_percent() * fx.power);
+    var defense = times(100 + crescendo_defense_percent() * fx.power);
+    return "Crescendo atk " + attack + ", def " + defense + " (aura)";
 }
 
 /** The Bard's passive: no stacks to start, one for each foe character that falls while it stands. */
@@ -1089,12 +1092,42 @@ fn ironclad(): Effect {
     return e;
 }
 
-// Ninja, Shadowed: always shrouded, targeting tier -1 (docs/targeting.md#shroud).
+// Ninja, Shroud: targeting tier -1 (docs/targeting.md#shroud) until the start of its holder's
+// next turn. A buff: a dispel removes it and a steal takes it, from a foe that can pick the Ninja.
+// Shadowed, the Ninja's passive, shrouds it at the start of the battle; Shadow Strike shrouds it
+// again.
+
+fn shroud_should(owner: Character, fx: Effect, event: Event): bool {
+    match event.kind {
+        EventKind.TurnStarted(c) => { return same(c, owner) && fresh(owner, fx, event); }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn shroud_react(owner: Character, fx: Effect, event: Event): List<Action> { return [Action.RemoveEffect(owner, fx.kind)]; }
+
+fn shroud(): Effect {
+    var e = base("Shroud", true);
+    e.targeting = -1;
+    e.should = shroud_should;
+    e.react = shroud_react;
+    return e;
+}
+
+/** Its `power` is 1 once it has shrouded the Ninja. */
+fn shadowed_should(owner: Character, fx: Effect, event: Event): bool { return fx.power == 0 && !owner.fainted() && at_round_start(owner, fx, event); }
+
+fn shadowed_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.power = 1;
+    return [Action.AddEffect(owner, shroud())];
+}
 
 fn shadowed(): Effect {
     var e = base("Shadowed", true);
     e.immune = true;
-    e.targeting = -1;
+    e.should = shadowed_should;
+    e.react = shadowed_react;
     return e;
 }
 

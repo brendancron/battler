@@ -16,7 +16,7 @@
  * with every balance change, here or in roster.cx: the balance checker keeps
  * each version's games apart, in balance-data/<version>/.
  */
-fn balance_version(): string { return "v0.0.7"; }
+fn balance_version(): string { return "v0.0.8"; }
 
 // Barbarian
 
@@ -84,6 +84,8 @@ fn acid_flask_cooldown(): int { return 4; }
 /** Energizer Potion: each stack of Energized multiplies attack and defense by 100 + this, over 100. */
 fn energizer_bonus_percent(): int { return 10; }
 fn energizer_cooldown(): int { return 3; }
+/** Energizer Potion also heals the ally this much. */
+fn energizer_heal(): int { return 30; }
 /** Greater Health Potion (the Alchemist's until v0.0.7). */
 fn potion_heal(): int { return 45; }
 /** The potion fires below this percent of max HP. */
@@ -117,6 +119,8 @@ fn soul_siphon_power(): int { return 25; }
 /** Heals this percent of the HP the foe lost. */
 fn soul_siphon_drain_percent(): int { return 50; }
 fn soul_siphon_cooldown(): int { return 2; }
+/** Soul Harvest: the Grim Reaper heals this much for each corpse it takes. */
+fn soul_harvest_heal(): int { return 20; }
 
 // Warlock
 
@@ -169,8 +173,10 @@ fn allegro_cooldown(): int { return 3; }
 /** Rounds of Largo's attack down. */
 fn largo_rounds(): int { return 2; }
 fn largo_cooldown(): int { return 3; }
-/** Crescendo: each stack (a foe character fallen) adds this percent to the team's attack and defense. */
-fn crescendo_bonus_percent(): int { return 20; }
+/** Crescendo: each stack (a foe character fallen) adds this percent to the team's attack... */
+fn crescendo_attack_percent(): int { return 17; }
+/** ...and this percent to its defense. */
+fn crescendo_defense_percent(): int { return 20; }
 
 // Fairy
 
@@ -246,6 +252,8 @@ fn chain_lightning_cooldown(): int { return 3; }
 
 fn shuriken_power(): int { return 25; }
 fn shuriken_cooldown(): int { return 2; }
+fn shadow_strike_power(): int { return 20; }
+fn shadow_strike_cooldown(): int { return 2; }
 
 // Swashbuckler
 

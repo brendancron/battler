@@ -41,7 +41,7 @@ removed the moment it faints.
 ## Removing corpses
 
 Some abilities target corpses and remove them, and the Grim Reaper's Soul
-Harvest removes the corpse of every foe it knocks out. The Necromancer's
+Harvest removes the corpse of every foe that falls while it stands. The Necromancer's
 Wither removes the corpse of every foe it knocks out, and its Raise Dead
 turns an ally's corpse into a skeleton ([summons.md](summons.md)). The
 Jester's Puppeteer takes a foe's corpse and raises it as a puppet on the

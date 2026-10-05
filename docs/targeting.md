@@ -31,8 +31,10 @@ the player picks one of them.
 ## Shroud
 
 A reverse taunt: it lowers a character's targeting tier, for example to -1, so
-foes can only pick it when no one in a higher tier is left. The Ninja is
-always shrouded, by its passive ([characters.md](characters.md#ninja)).
+foes can only pick it when no one in a higher tier is left. The Ninja's
+shroud lasts until the start of its next turn; it starts the battle
+shrouded, and its Shadow Strike shrouds it again
+([characters.md](characters.md#ninja)).
 
 ## Ignoring restrictions
 

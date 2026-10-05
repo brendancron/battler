@@ -6,7 +6,7 @@ import {
     acid_flask, energizer_potion, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows,
     reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, spirit_link, backstab, execution, resurrection, totem_move,
     final_offering, allegro, largo, fairy_ring, pixie_dust, wither, raise_dead, bite, hemorrhage, blizzard, frostbite,
-    avalanche, glacial_roar, cryosleep_move, piston_slam, lockdown, overclock, thunderstorm, chain_lightning, shuriken, plunder, pistol_shot, en_garde,
+    avalanche, glacial_roar, cryosleep_move, piston_slam, lockdown, overclock, thunderstorm, chain_lightning, shuriken, shadow_strike, plunder, pistol_shot, en_garde,
     trick_blade, puppeteer
 } from "moves";
 import { bone_claw_power } from "tuning";
@@ -52,7 +52,7 @@ fn warlock(): Fighter { return fighter("Mage", character("Warlock", 110, 45, Tie
 
 fn knight(): Fighter { return fighter("Tank", character("Knight", 85, 140, Tier.Normal), [], [basic_attack("Sword Strike", 8), shield_bash(), bulwark()]); }
 
-fn shaman(): Fighter { return fighter("Support", character("Shaman", 65, 50, Tier.Slow), [], [basic_attack("Spirit Strike", 8), healing_rain(), spirit_link(), totem_move()]); }
+fn shaman(): Fighter { return fighter("Support", character("Shaman", 65, 55, Tier.Slow), [], [basic_attack("Spirit Strike", 8), healing_rain(), spirit_link(), totem_move()]); }
 
 fn assassin(): Fighter {
     return fighter("Rogue", character("Assassin", 83, 52, Tier.Fast), [predator()], [basic_attack("Quick Cut", 10), backstab(), execution()]);
@@ -60,7 +60,7 @@ fn assassin(): Fighter {
 
 fn bard(): Fighter { return fighter("Support", character("Bard", 70, 75, Tier.Fast), [crescendo()], [basic_attack("Lute Strike", 8), allegro(), largo()]); }
 
-fn fairy(): Fighter { return fighter("Support", character("Fairy", 65, 70, Tier.Fast), [fae_bargain()], [basic_attack("Pixie Bolt", 8), fairy_ring(), pixie_dust()]); }
+fn fairy(): Fighter { return fighter("Support", character("Fairy", 65, 62, Tier.Fast), [fae_bargain()], [basic_attack("Pixie Bolt", 8), fairy_ring(), pixie_dust()]); }
 
 fn necromancer(): Fighter { return fighter("Mage", character("Necromancer", 110, 60, Tier.Slow), [], [basic_attack("Bone Spike", 10), wither(), raise_dead()]); }
 
@@ -72,15 +72,15 @@ fn frost_giant(): Fighter {
     return fighter("Tank", character("Frost Giant", 93, 150, Tier.Slow), [cold_aura()], [basic_attack("Frozen Fist", 8), avalanche(), glacial_roar(), cryosleep_move()]);
 }
 
-fn construct(): Fighter { return fighter("Tank", character("Construct", 75, 110, Tier.Fast), [ironclad()], [basic_attack("Gear Punch", 8), piston_slam(), lockdown(), overclock()]); }
+fn construct(): Fighter { return fighter("Tank", character("Construct", 71, 104, Tier.Fast), [ironclad()], [basic_attack("Gear Punch", 8), piston_slam(), lockdown(), overclock()]); }
 
 fn stormbringer(): Fighter { return fighter("Mage", character("Stormbringer", 105, 50, Tier.Fast), [], [basic_attack("Spark", 10), thunderstorm(), chain_lightning()]); }
 
-fn ninja(): Fighter { return fighter("Rogue", character("Ninja", 110, 50, Tier.Fast), [shadowed()], [basic_attack("Kunai", 10), shuriken()]); }
+fn ninja(): Fighter { return fighter("Rogue", character("Ninja", 110, 57, Tier.Fast), [shadowed()], [basic_attack("Kunai", 10), shuriken(), shadow_strike()]); }
 
 fn swashbuckler(): Fighter { return fighter("Warrior", character("Swashbuckler", 87, 68, Tier.Fast), [], [basic_attack("Cutlass", 10), pistol_shot(), plunder(), en_garde()]); }
 
-fn jester(): Fighter { return fighter("Rogue", character("Jester", 94, 50, Tier.Fast), [], [basic_attack("Juggled Knife", 8), trick_blade(), puppeteer()]); }
+fn jester(): Fighter { return fighter("Rogue", character("Jester", 94, 52, Tier.Fast), [], [basic_attack("Juggled Knife", 8), trick_blade(), puppeteer()]); }
 
 /** Every character, in roster order. */
 fn roster(): List<Fighter> {

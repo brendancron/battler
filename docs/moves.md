@@ -80,6 +80,7 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Stormbringer | Thunderstorm  | 4 |
 | Stormbringer | Chain Lightning | 3 |
 | Ninja       | Shuriken       | 2 |
+| Ninja       | Shadow Strike  | 2 |
 | Swashbuckler | Pistol Shot   | 2 |
 | Swashbuckler | Plunder       | 3 |
 | Swashbuckler | En Garde      | 4 |

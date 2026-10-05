@@ -10,7 +10,7 @@ import {
 } from "battler/content/moves";
 import {
     cleave_power, aimed_shot_power, venom_arrow_power, venom_arrow_poison, smite_power, guard_rounds, lay_on_hands_heal, prayer_heal, purify_heal, sanctuary_heal,
-    brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, panacea_mist_heal, disarming_palm_power,
+    brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, energizer_heal, panacea_mist_heal, disarming_palm_power,
     crippling_blow_power, crippling_blow_turns, flurry_power, flurry_picks, reap_power, reap_wound_divisor,
     soul_siphon_power, soul_siphon_drain_percent, writhing_depths_power, shield_bash_power, bulwark_shield,
     healing_rain_heal, healing_rain_regen, healing_rain_rounds, backstab_power, execution_power, resurrection_percent, predator_line_percent
@@ -339,6 +339,15 @@ fn energizer_potion_adds_a_stack_to_one_ally_or_the_user() {
     use(b, slot(0, 0), "energizer_potion", at(slot(0, 0)));
     assert(who(b, slot(0, 0)).current_defense() == energized_stat(100, 1), "or the Alchemist itself");
     assert(!use(b, slot(0, 0), "energizer_potion", at(slot(1, 0))), "not a foe");
+}
+
+@test
+fn energizer_potion_heals_the_ally_too() {
+    var b = duel(["A", "B"], ["C"]);
+    var ally = who(b, slot(0, 1));
+    ally.hp = 10;
+    use(b, slot(0, 0), "energizer_potion", at(slot(0, 1)));
+    assert(ally.hp == smaller(ally.max_health(), 10 + energizer_heal()), "healed");
 }
 
 @test
