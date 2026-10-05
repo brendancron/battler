@@ -11,6 +11,8 @@ type Battle {
     log: List<string>,
     /** One per log line: how everyone stood just after it, so the display can step through a turn. */
     frames: List<Frame>,
+    /** Whether to keep `frames`; off for a copy an AI plays ahead on, where nobody watches. */
+    recording: bool,
 }
 
 /** How a character stood at one moment. */
@@ -21,7 +23,7 @@ type Frame { line: string, looks: List<List<Look>> }
 
 /** A battle between the sides, home on side `home`, with every character tagged with its side. */
 fn new_battle(sides: List<Side>, home: int): Battle {
-    var b = Battle { sides: sides, home: home, log: [], frames: [] };
+    var b = Battle { sides: sides, home: home, log: [], frames: [], recording: true };
     b.place();
     return b;
 }
@@ -175,7 +177,7 @@ impl Battle {
 
     fn say(self, line: string) {
         self.log.push(line);
-        self.frames.push(Frame { line: line, looks: self.looks() });
+        if (self.recording) { self.frames.push(Frame { line: line, looks: self.looks() }); }
     }
 
     /** Tags every character with the side it is on. Call once the sides are set up. */

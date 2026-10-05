@@ -63,7 +63,7 @@ fn guarded<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<Lis
 
 /**
  * `guarded`, with what a character is worth to its side given as `worth`:
- * for the Guardian, its best hit; a later AI can count more (docs/marshal.md).
+ * for the Guardian, its best hit.
  */
 fn guarded_by<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>, jitter: int, noise: (int) -> <E> int, worth: (Slot) -> int): <E> Option<Pick> {
     var me = battle.sides[user.side].active[user.index];

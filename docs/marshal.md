@@ -3,75 +3,72 @@
 The fourth AI generation ([balance.md](balance.md#generations)),
 `src/agents/marshal.cx`.
 
-**Its one new idea: a character is worth everything it brings, not just its
-best hit.** Otherwise it plays exactly like the Guardian
-([guardian.md](guardian.md)): the same forecast of the foes' moves, the same
-danger, the same value for protection.
+**Its one new idea: it looks ahead.** Every earlier AI scores a move by what
+it does on its own, by rules (damage, heals, what an effect is worth).
+The Marshal tries each move and target on a copy of the battle, plays the
+rest of the round out, and keeps the one that leaves its side best placed.
 
-## Why
+## How it chooses
 
-The Guardian weighs two things by a character's damage:
+For each usable move and each target it allows:
 
-- **Saving an ally**: a fall costs the ally's best hit × 3 + 25, and its best
-  hit again if it falls before acting.
-- **Knocking out a foe**: worth the foe's best hit × 3, instead of a flat 50.
+1. **Copy the battle** (`copy_battle`): every character, effect and
+   cooldown, with links (Spirit Link, a totem's summoner, a bleed's source,
+   kept as an effect's `partner`) pointing at the copy's characters. The
+   copy records nothing for the screen. Playing on it leaves the real battle
+   as it was.
+2. **Make the move** on the copy, as the game would: turn started, the move,
+   turn ended, cooldowns counted.
+3. **Play out the rest of the round**: from the user's phase on, everyone
+   still to act, on both sides, makes its Greedy pick (lost turns are lost),
+   then the round ends: poison, regen, shield decay, effects wearing off.
+   Fatigue isn't applied, since the copy doesn't know the round number.
+4. **Score the result** (`standing`): each standing character is worth its
+   HP, half its shield and 60 for being in the fight, a minion half its HP
+   and 10. The score is the Marshal's side less the foes', with 500 more for
+   a win (500 less for a loss).
 
-A healer, a protector or an aura-holder hits for almost nothing, so to the
-Guardian it was hardly worth saving and hardly worth killing. In v0.0.4
-staged games a Knight put Bulwark on a full-HP Ranger while the Shaman beside
-it was about to fall, and nobody went after the foe's Cleric (63% in v0.0.3).
+It takes the best score, with a little noise (up to 4) to break ties.
 
-## Contribution
+## Why this and not more rules
 
-What a turn of the character's is worth on average (`contribution`):
+Two rule-based attempts came first and tied the Guardian (50% over about
+1,000 games each):
 
-1. Each move's **face value**: the most one use could bring now, over every
-   target it allows. Each action counts as:
+- Valuing each character by everything it brings (heals, shields, auras),
+  not just its best hit, so it protects and hunts healers.
+- Adding focus fire (a hit that sets up an ally's knockout this round) and
+  seeing barriers and parries (a direct hit into one does nothing).
 
-   | Action | Face value |
-   |---|---|
-   | Damage, a drain, an area drain | what can land on each foe (no more than its HP and shield) |
-   | A heal | the amount, up to the ally's max HP (not what it's missing now: a healer is worth its heals before anyone is hurt) |
-   | A team heal | the amount for each standing ally |
-   | A shield | its size |
-   | Regen | half its total (it comes slowly) |
-   | Invincible | 30 |
-   | Anything else | what the scores say (`worth`, `effect_worth`), e.g. a summon with an aura is 15 + 10 per ally |
+Playing the round out covers all of that and more without a rule for each:
+a knockout that stops a big hitter acting, a shield that keeps the ally
+standing, a hit into a parry that only draws a riposte, Healing Rain before
+the burst, all show up in where the round ends.
 
-2. The **contribution** is the basic attack's face value, plus, for each
-   other move, what it adds over the basic attack shared over the turns its
-   cooldown takes (cooldown 3: every 4th turn). Cooldowns that are running
-   aren't checked: a character is worth its moves whether or not one is
-   ready this turn.
+## Results
 
-A plain hitter's contribution is its hits, close to the Guardian's value. A
-healer with Prayer and Purify is worth about two to three times its jab; a
-Shaman with Healing Rain ready is worth a lot.
+`--ai Guardian,Marshal`, 2,000 games: the Marshal won **64.3% of 1,078**
+games against the Guardian (z = 5.4). Characters it plays best compared with
+the Guardian: Fairy, Barbarian, Vampire, Ranger, Knight; it does a little
+worse with Jester, Ninja, Witch and Paladin (each about 330 games, so most
+of this is noise).
 
-It's used everywhere the Guardian used the best hit: the save value, the
-action lost by falling first, and the value of a knockout.
+## Cost
 
-## What it changes
-
-- Protection (shields, Invincible, taunts, barriers, potions, speed) goes on
-  the ally that brings the most, not just the one that hits hardest: a
-  Shaman about to cast Healing Rain, a Cleric.
-- Damage goes to the foe that brings the most: the foe's Cleric or Shaman,
-  not only its biggest hitter.
+Each choice plays a whole round out, so a turn costs one round of Greedy
+picks per option: a game takes about 2 seconds against the Guardian's 0.9.
 
 ## Testing
 
-- A healer's contribution is more than its best hit; a plain hitter's is its
-  basic attack; a fallen or idle character's is nothing.
-- With a healer and a weaker hitter both about to fall, the Guardian shields
-  the hitter and the Marshal the healer.
-- With a foe healer and a foe hitter both in reach of a knockout, the
-  Guardian takes the hitter and the Marshal the healer.
-
-Then the balance checker: `--ai Guardian,Marshal`.
+- Playing ahead leaves the battle as it was: no damage, no log lines, no
+  cooldowns.
+- A copy's links point at its own characters.
+- It knocks out the foe that would hit hardest this round, and takes a
+  knockout over spreading damage.
 
 ## Placeholders
 
-- Regen counts at half its total; Invincible at 30.
-- The rest is the Guardian's: next round at half, save value × 3 + 25, kill
-  weight 3.
+- 60 for a standing character, half a shield, a minion at half its HP and
+  10, 500 for a win.
+- The rest of the round is played by Greedy, the cheapest AI; a smarter
+  continuation (or a second round) is the obvious next step.

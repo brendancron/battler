@@ -754,27 +754,27 @@ fn totems_blessing(): Effect {
     return e;
 }
 
-/** The totem's own effect: when the totem falls, the summoner's Totem move starts its cooldown. */
+fn totem_spirit_should(owner: Character, fx: Effect, event: Event): bool {
+    if (!fresh(owner, fx, event)) { return false; }
+    match event.kind {
+        EventKind.Fainted(c) => { return same(c, owner) && fx.partner.len() > 0; }
+        _ => { return false; }
+    }
+    return false;
+}
+
+fn totem_spirit_react(owner: Character, fx: Effect, event: Event): List<Action> { return [Action.StartCooldown(fx.partner[0], "Totem", totem_cooldown())]; }
+
+/**
+ * The totem's own effect: when the totem falls, the summoner's Totem move
+ * starts its cooldown. The summoner is kept as its `partner`.
+ */
 fn totem_spirit(summoner: Character): Effect {
-    fn should(owner: Character, fx: Effect, event: Event): bool {
-        if (!fresh(owner, fx, event)) { return false; }
-        match event.kind {
-            EventKind.Fainted(c) => { return same(c, owner); }
-            _ => { return false; }
-        }
-        return false;
-    }
-    fn react(owner: Character, fx: Effect, event: Event): List<Action> {
-        match event.kind {
-            EventKind.Fainted(_) => { return [Action.StartCooldown(summoner, "Totem", totem_cooldown())]; }
-            _ => { return []; }
-        }
-        return [];
-    }
     var e = base("Totem", true);
     e.immune = true;
-    e.should = should;
-    e.react = react;
+    e.partner = [summoner];
+    e.should = totem_spirit_should;
+    e.react = totem_spirit_react;
     return e;
 }
 
@@ -889,18 +889,23 @@ fn bleed_merge(existing: Effect, incoming: Effect) {
 
 fn bleed_label(owner: Character, fx: Effect): string { return "Bleed " + str(fx.power) + " (" + str(fx.rounds) + ")"; }
 
+/** Whoever caused the bleed, kept as its `partner` so a copy of the battle points at the copy's character. */
+fn bleed_react(owner: Character, fx: Effect, event: Event): List<Action> {
+    fx.rounds = fx.rounds - 1;
+    var source: Option<Character> = Option.None;
+    if (fx.partner.len() > 0) { source = Option.Some(fx.partner[0]); }
+    var out: List<Action> = [Action.Damage(owner, source, fx.power, false)];
+    if (fx.rounds <= 0) { out.push(Action.RemoveEffect(owner, fx.kind)); }
+    return out;
+}
+
 fn bleed(source: Character, amount: int, rounds: int): Effect {
-    fn react(owner: Character, fx: Effect, event: Event): List<Action> {
-        fx.rounds = fx.rounds - 1;
-        var out: List<Action> = [Action.Damage(owner, Option.Some(source), fx.power, false)];
-        if (fx.rounds <= 0) { out.push(Action.RemoveEffect(owner, fx.kind)); }
-        return out;
-    }
     var e = base("Bleed", false);
+    e.partner = [source];
     e.power = amount;
     e.rounds = rounds;
     e.should = at_round_end;
-    e.react = react;
+    e.react = bleed_react;
     e.merge = bleed_merge;
     e.label = bleed_label;
     return e;

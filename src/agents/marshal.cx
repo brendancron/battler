@@ -3,25 +3,25 @@ import { Throw } from "std/core/Error";
 import { Console, Stdin } from "std/io/Console";
 import { IoError } from "std/io/Io";
 import { Random, random_int } from "std/random/Random";
-import { Character, Action } from "../core/creature";
-import { Battle, Slot } from "../core/battle";
-import { MoveDef } from "../core/move";
+import { Character, Effect, EventKind, Cooldown, tier_rank } from "../core/creature";
+import { Battle, Slot, Side, new_battle } from "../core/battle";
+import { Engine, engine, announce } from "../core/engine";
+import { MoveDef, use_move, turn_over, usable } from "../core/move";
 import { Choice, bind } from "../core/target";
+import { phases, begin_phase, next_actor } from "../core/order";
+import { copy_effect } from "../content/effects";
 import { Fighter } from "../content/roster";
 import { foe_pick, roll } from "../game/draft";
 import { Agent, Plan, Turn } from "agent";
-import { Pick, choices, worth, effect_worth, shield_on, smaller } from "scoring";
+import { Pick, choices, shield_on, as_is, best_by } from "scoring";
 import { kit_of } from "tactician";
-import { guarded_by } from "guardian";
 
 /**
- * Generation 4: plays like the Guardian, and values a character by
- * everything it brings, not just its best hit. The Guardian's forecast
- * weighs saving an ally, and knocking out a foe, by that character's
- * damage, so a healer or a protector was hardly worth saving or killing.
- * The Marshal weighs them by their **contribution**: what a turn of theirs
- * is worth on average, heals, shields and auras counted at face value. See
- * docs/marshal.md.
+ * Generation 4: looks ahead. For each move and target it could choose, it
+ * plays the rest of the round out on a copy of the battle, everyone else
+ * making their Greedy pick, then scores where that leaves the two sides:
+ * standing characters, their HP and shields. It takes the move that leaves
+ * its side furthest ahead. See docs/marshal.md.
  */
 type MarshalAgent;
 
@@ -37,7 +37,9 @@ impl Agent for MarshalAgent {
 
 fn noise(n: int): int { return random_int(0, n + 1); }
 
-/** The Marshal's move: the Guardian's choice, with each character worth its contribution, and a little noise. */
+fn quiet(n: int): int { return 0; }
+
+/** The Marshal's move: the one whose round played out ends best, with a little noise. */
 fn marshal_action(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>): Plan {
     match commanded(battle, user, moveset, kits, 4, noise) {
         Option.Some(p) => { return Plan { slot: user, move: p.move, choice: p.choice }; }
@@ -46,108 +48,158 @@ fn marshal_action(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List
     return Plan { slot: user, move: moveset[0], choice: Choice.NoTarget };
 }
 
-/** The best move and target for the slot, the Marshal way. */
+/** Every usable move and target, each scored by playing the round out (`ahead`); the best, `jitter` noise added. */
 fn commanded<E>(battle: Battle, user: Slot, moveset: List<MoveDef>, kits: List<List<List<MoveDef>>>, jitter: int, noise: (int) -> <E> int): <E> Option<Pick> {
-    fn brings(s: Slot): int { return contribution(battle, s, kits); }
-    return guarded_by(battle, user, moveset, kits, jitter, noise, brings);
-}
-
-// What a character brings.
-
-/**
- * What one action does at face value, for `user`'s side: damage that can
- * land on a foe, healing an ally could take at most (its max HP, not what
- * it's missing now: a healer is worth its heals before anyone is hurt), a
- * shield's size, half a regen's total (it comes slowly), Invincible as 30.
- * Anything else is worth what the scores say.
- */
-fn face(battle: Battle, user: Character, action: Action): int {
-    match action {
-        Action.Damage(t, _, amount, _) => {
-            if (t.team != user.team && !t.fainted()) { return smaller(amount, t.hp + shield_on(t)); }
-            return 0;
-        }
-        Action.Drain(t, _, amount, _) => {
-            if (t.team != user.team && !t.fainted()) { return smaller(amount, t.hp + shield_on(t)); }
-            return 0;
-        }
-        Action.AreaDrain(_, ts, amounts, _) => {
-            var total = 0;
-            var i = 0;
-            while (i < ts.len()) {
-                if (ts[i].team != user.team && !ts[i].fainted()) { total = total + smaller(amounts[i], ts[i].hp + shield_on(ts[i])); }
-                i = i + 1;
-            }
-            return total;
-        }
-        Action.Heal(t, amount) => {
-            if (t.team == user.team && !t.fainted()) { return smaller(amount, t.max_health()); }
-            return 0;
-        }
-        Action.HealTeam(_, amount) => {
-            var total = 0;
-            for (a in battle.sides[user.team].active) {
-                if (!a.fainted()) { total = total + amount; }
-            }
-            return total;
-        }
-        Action.HealLowestAlly(_, amount) => { return amount; }
-        Action.AddEffect(t, fx) => {
-            if (t.fainted()) { return 0; }
-            if (fx.buff && t.team == user.team) {
-                if (fx.absorbs) { return fx.power; }
-                if (fx.kind == "Regen") { return fx.power * fx.rounds / 2; }
-                if (fx.prevents_damage) { return 30; }
-            }
-            return effect_worth(user, t, fx);
-        }
-        _ => { return worth(battle, user, action, []); }
-    }
-    return 0;
-}
-
-/** The most one use of the move could bring now, over every target it allows; 0 if none binds. */
-fn move_face(battle: Battle, s: Slot, move: MoveDef): int {
-    var c = battle.sides[s.side].active[s.index];
+    var c = battle.sides[user.side].active[user.index];
+    var found: Option<Pick> = Option.None;
     var top = 0;
-    for (choice in choices(battle, s, move)) {
-        match bind(move.shape, choice, battle, s) {
-            Option.Some(target) => {
-                var apply = move.apply;
-                var total = 0;
-                for (a in apply(battle, c, target)) { total = total + face(battle, c, a); }
-                if (total > top) { top = total; }
+    for (m in moveset) {
+        if (!usable(c, m)) { continue; }
+        for (choice in choices(battle, user, m)) {
+            match bind(m.shape, choice, battle, user) {
+                Option.Some(_) => {
+                    var total = ahead(battle, user, m, choice, kits);
+                    if (jitter > 0) { total = total + noise(jitter); }
+                    match found {
+                        Option.Some(_) => {
+                            if (total > top) { found = Option.Some(Pick { move: m, choice: choice, score: total }); top = total; }
+                        }
+                        Option.None => { found = Option.Some(Pick { move: m, choice: choice, score: total }); top = total; }
+                    }
+                }
+                Option.None => {}
             }
-            Option.None => {}
         }
     }
-    return top;
+    return found;
+}
+
+// Playing ahead on a copy.
+
+/**
+ * A copy of the battle to play ahead on: every character and effect copied,
+ * a link's or a totem's partner pointing at the copy's character, nothing
+ * recorded for the screen. Playing on it leaves the battle as it was.
+ */
+fn copy_battle(battle: Battle): Battle {
+    var olds: List<Character> = [];
+    var news: List<Character> = [];
+    var sides: List<Side> = [];
+    for (side in battle.sides) {
+        var active: List<Character> = [];
+        for (c in side.active) {
+            var cooldowns: List<Cooldown> = [];
+            for (k in c.cooldowns) { cooldowns.push(Cooldown { move: k.move, turns: k.turns }); }
+            var n = Character {
+                name: c.name, team: c.team, hp: c.hp, base_max_hp: c.base_max_hp, lost_max_hp: c.lost_max_hp,
+                attack: c.attack, defense: c.defense, tier: c.tier, acted: c.acted, effects: [], cooldowns: cooldowns,
+                corpse: c.corpse, allies: []
+            };
+            olds.push(c);
+            news.push(n);
+            active.push(n);
+        }
+        sides.push(Side { active: active });
+    }
+    var i = 0;
+    while (i < olds.len()) {
+        for (e in olds[i].effects) {
+            var copy = copy_effect(e);
+            var partner: List<Character> = [];
+            for (p in e.partner) {
+                var j = 0;
+                while (j < olds.len()) {
+                    if (same(olds[j], p)) { partner.push(news[j]); }
+                    j = j + 1;
+                }
+            }
+            copy.partner = partner;
+            news[i].effects.push(copy);
+        }
+        i = i + 1;
+    }
+    var b = new_battle(sides, battle.home);
+    b.recording = false;
+    return b;
+}
+
+fn over(battle: Battle): bool { return battle.defeated(0) || battle.defeated(1); }
+
+/** One turn, as the game plays it: started, the move, ended, the cooldowns counted. */
+fn take_turn(rules: Engine, battle: Battle, s: Slot, move: MoveDef, choice: Choice) {
+    var c = battle.sides[s.side].active[s.index];
+    announce(rules, battle, EventKind.TurnStarted(c));
+    var used = use_move(rules, battle, s, move, choice);
+    announce(rules, battle, EventKind.TurnEnded(c));
+    if (used) { turn_over(c, Option.Some(move)); } else { turn_over(c, Option.None); }
+    c.acted = true;
+}
+
+/** A turn the character loses (a Hex, a freeze): started and ended with nothing done. */
+fn lose_turn(rules: Engine, battle: Battle, s: Slot) {
+    var c = battle.sides[s.side].active[s.index];
+    announce(rules, battle, EventKind.TurnStarted(c));
+    announce(rules, battle, EventKind.TurnEnded(c));
+    turn_over(c, Option.None);
+    c.acted = true;
 }
 
 /**
- * What a turn of the character's is worth on average: its basic attack,
- * plus, for each other move, what it adds over the basic attack, shared
- * over the turns its cooldown takes (a move with cooldown 3 comes every 4th
- * turn). Cooldowns aren't checked: a character is worth its moves whether
- * or not one is ready this turn. Nothing for one that's down or takes no
- * turns.
+ * The rest of the round from the phase `from` (a tier rank) on: everyone
+ * still to act makes its Greedy pick, then the round ends (without fatigue,
+ * which needs the round number).
  */
-fn contribution(battle: Battle, s: Slot, kits: List<List<List<MoveDef>>>): int {
-    var c = battle.sides[s.side].active[s.index];
-    if (c.fainted() || !c.takes_turns()) { return 0; }
-    var kit = kit_of(kits, s);
-    var basic = 0;
-    for (m in kit) {
-        if (m.basic) {
-            var f = move_face(battle, s, m);
-            if (f > basic) { basic = f; }
+fn finish_round(rules: Engine, battle: Battle, kits: List<List<List<MoveDef>>>, from: int) {
+    for (phase in phases()) {
+        if (tier_rank(phase) < from) { continue; }
+        var cursor = begin_phase(battle, phase);
+        var going = true;
+        while (going && !over(battle)) {
+            match next_actor(battle, cursor) {
+                Option.Some(s) => {
+                    if (battle.sides[s.side].active[s.index].skips_turn()) {
+                        lose_turn(rules, battle, s);
+                    } else {
+                        match best_by(battle, s, kit_of(kits, s), as_is, 0, quiet) {
+                            Option.Some(p) => { take_turn(rules, battle, s, p.move, p.choice); }
+                            Option.None => { battle.sides[s.side].active[s.index].acted = true; }
+                        }
+                    }
+                }
+                Option.None => { going = false; }
+            }
         }
     }
-    var total = basic;
-    for (m in kit) {
-        if (m.basic) { continue; }
-        var gain = move_face(battle, s, m) - basic;
-        if (gain > 0) { total = total + gain / (m.cooldown + 1); }
+    if (!over(battle)) { announce(rules, battle, EventKind.RoundEnded); }
+}
+
+/**
+ * What a side has left: each standing character its HP, half its shield and
+ * 60 for being in the fight; a minion half its HP and 10.
+ */
+fn standing(battle: Battle, side: int): int {
+    var total = 0;
+    for (c in battle.sides[side].active) {
+        if (c.fainted()) { continue; }
+        if (c.is_minion()) { total = total + c.hp / 2 + 10; }
+        else { total = total + c.hp + shield_on(c) / 2 + 60; }
     }
     return total;
+}
+
+/**
+ * How far ahead `user`'s side is once the move is made and the round played
+ * out on a copy: what it has left less what the foes have, and 500 more for
+ * a win (500 less for a loss).
+ */
+fn ahead(battle: Battle, user: Slot, move: MoveDef, choice: Choice, kits: List<List<List<MoveDef>>>): int {
+    var copy = copy_battle(battle);
+    var rules = engine();
+    var from = tier_rank(copy.sides[user.side].active[user.index].current_tier());
+    take_turn(rules, copy, user, move, choice);
+    finish_round(rules, copy, kits, from);
+    var score = standing(copy, user.side) - standing(copy, 1 - user.side);
+    if (copy.defeated(1 - user.side)) { score = score + 500; }
+    if (copy.defeated(user.side)) { score = score - 500; }
+    return score;
 }
