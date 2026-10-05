@@ -136,7 +136,8 @@ without playing.
 - **Counter grid** and **Synergy grid** show every matchup and every pair as
   one shaded square each, and **Metagame bounds** works out from the counter
   grid how much of a competitive metagame each character could make up
-  ([below](#grids-and-metagame-bounds)).
+  ([below](#grids-and-metagame-bounds)). **Character profiles** sums up each
+  character's row: how polarised its matchups are, and against whom.
 - The characters table has **Off 50**, how far each win rate is from 50%
   either way, to sort from most to least balanced, and each character's
   **Archetype** and **Speed** tier: sorting by either groups the characters,
@@ -449,6 +450,48 @@ The **Optimal** column is the one mix the selection game itself picks
 average across its row, which is what a random team's win rate measures;
 the bounds can disagree with it, as a character with a high average can be
 countered and one with an ordinary average can have no counter.
+
+**Character profiles** sum up each character's row of the counter grid with
+strength taken out, to check the aim of strong strengths and big weaknesses
+([characters.md](characters.md#strong-strengths-big-weaknesses)). Each
+matchup's score is already beyond strength: the points above or below what
+the ratings expected. Over a character's matchups (those with Min games):
+
+- **Spread**: the root mean square of the scores. High is a character that
+  does very differently against different foes; low (±3 is near noise) is
+  one that does about the same against everyone, so its win rate is all
+  stats.
+- **Counters** and **Countered by**: how many matchups score clearly above
+  or below 0, more than three standard errors (`√(p(1 − p)/games)`) out.
+  Both above zero is a niche and a check.
+- **Best** and **Worst**: the highest and lowest score, and who against.
+  They should be explainable from the two kits.
+- **Worst for**: how many characters have this one as their worst matchup.
+  Counters should form cycles: no one the worst for many, which is just
+  strength.
+
+Ideally every row has a win % near 50, a spread of ±7 or more (the 4-v-4
+format dilutes a counter, so ±15 is about the most one matchup shows), and
+two to four on each side. A generic row needs its kit sharpened, not its
+numbers; a polarised row far from 50 % needs its strength moved.
+
+### Character boxes
+
+The profiles' **Box** column sorts each character into one of five, from
+d = |win % − 50| and s = spread (the lines are placeholders, in `BOX` in the
+page):
+
+| Box | Rule | What to do |
+|---|---|---|
+| 🎯 Balanced | d ≤ 3, s ≥ 4.5, Counters ≥ 2 and Countered by ≥ 2 | nothing: even, with clear strengths and weaknesses |
+| 🌱 Nearly | d ≤ 3, s ≥ 4, not Balanced | sharpen one edge |
+| 😐 Bland | d ≤ 3, s < 4 | give it a conditional strength and weakness (kit, not numbers) |
+| ⚖️ Off power | d > 3, s ≥ 4 | tune its numbers; the shape is right |
+| 🛠️ Rework | d > 3, s < 4 | its kit first, then its numbers |
+
+The count of 🎯 is the roster's score for strong strengths and big
+weaknesses; a patch should raise it. Spread carries noise (about ±1.5 points
+with 1,000 games a matchup), so a character on a line can flip between runs.
 
 Two limits: this is a 4-v-4 draft, not a single pick, so the counter grid
 blends in each character's teammates and the bounds don't see synergy; and

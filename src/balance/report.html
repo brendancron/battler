@@ -544,6 +544,67 @@ const boundsColumns = [
   { label: "Verdict", value: verdict },
 ];
 
+// Character profiles: each character's row of the counter grid, strength
+// taken out (a matchup's score is already beyond the ratings), summed up.
+function profileRows(d) {
+  const cells = counterCells(d);
+  const totals = Object.fromEntries((d.characters || []).map(c => [c.name, c]));
+  const rows = gridNames(d).map(name => {
+    const ms = Object.entries(cells[name] || {}).filter(([foe, m]) => foe !== name && m.games >= Math.max(1, state.min))
+      .map(([foe, m]) => {
+        const p = m.wins / m.games, se = 100 * Math.sqrt(Math.max(p * (1 - p), 0.01) / m.games);
+        return { foe, score: score(m), z: score(m) / se, games: m.games };
+      });
+    const c = totals[name];
+    if (!ms.length) return { name, win: pct(c.wins, c.games), games: 0, worstFor: 0 };
+    const byScore = [...ms].sort((a, b) => b.score - a.score);
+    return {
+      name, win: pct(c.wins, c.games), worstFor: 0,
+      spread: Math.sqrt(ms.reduce((s, m) => s + m.score * m.score, 0) / ms.length),
+      counters: ms.filter(m => m.z > 3).length, countered: ms.filter(m => m.z < -3).length,
+      best: byScore[0], worst: byScore[byScore.length - 1],
+      games: ms.reduce((s, m) => s + m.games, 0),
+    };
+  });
+  for (const r of rows) {
+    const them = rows.find(o => r.worst && o.name === r.worst.foe);
+    if (them) them.worstFor++;
+  }
+  return rows;
+}
+const against = m => m ? `${m.foe} ${signed(m.score)}` : "—";
+// Which box a profile falls in, from d = |win % − 50| and s = spread
+// (docs/balance.md#character-boxes). The lines are placeholders.
+const BOX = { even: 3, polarised: 4.5, partly: 4, each: 2 };
+const BOXES = [
+  { mark: "🎯", name: "Balanced", hint: "even, with clear strengths and weaknesses" },
+  { mark: "🌱", name: "Nearly", hint: "even and partly polarised: sharpen one edge" },
+  { mark: "😐", name: "Bland", hint: "even but generic: give it a conditional strength and weakness" },
+  { mark: "⚖️", name: "Off power", hint: "the right shape at the wrong strength: tune its numbers" },
+  { mark: "🛠️", name: "Rework", hint: "uneven and generic: its kit first, then its numbers" },
+];
+function boxOf(r) {
+  if (r.spread == null) return null;
+  const even = Math.abs(r.win - 50) <= BOX.even;
+  if (even && r.spread >= BOX.polarised && r.counters >= BOX.each && r.countered >= BOX.each) return 0;
+  if (even) return r.spread >= BOX.partly ? 1 : 2;
+  return r.spread >= BOX.partly ? 3 : 4;
+}
+const boxText = r => { const b = boxOf(r); return b == null ? "—" : `${BOXES[b].mark} ${BOXES[b].name}`; };
+const profileColumns = [
+  { label: "Name", value: r => r.name },
+  // Sorts 🎯 first; within a box, the most polarised first.
+  { label: "Box", value: boxOf, text: boxText, order: b => b, then: r => r.spread },
+  { label: "Win %", value: r => r.win, text: r => fixed(r.win, 1), num: true, bar: true, base: 50 },
+  { label: "Spread", value: r => r.spread, text: r => r.spread == null ? "—" : "±" + r.spread.toFixed(1), num: true },
+  { label: "Counters", value: r => r.counters, text: r => String(r.counters ?? "—"), num: true },
+  { label: "Countered by", value: r => r.countered, text: r => String(r.countered ?? "—"), num: true },
+  { label: "Best", value: r => r.best ? r.best.score : null, text: r => against(r.best) },
+  { label: "Worst", value: r => r.worst ? r.worst.score : null, text: r => against(r.worst) },
+  { label: "Worst for", value: r => r.worstFor, num: true },
+  { label: "Games", value: r => r.games, num: true },
+];
+
 const TABLES = [
   { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 3,
     note: "Off 50 is how far the win % is from 50, either way. Atk and Def are base stats, before effects." },
@@ -567,6 +628,8 @@ const TABLES = [
     note: "Row against column, from the row's side: a team with the row character against one with the column character. Green rows win, red rows lose; a row with no red is a character nothing counters. Win % is the matchup chart the bounds below use; Score is the points above what the ratings predicted. Best characters first; hover for numbers; squares under Min games are blank; the filter picks the rows." },
   { id: "synergy-grid", title: "Synergy grid", render: renderGrid, cells: pairCells, mode: "score", label: (a, b) => `${a} + ${b}`,
     note: "Row and column on the same team. Score (the start) is the points above what the two characters' ratings predicted, so a strong character doesn't make every pair green; Win % is the plain win rate. Best characters first; hover for numbers; squares under Min games are blank." },
+  { id: "profiles", title: "Character profiles", rows: profileRows, columns: profileColumns, sort: 1,
+    note: () => BOXES.map(b => `${b.mark} ${b.name}: ${b.hint}.`).join(" ") + ` Balanced is win % within ${BOX.even} of 50, spread ±${BOX.polarised} or more and ${BOX.each}+ each way; Nearly and Off power have spread ±${BOX.partly}+. ` + "Each character's matchups with its strength taken out, to see whether it has clear strengths and weaknesses. Spread: how much its matchup scores (points above what the ratings expected) swing; high is polarised, near ±3 is generic. Counters and Countered by: matchups clearly above or below expected (over 3 standard errors). Best and Worst: its biggest edge and weakness beyond strength. Worst for: how many characters have it as their worst matchup. Ideal: win % near 50, spread ±7 or more, 2 to 4 each way. Matchups under Min games are left out (docs/balance.md#grids-and-metagame-bounds)." },
   { id: "bounds", title: "Metagame bounds", rows: boundsRows, columns: boundsColumns, sort: 3,
     note: d => `How much of a competitive metagame each character could make up: among every mix of characters that wins at least ${50 - slack()}% against any one character (50 less Slack), the least and most each one is played. From the counter grid's win %, treating a draft as one pick each (Jaffe, "Metagame Balance"). The bar is the range, the line the optimal mix. Always excluded: no room for it. Sometimes dominant: everyone could play it unpunished, so it lacks a counter. Avg % is its plain average against the others. Matchups under Min games count as even. Use one AI and one set of rules (docs/balance.md#grids-and-metagame-bounds).` },
 ];
