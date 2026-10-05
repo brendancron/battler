@@ -229,7 +229,7 @@ totals. The logs only grow; delete them with the totals to start over.
 cx run src/balance.cx -- --games forever --ai Greedy,Tactician --jobs 8 quiet
 ```
 
-plays until you press Ctrl+C. It runs the checker again and again, 1000 games
+plays until you press Ctrl+C. It runs the checker again and again, 3000 games
 at a time (`batch_games` in `src/balance.cx`), with the same options; each
 batch is a run of its own that loads the totals, adds to them, saves, and
 exits, printing one line instead of the full report. `quiet` keeps the
@@ -238,8 +238,13 @@ the logs have the rest.
 
 It runs in batches because a long-lived Cronyx process keeps the memory it
 had before each file write it waits on (CronyxLang#151): one endless run's
-main process grew by about 150 KB a game. A batch frees it all when it exits
-(about 100 MB at most), and the process running the batches only waits.
+main process grew by about 150 KB a game. A batch frees it all when it exits,
+and the process running the batches only waits. Since cx 0.0.27 the main
+process holds at about 60 MB through a batch, so batches went from 1000
+games to 3000: each batch compiles the checker again (once for itself and
+once per worker, about 6 s each) and ends with some lanes idle while the
+last finish, which cost about 5% of a run at 1000 games a batch. Saving less
+often than every 4 games made no measurable difference.
 
 Saves can lag a few seconds behind the games (CronyxLang#150: a file write
 waits for a worker's next line), so cancelling loses at most the last few

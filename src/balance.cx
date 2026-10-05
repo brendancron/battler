@@ -850,8 +850,13 @@ fn start(known: List<Entrant>) {
     }
 }
 
-/** Games in each batch of --games forever. */
-fn batch_games(): int { return 1000; }
+/**
+ * Games in each batch of --games forever. Each batch compiles the checker
+ * again, once for itself and once per worker (about 6 s each), and its last
+ * lanes finish alone, so fewer, longer batches spend more of the run playing.
+ * The main process holds steady at about 60 MB through a batch, so 3000 is safe.
+ */
+fn batch_games(): int { return 3000; }
 
 /**
  * --games forever: runs the checker again and again, `batch_games` at a time,
