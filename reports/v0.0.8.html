@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Balance Report</title>
+<!--
+  The balance checker's report page (docs/balance.md#report-page). The
+  checker copies this file next to the totals file (balance.json gives
+  balance.html), and on every save writes the totals to a script beside it
+  (balance.data.js), which this page loads. A <script src> works from
+  file://, so the page needs no server: open it, and refresh it to see the
+  latest.
+
+  Each table is described once in TABLES; sorting, filtering and the bars
+  come from that description, so a new table or column is one entry there.
+-->
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+    --line: #e4e3df; --accent: #2f6fdb; --good: #2e8b57; --bad: #c0392b;
+    --hi: #0072b2; --lo: #d55e00;
+    --bar: #dbe6fb; --bar-bad: #fbe1cc; --head: #f0efeb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
+      --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
+      --hi: #56b4e9; --lo: #e69f00;
+      --bar: #233350; --bar-bad: #4a3214; --head: #262624;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993;
+    --line: #33332f; --accent: #7aa7ff; --good: #5cc48a; --bad: #ef7d6e;
+    --hi: #56b4e9; --lo: #e69f00;
+    --bar: #233350; --bar-bad: #4a3214; --head: #262624;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto;
+    display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline;
+  }
+  h1 { font-size: 20px; margin: 0; }
+  .summary { color: var(--muted); }
+  nav {
+    position: sticky; top: 0; z-index: 2; background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .inner {
+    max-width: 1100px; margin: 0 auto; padding: 8px 16px;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  }
+  nav button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 999px; padding: 4px 12px; font: inherit; cursor: pointer;
+  }
+  nav button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tools { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tools input {
+    font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--panel); color: var(--text);
+  }
+  .tools input[type="search"] { width: 160px; }
+  .tools input[type="number"] { width: 64px; }
+  .tools label { color: var(--muted); }
+  main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 40px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    margin: 0 0 16px; overflow: hidden;
+  }
+  section h2 { font-size: 15px; margin: 0; padding: 12px 14px 4px; }
+  section p.note { margin: 0; padding: 0 14px 10px; color: var(--muted); font-size: 13px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 12px; text-align: left; border-top: 1px solid var(--line); white-space: nowrap; }
+  th {
+    background: var(--head); font-weight: 600; cursor: pointer; user-select: none;
+    position: relative;
+  }
+  th.num, td.num { text-align: right; }
+  th .arrow { color: var(--accent); margin-left: 4px; }
+  td.rank { color: var(--muted); width: 1%; }
+  td.barcell { position: relative; min-width: 120px; }
+  td.barcell .bar {
+    position: absolute; top: 4px; bottom: 4px; background: var(--bar);
+    border-radius: 3px;
+  }
+  td.barcell::before {
+    content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px;
+    border-left: 1px solid var(--line);
+  }
+  td.barcell .bar.neg { background: var(--bar-bad); }
+  td.barcell span { position: relative; }
+  .pos { color: var(--good); }
+  .neg { color: var(--bad); }
+  /* Pass, near and fail: blue, grey and orange, told apart with most colour blindness. */
+  td.pass { background: color-mix(in srgb, var(--hi) 30%, var(--panel)); }
+  td.near { background: color-mix(in srgb, var(--muted) 30%, var(--panel)); }
+  .tile.fail { background: color-mix(in srgb, var(--lo) 38%, var(--panel)); }
+  td.fail { background: color-mix(in srgb, var(--lo) 38%, var(--panel)); }
+  .empty { padding: 12px 14px; color: var(--muted); }
+  .hidden { display: none; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 14px 10px; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; min-width: 84px; }
+  .tile-value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile-label { color: var(--muted); font-size: 12px; }
+  .chart-wrap { padding: 0 14px 6px; }
+  .chart { width: 100%; height: auto; display: block; }
+  .chart .col { fill: var(--accent); opacity: 0.75; }
+  .chart .col:hover { opacity: 1; }
+  .chart .grid { stroke: var(--line); }
+  .chart .axis { fill: var(--muted); font-size: 12px; }
+  .chart .median { stroke: var(--text); stroke-width: 2; }
+  .chart .mean { stroke: var(--text); stroke-width: 2; stroke-dasharray: 6 4; }
+  .chart .cut { stroke: var(--bad); stroke-width: 2; stroke-dasharray: 2 4; }
+  .modes { display: flex; gap: 6px; padding: 0 14px 8px; }
+  .modes button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .modes button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  table.grid { width: auto; font-size: 11px; margin: 0 14px 12px; }
+  table.grid th, table.grid td { padding: 0; border: 1px solid var(--line); cursor: default; }
+  table.grid th { background: var(--head); font-weight: 600; padding: 2px 6px; }
+  table.grid thead th.col { writing-mode: vertical-rl; transform: rotate(180deg); height: 96px; padding: 6px 2px; }
+  table.grid td.sq { width: 28px; min-width: 28px; height: 24px; text-align: center; }
+  table.grid td.self { background: var(--head); }
+  table.grid td.row-name { position: sticky; left: 0; z-index: 1; }
+  table.grid tr:hover th, table.grid td.sq:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+  td .range { position: relative; height: 12px; min-width: 160px; background: var(--head); border-radius: 3px; }
+  td .range .span { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.6; border-radius: 3px; }
+  td .range .opt { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); }
+  footer { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Balance Report</h1>
+  <span class="summary" id="summary"></span>
+  <a class="summary" id="compare" href="../compare.html" hidden>Compare versions</a>
+</header>
+<nav>
+  <div class="inner">
+    <div id="tabs"></div>
+    <div class="tools">
+      <input type="search" id="filter" placeholder="Filter by name" aria-label="Filter by name">
+      <label for="min">Min games</label>
+      <input type="number" id="min" min="0" value="0">
+      <label for="short" title="Where short games end, for Short and long games. Empty: the median length">Short ≤</label>
+      <input type="number" id="short" min="1" placeholder="median" aria-label="Short games last up to this many rounds">
+      <label for="slack" title="Metagame bounds: a mix counts as competitive if it wins at least 50 less this, in points, against any one character">Slack</label>
+      <input type="number" id="slack" min="0" max="20" step="0.5" placeholder="2" aria-label="Metagame bounds slack, in points">
+      <button id="auto" aria-pressed="false" title="Reload every 10 seconds, to follow a run as it plays">Auto-refresh</button>
+      <button id="theme" title="Switch light or dark">Theme</button>
+    </div>
+  </div>
+</nav>
+<main id="tables"></main>
+<footer>Hover a column heading for what it means; click it to sort by it, again to reverse. Written by the balance checker (docs/balance.md).</footer>
+
+<script>
+// The totals, as the checker saved them: set by the data script beside this
+// page (this page's name with .data.js for .html), loaded before init() runs.
+let DATA = {};
+let STATS = {};
+let WRITTEN = null;
+
+const pct = (wins, games) => games ? 100 * wins / games : null;
+const fixed = (x, places) => x == null ? "—" : x.toFixed(places);
+
+// Every table: where its rows come from, and its columns. A column has a
+// label, a value(row) to sort by, an optional text(row) to show, and flags:
+// num (right-aligned), bar (a bar scaled to the column's largest value),
+// signed (green above 0, red below).
+const ratingColumns = [
+  { label: "Name", value: r => r.name },
+  { label: "Elo", value: r => r.elo, text: r => fixed(r.elo, 0), num: true, bar: true, base: 1000 },
+  { label: "Win %", value: r => pct(r.wins, r.games), text: r => fixed(pct(r.wins, r.games), 1), num: true, bar: true, base: 50 },
+  { label: "Wins", value: r => r.wins, num: true },
+  { label: "Games", value: r => r.games, num: true },
+];
+// Characters: no Wins column (Win % and Games say it), and their base stats
+// from the data script, so the table sorts by them.
+const stat = (r, i) => STATS[r.name] ? STATS[r.name][i] : null;
+const TIER_ORDER = { Fast: 0, Normal: 1, Slow: 2 };
+const characterColumns = [
+  ratingColumns[0],
+  // Sorting by archetype or speed keeps the best win rate first within each.
+  { label: "Archetype", value: r => stat(r, 2), then: r => pct(r.wins, r.games) },
+  { label: "Speed", value: r => stat(r, 3), text: r => stat(r, 3) || "—", order: v => TIER_ORDER[v], then: r => pct(r.wins, r.games) },
+  ...ratingColumns.slice(1, 3),
+  // How far from an even 50%, either way: sort ascending for the most balanced first.
+  { label: "Off 50", value: r => r.games ? Math.abs(pct(r.wins, r.games) - 50) : null, text: r => fixed(r.games ? Math.abs(pct(r.wins, r.games) - 50) : null, 1), num: true },
+  { label: "Atk", value: r => stat(r, 0), num: true },
+  { label: "Def", value: r => stat(r, 1), num: true },
+  { label: "Atk×Def", value: r => stat(r, 0) == null ? null : stat(r, 0) * stat(r, 1), num: true },
+  ratingColumns[4],
+];
+
+// Counters: each matchup is kept once, from the first name's side in
+// alphabetical order ("Assassin vs Fairy"); here it's both ways round, for
+// the counter grid and the bounds.
+function counterRows(d) {
+  const out = [];
+  for (const m of d.counters || []) {
+    const at = m.name.indexOf(" vs ");
+    const a = m.name.slice(0, at), b = m.name.slice(at + 4);
+    out.push({ name: `${a} vs ${b}`, first: a, games: m.games, wins: m.wins, surprise: m.surprise });
+    out.push({ name: `${b} vs ${a}`, first: b, games: m.games, wins: m.games - m.wins, surprise: -m.surprise });
+  }
+  return out;
+}
+function signed(x) { return x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1); }
+
+// Characters by AI: a row per character, with its win % under each AI that
+// played it and its edge there: that win % less the AI's own (every character
+// it played), so an AI that wins more overall doesn't look as if it suits
+// everyone. Gap is the best edge less the worst; Suits names the best AI.
+let BY_AI = [], AI_TOTALS = {};
+function byAiRows(d) {
+  const rows = {}, totals = {};
+  for (const m of d.by_ai || []) {
+    const at = m.name.lastIndexOf(" · ");
+    const name = m.name.slice(0, at), ai = m.name.slice(at + 3);
+    (rows[name] = rows[name] || { name, ais: {} }).ais[ai] = m;
+    const t = (totals[ai] = totals[ai] || { wins: 0, games: 0 });
+    t.wins += m.wins; t.games += m.games;
+  }
+  BY_AI = Object.keys(totals).sort();
+  AI_TOTALS = totals;
+  return Object.values(rows).map(r => ({ ...r, games: Math.min(...BY_AI.map(a => r.ais[a] ? r.ais[a].games : 0)) }));
+}
+// Game length (docs/balance.md#game-length). "All @ 7" counts every game of
+// 7 rounds, its wins being the home side's; "Fairy @ 7" counts the Fairy's.
+function lengthsOf(d) {
+  const all = {}, chars = {};
+  for (const m of d.lengths || []) {
+    const at = m.name.lastIndexOf(" @ ");
+    const name = m.name.slice(0, at), rounds = Number(m.name.slice(at + 3));
+    if (name === "All") all[rounds] = m; else (chars[name] = chars[name] || {})[rounds] = m;
+  }
+  return { all, chars };
+}
+function lengthStats(all) {
+  const rs = Object.keys(all).map(Number).sort((a, b) => a - b);
+  const total = rs.reduce((s, r) => s + all[r].games, 0);
+  if (!total) return null;
+  // The length the given share of games are no longer than.
+  const upTo = q => { let seen = 0; for (const r of rs) { seen += all[r].games; if (seen >= q * total) return r; } return rs[rs.length - 1]; };
+  const mean = rs.reduce((s, r) => s + r * all[r].games, 0) / total;
+  return { total, mean, median: upTo(0.5), p10: upTo(0.1), p25: upTo(0.25), p75: upTo(0.75), p90: upTo(0.9), min: rs[0], max: rs[rs.length - 1] };
+}
+const medianLength = () => { const s = lengthStats(lengthsOf(DATA).all); return s ? s.median : 10; };
+const shortCut = () => state.short || medianLength();
+// The Game length section: the numbers as tiles, and a chart of how many
+// games lasted each number of rounds, with the mean, the median and the
+// Short ≤ line marked.
+function renderLengths(table) {
+  const section = el("section", { id: table.id });
+  section.append(el("h2", {}, table.title));
+  const { all } = lengthsOf(DATA);
+  const s = lengthStats(all);
+  if (!s) { section.append(el("div", { class: "empty" }, "No game lengths yet: they're counted from the first run after they were added.")); return section; }
+  const tile = (label, value) => el("div", { class: "tile" }, el("div", { class: "tile-value" }, value), el("div", { class: "tile-label" }, label));
+  section.append(el("div", { class: "tiles" },
+    tile("games", String(s.total)), tile("mean", s.mean.toFixed(1)), tile("median", String(s.median)),
+    tile("shortest", String(s.min)), tile("longest", String(s.max)),
+    tile("middle half", `${s.p25}–${s.p75}`), tile("middle 80%", `${s.p10}–${s.p90}`)));
+  section.append(lengthChart(all, s));
+  section.append(el("p", { class: "note" }, "Rounds each game lasted. Solid line: median; dashed: mean; dotted: where short games end (Short ≤)."));
+  return section;
+}
+function lengthChart(all, s) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const W = 1000, H = 220, left = 40, right = 10, top = 10, bottom = 28;
+  const lo = s.min, hi = s.max, n = hi - lo + 1;
+  const most = Math.max(...Object.values(all).map(m => m.games));
+  const step = (W - left - right) / n;
+  const x = r => left + (r - lo) * step;
+  const y = g => top + (H - top - bottom) * (1 - g / most);
+  const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img", "aria-label": "Games by number of rounds" });
+  for (const frac of [0, 0.5, 1]) {
+    const g = Math.round(most * frac);
+    chart.append(svg("line", { x1: left, x2: W - right, y1: y(g), y2: y(g), class: "grid" }));
+    chart.append(svg("text", { x: left - 6, y: y(g) + 4, class: "axis", "text-anchor": "end" }, String(g)));
+  }
+  const every = Math.max(1, Math.ceil(n / 25));
+  for (let r = lo; r <= hi; r++) {
+    const g = all[r] ? all[r].games : 0;
+    const bar = svg("rect", { x: x(r) + step * 0.1, width: step * 0.8, y: y(g), height: y(0) - y(g), class: "col" });
+    bar.append(svg("title", {}, `${r} rounds: ${g} games (${(100 * g / s.total).toFixed(1)}%)`));
+    chart.append(bar);
+    if ((r - lo) % every === 0) chart.append(svg("text", { x: x(r) + step / 2, y: H - 10, class: "axis", "text-anchor": "middle" }, String(r)));
+  }
+  const mark = (r, cls) => chart.append(svg("line", { x1: x(r) + step / 2, x2: x(r) + step / 2, y1: top, y2: y(0), class: cls }));
+  mark(s.median, "median");
+  mark(s.mean, "mean");
+  if (shortCut() >= lo && shortCut() <= hi) chart.append(svg("line", { x1: x(shortCut()) + step, x2: x(shortCut()) + step, y1: top, y2: y(0), class: "cut" }));
+  return el("div", { class: "chart-wrap" }, chart);
+}
+
+// Each character's win % in short games (up to the Short ≤ line) and long ones.
+function shortLongRows(d) {
+  const { chars } = lengthsOf(d);
+  const cut = shortCut();
+  return Object.entries(chars).map(([name, byLength]) => {
+    const short = { wins: 0, games: 0 }, long = { wins: 0, games: 0 };
+    for (const [r, m] of Object.entries(byLength)) {
+      const t = Number(r) <= cut ? short : long;
+      t.wins += m.wins; t.games += m.games;
+    }
+    return { name, short, long, games: short.games + long.games };
+  });
+}
+// Each share is of all the character's games, so the four add up to 100.
+const share = (r, part) => { const all = r.short.games + r.long.games; return all ? 100 * part / all : null; };
+const wonShort = r => share(r, r.short.wins), lostShort = r => share(r, r.short.games - r.short.wins);
+const wonLong = r => share(r, r.long.wins), lostLong = r => share(r, r.long.games - r.long.wins);
+const shortLongColumns = [
+  { label: "Name", value: r => r.name },
+  { label: "Archetype", value: r => stat(r, 2), then: r => -lostShort(r) },
+  { label: "Won short %", value: wonShort, text: r => fixed(wonShort(r), 1), num: true },
+  { label: "Lost short %", value: lostShort, text: r => fixed(lostShort(r), 1), num: true },
+  { label: "Won long %", value: wonLong, text: r => fixed(wonLong(r), 1), num: true },
+  { label: "Lost long %", value: lostLong, text: r => fixed(lostLong(r), 1), num: true },
+  { label: "Games", value: r => r.short.games + r.long.games, num: true },
+];
+
+const aiWin = (r, ai) => r.ais[ai] ? pct(r.ais[ai].wins, r.ais[ai].games) : null;
+const aiEdge = (r, ai) => aiWin(r, ai) == null ? null : aiWin(r, ai) - pct(AI_TOTALS[ai].wins, AI_TOTALS[ai].games);
+function edges(r) { return BY_AI.map(ai => ({ ai, edge: aiEdge(r, ai) })).filter(e => e.edge != null).sort((a, b) => b.edge - a.edge); }
+function byAiColumns() {
+  const cols = [{ label: "Name", value: r => r.name }];
+  for (const ai of BY_AI) {
+    cols.push({ label: ai + " win %", value: r => aiWin(r, ai), text: r => fixed(aiWin(r, ai), 1), num: true });
+    cols.push({ label: ai + " edge", value: r => aiEdge(r, ai), text: r => signed(aiEdge(r, ai)), num: true, bar: true, base: 0, signed: true });
+  }
+  const gap = r => { const e = edges(r); return e.length > 1 ? e[0].edge - e[e.length - 1].edge : null; };
+  cols.push({ label: "Gap", value: gap, text: r => fixed(gap(r), 1), num: true });
+  cols.push({ label: "Suits", value: r => { const e = edges(r); return e.length > 1 ? e[0].ai : ""; } });
+  cols.push({ label: "Games", value: r => r.games, num: true });
+  return cols;
+}
+
+// Grids and metagame bounds (docs/balance.md#grids-and-metagame-bounds).
+
+// The characters, best win % first, which is the grids' row and column order.
+const gridNames = d => [...(d.characters || [])].sort((a, b) => pct(b.wins, b.games) - pct(a.wins, a.games)).map(c => c.name);
+// Every matchup from each side: cells[a][b] is a team with a against one with b.
+function counterCells(d) {
+  const cells = {};
+  for (const r of counterRows(d)) {
+    const at = r.name.indexOf(" vs ");
+    (cells[r.first] = cells[r.first] || {})[r.name.slice(at + 4)] = r;
+  }
+  return cells;
+}
+// Every pair, both ways round: cells[a][b] and cells[b][a] are a and b together.
+function pairCells(d) {
+  const cells = {};
+  for (const m of d.pairs || []) {
+    const at = m.name.indexOf(" + ");
+    const a = m.name.slice(0, at), b = m.name.slice(at + 3);
+    (cells[a] = cells[a] || {})[b] = m;
+    (cells[b] = cells[b] || {})[a] = m;
+  }
+  return cells;
+}
+const score = m => m.games ? 100 * m.surprise / m.games : null;
+// A square's colour: orange below the middle, blue above, full at `scale` points away.
+function shade(off, scale) {
+  const strength = Math.round(70 * Math.min(1, Math.abs(off) / scale));
+  return `color-mix(in srgb, var(${off < 0 ? "--lo" : "--hi"}) ${strength}%, var(--panel))`;
+}
+const GRID_MODES = {
+  win: { label: "Win %", value: m => pct(m.wins, m.games), text: v => v.toFixed(0), off: v => v - 50, scale: 20 },
+  score: { label: "Score", value: score, text: v => (v > 0 ? "+" : "") + v.toFixed(0), off: v => v, scale: 12 },
+};
+function renderGrid(table) {
+  const section = el("section", { id: table.id });
+  section.append(el("h2", {}, table.title));
+  section.append(el("p", { class: "note" }, table.note));
+  const names = gridNames(DATA);
+  const cells = table.cells(DATA);
+  if (!names.length || !Object.keys(cells).length) { section.append(el("div", { class: "empty" }, "No games yet.")); return section; }
+  const mode = (state.grids || {})[table.id] || table.mode;
+  section.append(el("div", { class: "modes" }, ...Object.entries(GRID_MODES).map(([key, m]) =>
+    el("button", { "aria-pressed": String(mode === key), onclick: () => { state.grids = { ...state.grids, [table.id]: key }; remember(); render(); } }, m.label))));
+  const m = GRID_MODES[mode];
+  const head = el("tr", {}, el("th", {}, ""), ...names.map(n => el("th", { class: "col", title: n }, n)));
+  const body = el("tbody");
+  for (const a of names.filter(n => n.toLowerCase().includes(state.filter))) {
+    const tr = el("tr", {}, el("th", { class: "row-name" }, a));
+    for (const b of names) {
+      const c = a === b ? null : (cells[a] || {})[b];
+      if (!c || c.games < Math.max(1, state.min)) {
+        tr.append(el("td", { class: "sq" + (a === b ? " self" : ""), title: a === b ? a : `${table.label(a, b)}: ${c ? c.games : 0} games` }));
+        continue;
+      }
+      const v = m.value(c);
+      const td = el("td", { class: "sq", title: `${table.label(a, b)}\nwin ${fixed(pct(c.wins, c.games), 1)}% · score ${signed(score(c))} · ${c.games} games` }, m.text(v));
+      td.style.background = shade(m.off(v), m.scale);
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  section.append(el("div", { class: "scroll" }, el("table", { class: "grid" }, el("thead", {}, head), body)));
+  return section;
+}
+
+// The least of c·x for x ≥ 0 with ub·x ≤ ubRhs and eq·x = eqRhs: a two-phase
+// simplex with Bland's rule. Returns { x, value }, or null when nothing fits.
+function simplex(c, ub, ubRhs, eq, eqRhs) {
+  const n = c.length, slacks = ub.length, m = ub.length + eq.length;
+  const width = n + slacks + m;   // the variables, a slack per ≤ row, an artificial per row
+  const T = [], basis = [];
+  [...ub, ...eq].forEach((row, i) => {
+    const t = new Array(width + 1).fill(0);
+    row.forEach((v, j) => { t[j] = v; });
+    if (i < slacks) t[n + i] = 1;
+    t[width] = i < slacks ? ubRhs[i] : eqRhs[i - slacks];
+    if (t[width] < 0) for (let j = 0; j <= width; j++) t[j] = -t[j];
+    t[n + slacks + i] = 1;
+    T.push(t); basis.push(n + slacks + i);
+  });
+  const EPS = 1e-9;
+  const pivot = (r, col) => {
+    const p = T[r][col];
+    for (let j = 0; j <= width; j++) T[r][j] /= p;
+    for (let i = 0; i < m; i++) {
+      if (i === r || Math.abs(T[i][col]) < EPS) continue;
+      const f = T[i][col];
+      for (let j = 0; j <= width; j++) T[i][j] -= f * T[r][j];
+    }
+    basis[r] = col;
+  };
+  // Minimises cost over the columns `allowed` lets in; false if unbounded.
+  const solve = (cost, allowed) => {
+    for (let steps = 0; steps < 5000; steps++) {
+      let enter = -1;
+      for (let j = 0; j < width && enter < 0; j++) {
+        if (!allowed(j) || basis.includes(j)) continue;
+        let reduced = cost[j];
+        for (let i = 0; i < m; i++) reduced -= cost[basis[i]] * T[i][j];
+        if (reduced < -EPS) enter = j;
+      }
+      if (enter < 0) return true;
+      let leave = -1;
+      for (let i = 0; i < m; i++) {
+        if (T[i][enter] <= EPS) continue;
+        const ratio = T[i][width] / T[i][enter];
+        const best = leave < 0 ? Infinity : T[leave][width] / T[leave][enter];
+        if (ratio < best - EPS || (Math.abs(ratio - best) <= EPS && basis[i] < basis[leave])) leave = i;
+      }
+      if (leave < 0) return false;
+      pivot(leave, enter);
+    }
+    return true;
+  };
+  const artificial = j => j >= n + slacks;
+  solve(Array.from({ length: width }, (_, j) => artificial(j) ? 1 : 0), () => true);
+  if (basis.some((b, i) => artificial(b) && T[i][width] > 1e-7)) return null;
+  // An artificial left in the basis at 0 goes out for any real column it can.
+  basis.forEach((b, i) => {
+    if (!artificial(b)) return;
+    for (let j = 0; j < n + slacks; j++) if (Math.abs(T[i][j]) > EPS) { pivot(i, j); return; }
+  });
+  const cost = Array.from({ length: width }, (_, j) => j < n ? c[j] : 0);
+  if (!solve(cost, j => !artificial(j))) return null;
+  const x = new Array(n).fill(0);
+  basis.forEach((b, i) => { if (b < n) x[b] = T[i][width]; });
+  return { x, value: x.reduce((s, v, j) => s + v * c[j], 0) };
+}
+
+// The matchup chart the bounds solve: M[i][j] is i's chance against j, a half
+// on the diagonal and where a matchup has fewer games than Min games.
+function matchupChart(d) {
+  const names = gridNames(d), cells = counterCells(d);
+  const M = names.map(a => names.map(b => {
+    const c = a === b ? null : (cells[a] || {})[b];
+    return c && c.games >= Math.max(1, state.min) ? c.wins / c.games : 0.5;
+  }));
+  return { names, M };
+}
+const slack = () => (state.slack ?? 2);
+function boundsRows(d) {
+  const { names, M } = matchupChart(d);
+  const k = names.length;
+  if (k < 2) return [];
+  const column = j => names.map((_, i) => M[i][j]);
+  // A competitive mix holds 50 − slack against every single character.
+  const ub = names.map((_, j) => column(j).map(v => -v));
+  const floor = names.map(() => -(0.5 - slack() / 100));
+  const one = [names.map(() => 1)];
+  // The selection game's optimal mix: the most v that every column holds.
+  const best = simplex([...names.map(() => 0), -1], names.map((_, j) => [...column(j).map(v => -v), 1]), names.map(() => 0), [[...names.map(() => 1), 0]], [1]);
+  return names.map((name, x) => {
+    const unit = names.map((_, j) => j === x ? 1 : 0);
+    const lo = simplex(unit, ub, floor, one, [1]), hi = simplex(unit.map(v => -v), ub, floor, one, [1]);
+    const others = M[x].filter((_, j) => j !== x);
+    return {
+      name, games: Infinity,
+      least: lo ? 100 * lo.value : null, most: hi ? -100 * hi.value : null,
+      optimal: best ? 100 * best.x[x] : null,
+      avg: 100 * others.reduce((s, v) => s + v, 0) / others.length,
+    };
+  });
+}
+function verdict(r) {
+  if (r.most == null) return "";
+  if (r.least > 20) return "always dominant";
+  if (r.most > 50) return "sometimes dominant";
+  if (r.most < 0.5) return "always excluded";
+  return "";
+}
+function rangeBar(r) {
+  const bar = el("div", { class: "range", title: `${fixed(r.least, 1)}–${fixed(r.most, 1)}%, optimal ${fixed(r.optimal, 1)}%` });
+  if (r.most == null) return bar;
+  const span = el("div", { class: "span" });
+  span.style.left = r.least + "%"; span.style.width = Math.max(0.5, r.most - r.least) + "%";
+  const opt = el("div", { class: "opt" });
+  opt.style.left = `calc(${r.optimal}% - 1px)`;
+  bar.append(span, opt);
+  return bar;
+}
+const boundsColumns = [
+  { label: "Name", value: r => r.name },
+  { label: "Range", value: r => r.most, cell: rangeBar },
+  { label: "Least %", value: r => r.least, text: r => fixed(r.least, 1), num: true },
+  { label: "Most %", value: r => r.most, text: r => fixed(r.most, 1), num: true },
+  { label: "Optimal %", value: r => r.optimal, text: r => fixed(r.optimal, 1), num: true },
+  { label: "Avg %", value: r => r.avg, text: r => fixed(r.avg, 1), num: true },
+  { label: "Verdict", value: verdict },
+];
+
+// Character profiles: each character's row of the counter grid, strength
+// taken out (a matchup's score is already beyond the ratings), summed up.
+// One character's row of a grid (counters or pairs), each square's score
+// already beyond the ratings: their spread (root mean square, to one place as
+// shown, so ±4.5 sits on a ±4.5 line), how many are clearly above or below 0
+// (over 3 standard errors), the best and worst, and the games behind them.
+function rowOf(cells, name) {
+  const ms = Object.entries(cells[name] || {}).filter(([other, m]) => other !== name && m.games >= Math.max(1, state.min))
+    .map(([other, m]) => {
+      const p = m.wins / m.games, se = 100 * Math.sqrt(Math.max(p * (1 - p), 0.01) / m.games);
+      return { foe: other, score: score(m), z: score(m) / se, games: m.games };
+    });
+  if (!ms.length) return null;
+  const byScore = [...ms].sort((a, b) => b.score - a.score);
+  return {
+    spread: Math.round(10 * Math.sqrt(ms.reduce((s, m) => s + m.score * m.score, 0) / ms.length)) / 10,
+    above: ms.filter(m => m.z > 3).length, below: ms.filter(m => m.z < -3).length,
+    best: byScore[0], worst: byScore[byScore.length - 1],
+    games: ms.reduce((s, m) => s + m.games, 0),
+  };
+}
+const winOf = (d, name) => { const c = (d.characters || []).find(c => c.name === name); return c ? pct(c.wins, c.games) : null; };
+
+// Character profiles: each character's row of the counter grid, summed up.
+function profileRows(d) {
+  const cells = counterCells(d);
+  const rows = gridNames(d).map(name => {
+    const r = rowOf(cells, name);
+    if (!r) return { name, win: winOf(d, name), games: 0, worstFor: 0 };
+    return { name, win: winOf(d, name), worstFor: 0, spread: r.spread, counters: r.above, countered: r.below, best: r.best, worst: r.worst, games: r.games };
+  });
+  for (const r of rows) {
+    const them = rows.find(o => r.worst && o.name === r.worst.foe);
+    if (them) them.worstFor++;
+  }
+  return rows;
+}
+const against = m => m ? `${m.foe} ${signed(m.score)}` : "—";
+// Which box a profile falls in, from d = |win % − 50| and s = spread
+// (docs/balance.md#character-boxes). The lines are the user's.
+const BOX = { even: 3, polarised: 5, partly: 4, each: 3 };
+const BOXES = [
+  { mark: "🎯", name: "Balanced", hint: "even, with clear strengths and weaknesses" },
+  { mark: "🌱", name: "Nearly", hint: "even and partly polarised: sharpen one edge" },
+  { mark: "😐", name: "Bland", hint: "even but generic: give it a conditional strength and weakness" },
+  { mark: "⚖️", name: "Off power", hint: "the right shape at the wrong strength: tune its numbers" },
+  { mark: "🛠️", name: "Rework", hint: "uneven and generic: its kit first, then its numbers" },
+];
+function boxOf(r) {
+  if (r.spread == null) return null;
+  const even = Math.abs(r.win - 50) <= BOX.even;
+  if (even && r.spread >= BOX.polarised && r.counters >= BOX.each && r.countered >= BOX.each) return 0;
+  if (even) return r.spread >= BOX.partly ? 1 : 2;
+  return r.spread >= BOX.partly ? 3 : 4;
+}
+const boxText = r => { const b = boxOf(r); return b == null ? "—" : `${BOXES[b].mark} ${BOXES[b].name}`; };
+// Only what decides the box, each cell coloured by whether it clears its
+// line: green clears it, amber is the partly-polarised band, red misses.
+// Best, worst and worst-for are in the name's tooltip.
+const tone = (v, pass, near) => v == null ? "" : v >= pass ? "pass" : near != null && v >= near ? "near" : "fail";
+const profileColumns = [
+  { label: "Name", value: r => r.name,
+    title: r => r.best ? `Best: ${against(r.best)}\nWorst: ${against(r.worst)}\nWorst matchup for ${r.worstFor} character${r.worstFor === 1 ? "" : "s"}\n${r.games} matchup games` : "" },
+  // Sorts 🎯 first; within a box, the most polarised first.
+  { label: "Box", value: boxOf, text: boxText, order: b => b, then: r => r.spread,
+    title: r => boxOf(r) == null ? "" : BOXES[boxOf(r)].hint },
+  { label: "Win %", value: r => r.win, text: r => r.win == null ? "—" : `${r.win.toFixed(1)} (${signed(r.win - 50)})`, num: true,
+    tone: r => r.win == null ? "" : Math.abs(r.win - 50) <= BOX.even ? "pass" : "fail" },
+  { label: "Spread", value: r => r.spread, text: r => r.spread == null ? "—" : "±" + r.spread.toFixed(1), num: true,
+    tone: r => tone(r.spread, BOX.polarised, BOX.partly) },
+  { label: "Counters", value: r => r.counters, text: r => String(r.counters ?? "—"), num: true, tone: r => tone(r.counters, BOX.each) },
+  { label: "Countered by", value: r => r.countered, text: r => String(r.countered ?? "—"), num: true, tone: r => tone(r.countered, BOX.each) },
+];
+
+// Synergy profiles: each character's row of the synergy grid, summed up
+// (docs/balance.md#synergy-profiles). How much its results hang on its
+// teammates, who they are, and two checks on the roster's combos.
+const KIND = { around: 5, plug: 4, top: 10 };
+const KINDS = [
+  { mark: "🧩", name: "Build-around", hint: "its results hang on its teammates; random teams underrate it, as a draft can pick its partners" },
+  { mark: "🤝", name: "Some partners", hint: "a few teammates it's clearly better or worse with" },
+  { mark: "🔌", name: "Plug-and-play", hint: "about the same with anyone" },
+];
+const kindOf = r => r.spread == null ? null : r.spread >= KIND.around ? 0 : r.spread >= KIND.plug ? 1 : 2;
+// The strongest pairs, with Min games, best first.
+function topPairs(d) {
+  return (d.pairs || []).filter(m => m.games >= Math.max(1, state.min)).map(m => ({ name: m.name, score: score(m) }))
+    .sort((a, b) => b.score - a.score).slice(0, KIND.top);
+}
+// The strongest counter, the line no combo should pass.
+function topCounter(d) {
+  let best = null;
+  for (const r of counterRows(d)) if (r.games >= Math.max(1, state.min) && (!best || score(r) > score(best))) best = r;
+  return best;
+}
+function synergyRows(d) {
+  const cells = pairCells(d), top = topPairs(d);
+  return gridNames(d).map(name => {
+    const r = rowOf(cells, name);
+    const inTop = top.filter(p => p.name.split(" + ").includes(name)).length;
+    if (!r) return { name, win: winOf(d, name), games: 0, inTop };
+    return { name, win: winOf(d, name), spread: r.spread, partners: r.above, clashes: r.below, best: r.best, worst: r.worst, games: r.games, inTop };
+  });
+}
+// The roster checks above the table: the combo ceiling and any hub.
+function renderSynergy(table) {
+  const section = renderTable(table);
+  const top = topPairs(DATA), counter = topCounter(DATA);
+  if (!top.length || !counter) return section;
+  const tile = (label, value, bad) => {
+    const t = el("div", { class: "tile" + (bad ? " fail" : "") }, el("div", { class: "tile-value" }, value), el("div", { class: "tile-label" }, label));
+    return t;
+  };
+  const over = top[0].score - score(counter);
+  const hubs = synergyRows(DATA).filter(r => r.inTop >= 3).sort((a, b) => b.inTop - a.inTop);
+  const tiles = el("div", { class: "tiles" },
+    tile(`best pair: ${top[0].name}`, signed(top[0].score)),
+    tile(`best counter: ${counter.name}`, signed(score(counter))),
+    tile("combo ceiling", over > 0 ? `over by ${over.toFixed(1)}` : "OK", over > 0),
+    tile(`hubs: in 3+ of the top ${KIND.top} pairs`, hubs.length ? hubs.map(h => `${h.name} (${h.inTop})`).join(", ") : "none", hubs.length > 0));
+  section.querySelector("p.note").after(tiles);
+  return section;
+}
+const synergyColumns = [
+  { label: "Name", value: r => r.name, title: r => r.worst ? `Worst partner: ${against(r.worst)}\n${r.games} pair games` : "" },
+  // Sorts build-arounds first; within a kind, the most team-dependent first.
+  { label: "Kind", value: kindOf, text: r => kindOf(r) == null ? "—" : `${KINDS[kindOf(r)].mark} ${KINDS[kindOf(r)].name}`, order: k => k, then: r => r.spread,
+    title: r => kindOf(r) == null ? "" : KINDS[kindOf(r)].hint },
+  { label: "Win %", value: r => r.win, text: r => fixed(r.win, 1), num: true },
+  { label: "Spread", value: r => r.spread, text: r => r.spread == null ? "—" : "±" + r.spread.toFixed(1), num: true },
+  { label: "Partners", value: r => r.partners, text: r => String(r.partners ?? "—"), num: true },
+  { label: "Clashes", value: r => r.clashes, text: r => String(r.clashes ?? "—"), num: true },
+  // A best partner past the strongest counter is a combo nothing answers as hard.
+  { label: "Best partner", value: r => r.best ? r.best.score : null, text: r => against(r.best),
+    tone: r => { const c = topCounter(DATA); return r.best && c && r.best.score > score(c) ? "fail" : ""; } },
+  { label: `In top ${KIND.top} pairs`, value: r => r.inTop, num: true, tone: r => r.inTop >= 3 ? "fail" : "" },
+];
+
+// What each column means, shown on hovering its heading. Keyed by label;
+// a table's own `help` overrides an entry where the column means something
+// more particular there.
+const HELP = {
+  "Name": "The character (or AI, archetype, side) being rated.",
+  "Elo": "Rating from every game it played: 1000 is average, and 100 points above another means winning about 64% against it.",
+  "Win %": "Share of its games it won.",
+  "Wins": "Games it won.",
+  "Games": "Games it played.",
+  "Score": "Win % above what the characters' ratings predicted, in points. Positive means it does better than its characters' strength explains.",
+  "Archetype": "The character's class: Tank, Warrior, Mage, Rogue or Support.",
+  "Speed": "Its speed tier: Fast acts before Normal, Normal before Slow.",
+  "Off 50": "How far its win % is from 50, either way. Sort ascending for the most balanced first.",
+  "Atk": "Base attack, before effects.",
+  "Def": "Base defense, before effects.",
+  "Atk×Def": "Base attack times base defense: a rough measure of its raw stats.",
+  "Won short %": "Share of all its games that were short (up to Short ≤ rounds) and won.",
+  "Lost short %": "Share of all its games that were short (up to Short ≤ rounds) and lost. Low for a character that protects early.",
+  "Won long %": "Share of all its games that were long (over Short ≤ rounds) and won.",
+  "Lost long %": "Share of all its games that were long (over Short ≤ rounds) and lost.",
+  "Gap": "Its best edge under any AI less its worst: how much it depends on who plays it.",
+  "Suits": "The AI it does best under, relative to that AI's own win %.",
+  "Range": "The least to the most it can be played in a competitive metagame; the line is the optimal mix.",
+  "Least %": "The least it can be played in a mix that holds 50 less Slack against any one character. Above 20 means every competitive metagame needs it.",
+  "Most %": "The most it can be played in such a mix. About 0: no room for it. Above 50: nothing punishes everyone playing it.",
+  "Optimal %": "Its share of one optimal mix of the selection game. One of possibly many; read the range instead.",
+  "Avg %": "Its plain average win % across its matchups, as random teams measure it.",
+  "Verdict": "Always excluded (most about 0), sometimes dominant (most above 50) or always dominant (least above 20).",
+  "Box": "Which of five boxes it falls in, from its win %, spread and counts. Hover a box for what to do.",
+  "Spread": "How much its matchup scores swing once its strength is taken out (root mean square, in points). High is polarised, low generic.",
+  "Counters": "Matchups it does clearly better in than the ratings expect (over 3 standard errors).",
+  "Countered by": "Matchups it does clearly worse in than the ratings expect (over 3 standard errors).",
+  "Kind": "Build-around, some partners or plug-and-play, from its synergy spread. Hover a kind for what it means.",
+  "Partners": "Teammates it does clearly better with than the ratings expect (over 3 standard errors).",
+  "Clashes": "Teammates it does clearly worse with than the ratings expect (over 3 standard errors).",
+  "Best partner": "Its best teammate and that pair's score. Orange: the pair beats the strongest counter in the game.",
+};
+// A column's help: the table's own, then the shared one, then the by-AI columns.
+function helpFor(table, col) {
+  const own = table.help && table.help[col.label];
+  if (own) return own;
+  if (HELP[col.label]) return HELP[col.label];
+  if (col.label.endsWith(" edge")) return `Its win % under ${col.label.slice(0, -5)} less that AI's own win %: above 0 means that AI plays it better than it plays the average character.`;
+  if (col.label.endsWith(" win %")) return `Its win % in games ${col.label.slice(0, -6)} played it.`;
+  if (col.label.startsWith("In top ")) return `How many of the ${KIND.top} strongest pairs it's in. Orange at 3 or more: a hub, where the combos' power lives.`;
+  return "";
+}
+
+const TABLES = [
+  { id: "characters", title: "Characters", rows: d => d.characters, columns: characterColumns, sort: 3,
+    note: "Off 50 is how far the win % is from 50, either way. Atk and Def are base stats, before effects." },
+  { id: "lengths", title: "Game length", render: renderLengths },
+  { id: "short-long", title: "Short and long games", rows: shortLongRows, columns: shortLongColumns, sort: 3, dir: 1,
+    note: d => `Each character's games split four ways, as shares of all its games (they add up to 100): won or lost, short or long. Short games last up to ${shortCut()} rounds (set it with Short ≤; empty is the median, ${medianLength()}), long ones more. A character that protects early should rarely lose short.` },
+  { id: "by-ai", title: "Characters by AI", rows: byAiRows, get columns() { return byAiColumns(); }, sort: 0,
+    note: "Win % under each AI, and the edge: that less the AI's own win %. A character whose edge is much higher under one AI is played better by it. Games is the fewest it has under any one AI; a gap needs a few thousand games each to mean much." },
+  { id: "archetypes", title: "Archetypes", rows: d => d.archetypes, columns: ratingColumns, sort: 1 },
+  { id: "agents", title: "AIs", rows: d => d.agents, columns: ratingColumns, sort: 1, help: { "Name": "The move AI." },
+    note: "Rated only in games between two different AIs." },
+  { id: "orders", title: "Order AIs", rows: d => d.orders || [], columns: ratingColumns, sort: 1, help: { "Name": "The order AI, which arranges a team into slots." },
+    note: "The AIs that arrange each team into slots before the battle. Rated only in games where the two teams were arranged by different order AIs." },
+  { id: "sides", title: "Home and away", rows: d => d.sides, columns: ratingColumns, sort: 2,
+    note: "Read the win rate here; with two entries the Elo mostly follows the latest games." },
+  { id: "counter-grid", title: "Counter grid", render: renderGrid, cells: counterCells, mode: "win", label: (a, b) => `${a} vs ${b}`,
+    note: "Row against column, from the row's side: a team with the row character against one with the column character. Blue rows win, orange rows lose; a row with no orange is a character nothing counters. Win % is the matchup chart the bounds below use; Score is the points above what the ratings predicted. Best characters first; hover for numbers; squares under Min games are blank; the filter picks the rows." },
+  { id: "synergy-grid", title: "Synergy grid", render: renderGrid, cells: pairCells, mode: "score", label: (a, b) => `${a} + ${b}`,
+    note: "Row and column on the same team. Score (the start) is the points above what the two characters' ratings predicted, so a strong character doesn't make every pair green; Win % is the plain win rate. Best characters first; hover for numbers; squares under Min games are blank." },
+  { id: "profiles", title: "Character profiles", rows: profileRows, columns: profileColumns, sort: 1,
+    note: () => `Does each character have clear strengths and weaknesses? Win %: within ${BOX.even} of 50. Spread: how much its matchups swing once its strength is taken out (points above or below what the ratings expected); ±${BOX.polarised}+ is polarised, under ±${BOX.partly} generic. Counters and Countered by: matchups clearly better or worse than expected (over 3 standard errors); ${BOX.each}+ each. Blue clears the line, grey is partly there, orange misses. ` + BOXES.map(b => `${b.mark} ${b.name}: ${b.hint}.`).join(" ") + " Hover a name for its best and worst matchups (docs/balance.md#character-boxes)." },
+  { id: "synergy-profiles", title: "Synergy profiles", rows: synergyRows, columns: synergyColumns, sort: 1, render: renderSynergy,
+    help: { "Spread": "How much its pair scores swing (root mean square, in points): how much its results hang on its teammates. ±5+ build-around, under ±4 plug-and-play." },
+    note: () => `How much each character's results hang on its teammates, from the synergy grid's scores (points above what the two characters' ratings predicted). Spread: how much its pairs swing; ±${KIND.around}+ is a build-around, under ±${KIND.plug} plug-and-play. Partners and Clashes: pairs clearly better or worse together (over 3 standard errors). Neither kind is better: synergy is a choice, not a requirement. A build-around's win % averages its good and bad teams, and a draft picks the good ones, so don't buff one on win % alone. Combo ceiling: the best pair should score no more than the best counter, so every combo has an answer as strong; a best partner past it is orange. Hub: a character in 3+ of the top ${KIND.top} pairs, where the combos' power really lives. Hover a name for its worst partner (docs/balance.md#synergy-profiles).` },
+  { id: "bounds", title: "Metagame bounds", rows: boundsRows, columns: boundsColumns, sort: 3,
+    note: d => `How much of a competitive metagame each character could make up: among every mix of characters that wins at least ${50 - slack()}% against any one character (50 less Slack), the least and most each one is played. From the counter grid's win %, treating a draft as one pick each (Jaffe, "Metagame Balance"). The bar is the range, the line the optimal mix. Always excluded: no room for it. Sometimes dominant: everyone could play it unpunished, so it lacks a counter. Avg % is its plain average against the others. Matchups under Min games count as even. Use one AI and one set of rules (docs/balance.md#grids-and-metagame-bounds).` },
+];
+
+const state = { tab: "all", filter: "", min: 0, short: 0, sorts: {}, auto: false };
+
+// How often Auto-refresh reloads the page, in seconds. The checker rewrites the page every 4 games.
+const REFRESH_SECONDS = 10;
+
+function remember() { try { localStorage.setItem("balance-report", JSON.stringify(state)); } catch (e) {} }
+function recall() {
+  try { Object.assign(state, JSON.parse(localStorage.getItem("balance-report") || "{}")); } catch (e) {}
+}
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") node.className = v; else if (k.startsWith("on")) node.addEventListener(k.slice(2), v); else node.setAttribute(k, v);
+  }
+  for (const c of children) if (c != null) node.append(c);
+  return node;
+}
+
+function sorted(table, rows) {
+  const s = state.sorts[table.id] || { col: table.sort, dir: table.dir || -1 };
+  const col = table.columns[s.col];
+  return [...rows].sort((a, b) => {
+    const x = col.value(a), y = col.value(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    // dir -1 is the natural order: biggest numbers first, names A to Z (or a
+    // column's own `order`, Fast to Slow). A tie goes to `then`, biggest first.
+    let c;
+    if (col.order) c = s.dir < 0 ? col.order(x) - col.order(y) : col.order(y) - col.order(x);
+    else if (typeof x === "string") c = s.dir < 0 ? x.localeCompare(y) : y.localeCompare(x);
+    else c = s.dir < 0 ? y - x : x - y;
+    if (c === 0 && col.then) return (col.then(b) ?? -Infinity) - (col.then(a) ?? -Infinity);
+    return c;
+  });
+}
+
+function renderTable(table) {
+  const all = table.rows(DATA) || [];
+  const rows = all.filter(r => (r.games || 0) >= state.min && (table.nofilter || (table.filterOn ? table.filterOn(r) : r.name).toLowerCase().includes(state.filter)));
+  const s = state.sorts[table.id] || { col: table.sort, dir: table.dir || -1 };
+  const section = el("section", { id: table.id });
+  section.append(el("h2", {}, `${table.title} `, el("span", { class: "summary" }, `(${rows.length} of ${all.length})`)));
+  if (table.note) section.append(el("p", { class: "note" }, typeof table.note === "function" ? table.note(DATA) : table.note));
+  if (!rows.length) { section.append(el("div", { class: "empty" }, all.length ? "Nothing matches the filter." : "No games yet.")); return section; }
+
+  const head = el("tr", {}, el("th", { class: "num" }, "#"));
+  table.columns.forEach((col, i) => {
+    const arrow = s.col === i ? el("span", { class: "arrow" }, s.dir < 0 ? "▼" : "▲") : null;
+    head.append(el("th", {
+      class: col.num ? "num" : "", title: [helpFor(table, col), "Click to sort by " + col.label + "."].filter(Boolean).join("\n"),
+      onclick: () => { state.sorts[table.id] = { col: i, dir: s.col === i ? -s.dir : -1 }; remember(); render(); },
+    }, col.label, arrow));
+  });
+
+  // Bars measure from the column's base (1000 Elo, 50%, 0 score), scaled to its furthest value.
+  const spans = table.columns.map(col => {
+    if (!col.bar) return 0;
+    return Math.max(1e-9, ...rows.map(r => Math.abs((col.value(r) ?? col.base) - col.base)));
+  });
+
+  const body = el("tbody");
+  sorted(table, rows).forEach((r, n) => {
+    const tr = el("tr", {}, el("td", { class: "rank num" }, String(n + 1)));
+    table.columns.forEach((col, i) => {
+      const v = col.value(r);
+      const shown = col.text ? col.text(r) : String(v ?? "—");
+      if (col.cell) {
+        tr.append(el("td", {}, col.cell(r)));
+      } else if (col.bar) {
+        const off = v == null ? 0 : (v - col.base) / spans[i];
+        // Bars grow from the middle: right for above the base, left for below.
+        const bar = el("div", { class: "bar" + (off < 0 ? " neg" : "") });
+        const half = Math.abs(off) * 50;
+        bar.style.width = half + "%";
+        bar.style.left = (off < 0 ? 50 - half : 50) + "%";
+        const text = el("span", { class: col.signed && v != null ? (v > 0 ? "pos" : v < 0 ? "neg" : "") : "" }, shown);
+        tr.append(el("td", { class: "barcell num" }, bar, text));
+      } else {
+        const cls = [col.num ? "num" : "", col.tone ? col.tone(r) : ""].filter(Boolean).join(" ");
+        tr.append(el("td", col.title ? { class: cls, title: col.title(r) } : { class: cls }, shown));
+      }
+    });
+    body.append(tr);
+  });
+  section.append(el("div", { class: "scroll" }, el("table", {}, el("thead", {}, head), body)));
+  return section;
+}
+
+function render() {
+  const tabs = document.getElementById("tabs");
+  tabs.replaceChildren(...[{ id: "all", title: "All" }, ...TABLES].map(t =>
+    el("button", { "aria-pressed": String(state.tab === t.id), onclick: () => { state.tab = t.id; remember(); render(); } }, t.title)));
+  const main = document.getElementById("tables");
+  main.replaceChildren(...TABLES.filter(t => state.tab === "all" || state.tab === t.id).map(t => t.render ? t.render(t) : renderTable(t)));
+}
+
+function init() {
+  recall();
+  // A remembered tab that's gone (Counters and Character pairs were) falls back to All.
+  if (state.tab !== "all" && !TABLES.some(t => t.id === state.tab)) state.tab = "all";
+  const games = DATA.games || 0, draws = DATA.draws || 0;
+  // When the checker last saved, from the data script.
+  const when = WRITTEN ? ` · updated ${WRITTEN.toLocaleTimeString()}` : "";
+  // The balance version is the folder the page is in (balance-data/v0.0.1/balance.html).
+  const folder = decodeURIComponent(location.pathname.split("/").slice(-2)[0] || "");
+  const version = /^v\d/.test(folder) ? folder : "";
+  if (version) {
+    document.title = `Balance Report ${version}`;
+    document.getElementById("compare").hidden = false;
+  }
+  document.getElementById("summary").textContent = `${version ? version + " · " : ""}${games} games, ${draws} draws${when}`;
+
+  // Auto-refresh: reload on a timer, coming back to the same scroll position.
+  const auto = document.getElementById("auto");
+  let timer = null;
+  function follow() {
+    auto.setAttribute("aria-pressed", String(state.auto));
+    clearTimeout(timer);
+    if (state.auto) {
+      timer = setTimeout(() => {
+        try { sessionStorage.setItem("balance-report-scroll", String(window.scrollY)); } catch (e) {}
+        location.reload();
+      }, REFRESH_SECONDS * 1000);
+    }
+  }
+  auto.addEventListener("click", () => { state.auto = !state.auto; remember(); follow(); });
+  follow();
+  const filter = document.getElementById("filter");
+  const min = document.getElementById("min");
+  const short = document.getElementById("short");
+  filter.value = state.filter; min.value = state.min; short.value = state.short || "";
+  const slackBox = document.getElementById("slack");
+  slackBox.value = state.slack ?? "";
+  slackBox.addEventListener("input", () => { state.slack = slackBox.value === "" ? undefined : Math.min(20, Math.max(0, Number(slackBox.value) || 0)); remember(); render(); });
+  short.addEventListener("input", () => { state.short = Math.max(0, Number(short.value) || 0); remember(); render(); });
+  filter.addEventListener("input", () => { state.filter = filter.value.trim().toLowerCase(); remember(); render(); });
+  min.addEventListener("input", () => { state.min = Math.max(0, Number(min.value) || 0); remember(); render(); });
+  document.getElementById("theme").addEventListener("click", () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+  });
+  render();
+  // Back to where the page was before an auto-refresh, once the tables are drawn.
+  try {
+    const y = sessionStorage.getItem("balance-report-scroll");
+    if (y != null) { window.scrollTo(0, Number(y)); sessionStorage.removeItem("balance-report-scroll"); }
+  } catch (e) {}
+}
+// Loads the data script beside this page, then draws it.
+(function load() {
+  const src = location.pathname.split("/").pop().replace(/\.html?$/, "") + ".data.js";
+  const script = document.createElement("script");
+  script.src = src + "?" + Date.now();
+  script.onload = () => {
+    DATA = window.BALANCE_DATA || {};
+    STATS = window.BALANCE_STATS || {};
+    if (window.BALANCE_WRITTEN) WRITTEN = new Date(window.BALANCE_WRITTEN * 1000);
+    init();
+  };
+  script.onerror = () => {
+    document.getElementById("summary").textContent = `No data: ${src} is missing. Run the balance checker (--games 0 writes it).`;
+  };
+  document.head.append(script);
+})();
+</script>
+</body>
+</html>
