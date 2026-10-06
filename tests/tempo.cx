@@ -4,12 +4,13 @@ import { engine, perform, announce } from "battler/core/engine";
 import { use_move } from "battler/core/move";
 import { Choice } from "battler/core/target";
 import { start_round, begin_phase, next_actor } from "battler/core/order";
-import { speed_up, speed_down, crescendo, minion_marker } from "battler/content/effects";
-import { allegro, largo } from "battler/content/moves";
-import { crescendo_attack_percent, crescendo_defense_percent, largo_rounds } from "battler/content/tuning";
+import { speed_up, speed_down, crescendo, overture, minion_marker } from "battler/content/effects";
+import { allegro, largo, heckle, curtains_move } from "battler/content/moves";
+import { crescendo_attack_percent, crescendo_defense_percent, largo_rounds, overture_percent, overture_fade_percent, heckle_rounds, curtains_line_percent } from "battler/content/tuning";
 import { duel, who, slot, has_effect } from "support";
 
-// The Bard: speed up and speed down, Allegro, Largo and Crescendo (docs/characters.md#bard).
+// The Bard: speed up and speed down, Overture, Allegro, Heckle and Curtains, and the old Largo and
+// Crescendo (docs/characters.md#bard).
 
 fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
 
@@ -59,25 +60,98 @@ fn a_slow_character_sped_up_acts_in_the_normal_phase() {
 }
 
 @test
-fn allegro_speeds_up_an_ally_and_raises_its_attack_for_its_next_turn() {
-    var b = duel(["Bard", "Ally"], ["Foe"]);
+fn allegro_speeds_up_every_ally_for_its_next_turn() {
+    var b = duel(["Bard", "Ally", "Other"], ["Foe"]);
     var ally = who(b, slot(0, 1));
     ally.tier = Tier.Slow;
     ally.start_cooldown("Long", 3);
-    assert(use_move(engine(), b, slot(0, 0), allegro(), at(slot(0, 1))), "used");
-    assert(ally.current_tier() == Tier.Normal, "one tier faster");
-    assert(ally.current_attack() == stepped(100, 1), "attack up");
-    assert(ally.cooldown_left("Long") == 3, "cooldowns untouched");
+    assert(use_move(engine(), b, slot(0, 0), allegro(), Choice.NoTarget), "used");
+    assert(ally.current_tier() == Tier.Normal && who(b, slot(0, 2)).current_tier() == Tier.Fast, "each one tier faster");
+    assert(who(b, slot(1, 0)).current_tier() == Tier.Normal, "not the foe");
+    assert(ally.current_attack() == 100 && ally.cooldown_left("Long") == 3, "no attack up, cooldowns untouched");
     announce(engine(), b, EventKind.RoundEnded);
-    assert(ally.current_attack() == stepped(100, 1), "rounds don't wear it off");
+    assert(ally.current_tier() == Tier.Normal, "rounds don't wear it off");
     announce(engine(), b, EventKind.TurnEnded(ally));
-    assert(ally.current_tier() == Tier.Slow && ally.current_attack() == 100, "both gone after its turn");
+    assert(ally.current_tier() == Tier.Slow && who(b, slot(0, 2)).current_tier() == Tier.Fast, "gone after each one's own turn");
+}
+
+fn same_slot(a: Slot, b: Slot): bool { return a.side == b.side && a.index == b.index; }
+
+@test
+fn heckle_makes_the_bards_team_focus_the_foe_with_its_defense_down() {
+    var b = duel(["Bard", "Ally"], ["Foe", "Other"]);
+    var foe = who(b, slot(1, 0));
+    assert(use_move(engine(), b, slot(0, 0), heckle(), at(slot(1, 0))), "used");
+    var picks = b.targetable_foes(slot(0, 1));
+    assert(picks.len() == 1 && same_slot(picks[0], slot(1, 0)), "the ally must pick the heckled foe");
+    assert(foe.current_defense() == stepped(100, -1), "defense down");
+    assert(b.targetable_foes(slot(1, 1)).len() == 2, "the foes still pick freely");
+    var n = 0;
+    while (n < heckle_rounds()) {
+        assert(has_effect(foe, "Heckled") && has_effect(foe, "Defense down"), "both last its rounds");
+        announce(engine(), b, EventKind.RoundEnded);
+        n = n + 1;
+    }
+    assert(!has_effect(foe, "Heckled") && !has_effect(foe, "Defense down") && b.targetable_foes(slot(0, 1)).len() == 2, "then both are gone");
 }
 
 @test
-fn allegro_cant_target_the_bard() {
+fn heckle_is_two_debuffs_a_cleanse_takes_off() {
+    var b = duel(["Bard"], ["Foe"]);
+    use_move(engine(), b, slot(0, 0), heckle(), at(slot(1, 0)));
+    add(b, [Action.Cleanse(who(b, slot(1, 0)))]);
+    assert(!has_effect(who(b, slot(1, 0)), "Heckled") && !has_effect(who(b, slot(1, 0)), "Defense down"), "cleansed");
+}
+
+@test
+fn curtains_halves_the_defense_of_foes_below_the_line_for_the_round() {
+    var b = duel(["Bard"], ["Low", "High"]);
+    var low = who(b, slot(1, 0));
+    var high = who(b, slot(1, 1));
+    // Just under and at the line.
+    low.take(101 - curtains_line_percent());
+    high.take(100 - curtains_line_percent());
+    assert(use_move(engine(), b, slot(0, 0), curtains_move(), Choice.NoTarget), "used");
+    assert(has_effect(low, "Curtains") && low.current_defense() == 50, "below the line: defense halved, so hits deal double");
+    assert(!has_effect(high, "Curtains") && high.current_defense() == 100, "at the line: nothing");
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(!has_effect(low, "Curtains") && low.current_defense() == 100, "gone at the end of the round");
+}
+
+/** A Bard with Overture and an ally, against a foe. */
+fn with_overture(): Battle {
     var b = duel(["Bard", "Ally"], ["Foe"]);
-    assert(!use_move(engine(), b, slot(0, 0), allegro(), at(slot(0, 0))), "not itself");
+    who(b, slot(0, 0)).effects.push(overture());
+    return b;
+}
+
+/** The team's attack with Overture after this many round ends. */
+fn overtured(rounds: int): int {
+    var left = overture_percent() - overture_fade_percent() * rounds;
+    if (left < 0) { left = 0; }
+    return 100 * (100 + left) / 100;
+}
+
+@test
+fn overture_opens_strong_and_fades_each_round_to_nothing() {
+    var b = with_overture();
+    var n = 0;
+    while (overtured(n) > 100) {
+        assert(who(b, slot(0, 1)).current_attack() == overtured(n) && who(b, slot(0, 0)).current_attack() == overtured(n), "the whole team, this round");
+        assert(who(b, slot(1, 0)).current_attack() == 100, "not the foe");
+        announce(engine(), b, EventKind.RoundEnded);
+        n = n + 1;
+    }
+    assert(who(b, slot(0, 1)).current_attack() == 100, "nothing once it has faded");
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(who(b, slot(0, 1)).current_attack() == 100, "and it stays at nothing");
+}
+
+@test
+fn overture_stops_while_the_bard_is_down() {
+    var b = with_overture();
+    add(b, [Action.Damage(who(b, slot(0, 0)), Option.None, 1000, false)]);
+    assert(who(b, slot(0, 1)).current_attack() == 100, "no bonus while it's down");
 }
 
 @test

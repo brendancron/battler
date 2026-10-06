@@ -3,17 +3,17 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { Choice } from "battler/core/target";
 import { use_move, damage, hit } from "battler/core/move";
-import { energize, energized_stat, taunt, keen_eye, regen, heal_block, predator, predator_multiplier, shield, barrier, poison, panacea } from "battler/content/effects";
+import { energize, energized_stat, attuned_stat, defense_down, timed, sanguine, death_throes, taunt, keen_eye, regen, heal_block, predator, predator_multiplier, shield, barrier, poison, panacea } from "battler/content/effects";
 import {
     cleave, aimed_shot, hunters_mark, venom_arrow, smite, guard, lay_on_hands, prayer, purify, sanctuary, brimstone, hex_move,
-    acid_flask, greater_health_potion_move, energize_move, energizer_potion, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows, reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, backstab, execution, resurrection
+    acid_flask, greater_health_potion_move, energize_move, energizer_potion, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows, reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, attune, last_breath_move, crimson_veil, backstab, execution, resurrection
 } from "battler/content/moves";
 import {
     cleave_power, aimed_shot_power, venom_arrow_power, venom_arrow_poison, smite_power, guard_rounds, lay_on_hands_heal, prayer_heal, purify_heal, sanctuary_heal,
     brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, energizer_heal, panacea_mist_heal, disarming_palm_power,
     crippling_blow_power, crippling_blow_turns, flurry_power, flurry_picks, reap_power, reap_wound_divisor,
     soul_siphon_power, soul_siphon_drain_percent, writhing_depths_power, shield_bash_power, bulwark_shield,
-    healing_rain_heal, healing_rain_regen, healing_rain_rounds, backstab_power, execution_power, resurrection_percent, predator_line_percent
+    healing_rain_heal, hunters_mark_power, marked_percent, crimson_veil_power, sanguine_percent, backstab_power, execution_power, resurrection_percent, predator_line_percent
 } from "battler/content/tuning";
 import { duel, who, slot, logged, has_effect, sturdy } from "support";
 
@@ -49,6 +49,9 @@ fn use(b: Battle, user: Slot, move: string, choice: Choice): bool {
     if (move == "shield_bash") { m = shield_bash(); }
     if (move == "bulwark") { m = bulwark(); }
     if (move == "healing_rain") { m = healing_rain(); }
+    if (move == "attune") { m = attune(); }
+    if (move == "last_breath") { m = last_breath_move(); }
+    if (move == "crimson_veil") { m = crimson_veil(); }
     if (move == "backstab") { m = backstab(); }
     if (move == "execution") { m = execution(); }
     if (move == "resurrection") { m = resurrection(); }
@@ -106,13 +109,31 @@ fn cleave_and_aimed_shot_are_direct_hits_at_their_power() {
 }
 
 @test
+fn hunters_mark_hits_first_then_marks() {
+    var b = duel(["A"], ["B"]);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), hunters_mark_power());
+    use(b, slot(0, 0), "hunters_mark", at(slot(1, 0)));
+    assert(who(b, slot(1, 0)).hp == 100 - d, "an unmarked hit");
+    assert(has_effect(who(b, slot(1, 0)), "Marked") && who(b, slot(1, 0)).current_defense() == 100 * 100 / (100 + marked_percent()), "Marked: defense down by its percent");
+}
+
+@test
+fn marked_multiplies_with_defense_down() {
+    var b = duel(["A"], ["B"]);
+    use(b, slot(0, 0), "hunters_mark", at(slot(1, 0)));
+    var marked_only = who(b, slot(1, 0)).current_defense();
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(1, 0)), timed(defense_down(), 2))]);
+    assert(who(b, slot(1, 0)).current_defense() < marked_only, "both count");
+}
+
+@test
 fn hunters_mark_makes_hits_land_harder() {
     var b = duel(["A"], ["B", "C"]);
     use(b, slot(0, 0), "hunters_mark", at(slot(1, 0)));
-    assert(who(b, slot(1, 0)).current_defense() < 100, "defense down");
-    use(b, slot(0, 0), "aimed_shot", at(slot(1, 0)));
-    use(b, slot(0, 0), "aimed_shot", at(slot(1, 1)));
-    assert(who(b, slot(1, 0)).hp < who(b, slot(1, 1)).hp, "the marked foe lost more");
+    var marked_before = who(b, slot(1, 0)).hp;
+    assert(use(b, slot(0, 0), "aimed_shot", at(slot(1, 0))) && use(b, slot(0, 0), "aimed_shot", at(slot(1, 1))), "both shots fired");
+    assert(who(b, slot(1, 1)).hp < 100, "the unmarked foe was hit");
+    assert(marked_before - who(b, slot(1, 0)).hp > 100 - who(b, slot(1, 1)).hp, "the marked foe lost more to the same shot");
 }
 
 @test
@@ -572,20 +593,48 @@ fn the_log_lists_each_pick() {
 // Shaman
 
 @test
-fn healing_rain_heals_at_once_then_regens_the_team_for_its_rounds() {
+fn healing_rain_cleanses_and_heals_the_whole_team() {
     var b = duel(["A", "B"], ["C"]);
-    var total = healing_rain_regen() * healing_rain_rounds();
-    sturdy(who(b, slot(0, 0)));
-    who(b, slot(0, 0)).take(990);
-    who(b, slot(0, 1)).take(1);
+    var a = who(b, slot(0, 0));
+    var ally = who(b, slot(0, 1));
+    a.take(90);
+    ally.take(1);
     who(b, slot(1, 0)).take(90);
+    perform(engine(), b, "test", [Action.AddEffect(a, heal_block(2)), Action.AddEffect(ally, poison(5)), Action.AddEffect(who(b, slot(1, 0)), poison(5))]);
     use(b, slot(0, 0), "healing_rain", Choice.NoTarget);
-    assert(who(b, slot(0, 0)).hp == 10 + healing_rain_heal(), "the heal lands at once");
-    end_rounds(b, healing_rain_rounds() + 1);
-    assert(who(b, slot(0, 0)).hp == 10 + healing_rain_heal() + total, "then the regen each round, for its rounds");
-    assert(who(b, slot(0, 1)).hp == 100, "capped at max");
-    assert(who(b, slot(1, 0)).hp == 10, "not the foes");
-    assert(!has_effect(who(b, slot(0, 0)), "Regen"), "gone after its rounds");
+    assert(!has_effect(a, "Heal Block") && a.hp == healed(10, healing_rain_heal()), "block cleansed first, then healed");
+    assert(!has_effect(ally, "Poison") && ally.hp == 100, "cleansed, and capped at max");
+    assert(has_effect(who(b, slot(1, 0)), "Poison") && who(b, slot(1, 0)).hp == 10, "not the foes");
+    assert(!has_effect(a, "Regen"), "no regen any more");
+}
+
+@test
+fn attune_gives_every_ally_a_stack_that_lasts() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "attune", Choice.NoTarget);
+    assert(who(b, slot(0, 0)).current_attack() == attuned_stat(100, 1) && who(b, slot(0, 1)).current_defense() == attuned_stat(100, 1), "the Shaman and its ally");
+    assert(who(b, slot(1, 0)).current_attack() == 100, "not the foes");
+    end_rounds(b, 5);
+    use(b, slot(0, 1), "attune", Choice.NoTarget);
+    assert(who(b, slot(0, 0)).current_attack() == attuned_stat(100, 2), "a second stack multiplies");
+}
+
+@test
+fn attuned_cant_be_cleansed_dispelled_or_stolen() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "attune", Choice.NoTarget);
+    perform(engine(), b, "test", [Action.Cleanse(who(b, slot(0, 1))), Action.Dispel(who(b, slot(0, 1))), Action.Steal(who(b, slot(0, 1)), who(b, slot(1, 0)))]);
+    assert(has_effect(who(b, slot(0, 1)), "Attuned") && !has_effect(who(b, slot(1, 0)), "Attuned"), "still on B");
+}
+
+@test
+fn attuned_and_energized_multiply_each_other() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "energizer_potion", at(slot(0, 1)));
+    use(b, slot(0, 0), "attune", Choice.NoTarget);
+    var both = who(b, slot(0, 1)).current_attack();
+    // Each rounds down after its own multiply, so either order can come out a point apart.
+    assert(both == attuned_stat(energized_stat(100, 1), 1) || both == energized_stat(attuned_stat(100, 1), 1), "both, one after the other");
 }
 
 @test
@@ -706,4 +755,59 @@ fn panacea_mist_heals_every_ally_and_hands_out_a_panacea() {
         Option.None => { assert(false, "still holding"); }
     }
     assert(!has_effect(who(b, slot(1, 0)), "Panacea"), "not the foe");
+}
+
+// Alchemist: Last Breath (v0.0.9)
+
+@test
+fn last_breath_leaves_the_ally_at_one_hp_instead_of_falling() {
+    var b = duel(["A", "B"], ["C"]);
+    var ally = who(b, slot(0, 1));
+    use(b, slot(0, 0), "last_breath", at(slot(0, 1)));
+    perform(engine(), b, "test", [Action.Damage(ally, Option.None, 1000, true)]);
+    assert(!ally.fainted() && ally.hp == 1, "standing at 1 HP");
+    assert(!has_effect(ally, "Last Breath"), "used up");
+    perform(engine(), b, "test", [Action.Damage(ally, Option.None, 1, true)]);
+    assert(ally.fainted(), "the next hit finishes it");
+}
+
+@test
+fn last_breath_wears_off_at_the_end_of_the_round() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "last_breath", at(slot(0, 1)));
+    end_rounds(b, 1);
+    perform(engine(), b, "test", [Action.Damage(who(b, slot(0, 1)), Option.None, 1000, true)]);
+    assert(who(b, slot(0, 1)).fainted(), "gone, so it falls");
+}
+
+@test
+fn last_breath_means_no_fall_so_nothing_that_waits_for_one_happens() {
+    var b = duel(["A", "B"], ["C"]);
+    var ally = who(b, slot(0, 1));
+    perform(engine(), b, "test", [Action.AddEffect(ally, death_throes())]);
+    use(b, slot(0, 0), "last_breath", at(slot(0, 1)));
+    perform(engine(), b, "test", [Action.Damage(ally, Option.None, 1000, true)]);
+    assert(who(b, slot(1, 0)).hp == 100 && !ally.corpse, "no Death Throes, no corpse");
+}
+
+@test
+fn last_breath_doesnt_stop_a_sacrifice() {
+    var b = duel(["A", "B"], ["C"]);
+    use(b, slot(0, 0), "last_breath", at(slot(0, 1)));
+    perform(engine(), b, "test", [Action.Sacrifice(who(b, slot(0, 1)))]);
+    assert(who(b, slot(0, 1)).fainted(), "it gave itself up");
+}
+
+// Vampire: Crimson Veil (v0.0.9)
+
+@test
+fn crimson_veil_hits_every_foe_and_sanguine_heals_from_each() {
+    var b = duel(["V"], ["B", "C"]);
+    var v = who(b, slot(0, 0));
+    perform(engine(), b, "test", [Action.AddEffect(v, sanguine())]);
+    v.take(90);
+    var d = hit_for(b, slot(0, 0), slot(1, 0), crimson_veil_power());
+    use(b, slot(0, 0), "crimson_veil", Choice.NoTarget);
+    assert(who(b, slot(1, 0)).hp == 100 - d && who(b, slot(1, 1)).hp == 100 - d, "both foes hit");
+    assert(v.hp == healed(10, 2 * (d * sanguine_percent() / 100)), "fed on each hit");
 }

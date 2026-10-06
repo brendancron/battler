@@ -88,8 +88,10 @@ type Cooldown { move: string, turns: int }
  * standing character on the owner's side, the owner included, while the
  * owner stands (docs/effects.md#auras). A `takes_the_fall` effect makes
  * its owner fall in place of the first ally a hit would knock out, the ally
- * keeping the owner's HP (the Fairy's Fae Bargain). `partner` is the
- * character a link ties the owner to (the Shaman's Spirit Link): a
+ * keeping the owner's HP (the Fairy's Fae Bargain). A `stays_up` effect
+ * keeps its owner at 1 HP when damage would knock it out, and is used up
+ * (the Alchemist's Last Breath). `partner` is the
+ * character a link ties the owner to (the Grim Reaper's Spirit Link): a
  * `redirect_damage` percent of the owner's damage goes to the partner
  * instead, and a `redirect_healing` percent of its healing, while the partner
  * holds the other end (an effect of the same kind).
@@ -120,6 +122,7 @@ type Effect {
     passive: bool,
     aura: bool,
     takes_the_fall: bool,
+    stays_up: bool,
     partner: List<Character>,
     redirect_damage: int,
     redirect_healing: int,

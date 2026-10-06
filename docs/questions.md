@@ -19,9 +19,22 @@ from, and the question is removed from here.
   how (a passive, a move, an effect of some hits)?
 
 
+## Designed, not built yet
+
+Agreed designs waiting to be coded, all at once when the user says so. Each
+is written up in its doc; remove it from here once it's built and tested.
+
+None: v0.0.9's designs are all built.
+
 ## Later
 
 Set aside on purpose; can be added without changing what exists.
+
+- **The Frost Giant's third move** ([characters.md](characters.md#frost-giant)).
+  Cryosleep went to the Cryomancer in v0.0.9, leaving it Avalanche and
+  Glacial Roar; it plays v0.0.9 with two moves to see where it stands.
+  Shatter (a heavy hit, triple on a frozen foe, breaking the freeze) was the
+  front-runner.
 
 - **Replay** ([speed.md](speed.md)). An effect that lets a character act a
   second time in a round. When it acts (straight away, or when priority next
@@ -44,12 +57,12 @@ Set aside on purpose; can be added without changing what exists.
 - **Witch passive and third move** ([characters.md](characters.md)). The Witch
   has Brimstone and Hex for now.
 - **Grim Reaper third move** ([characters.md](characters.md)). It has Reap and
-  Soul Siphon for now.
+  Spirit Link for now.
 - **Warlock passive and third move** ([characters.md](characters.md#warlock)).
   It has Writhing Depths (it was the Pyromancer's Inferno) and The Final
   Offering.
-- **Shaman passive** ([characters.md](characters.md)). It has Healing Rain,
-  Spirit Link and Totem.
+- **Shaman passive** ([characters.md](characters.md)). It has Attune, Totem
+  and Healing Rain (v0.0.9).
 - **Choosing home or away** ([draft.md](draft.md#home-and-away)). For now a coin
   flip decides.
 - **Balance checker progress back on stdout** (src/balance.cx). Its progress
@@ -57,12 +70,8 @@ Set aside on purpose; can be added without changing what exists.
   (CronyxLang#138). Once that's fixed, change `progress()` back to `print`.
 - **Fairy third move** ([characters.md](characters.md#fairy)). It has Fairy
   Ring and Pixie Dust.
-- **Necromancer passive and third move** ([characters.md](characters.md#necromancer)).
-  It has Wither and Raise Dead for now.
-- **Vampire third move** ([characters.md](characters.md#vampire)). It has Bite
-  and Hemorrhage for now; Crimson Veil was rejected.
-- **Cryomancer passive and third move** ([characters.md](characters.md#cryomancer)).
-  It has Blizzard and Frostbite for now.
+- **Necromancer third move** ([characters.md](characters.md#necromancer)).
+  It has Wither and Raise Dead, and Death Throes as its passive (v0.0.8).
 - **Stormbringer passive and third move** ([characters.md](characters.md#stormbringer)).
   It has Thunderstorm and Chain Lightning, and no passive for now.
 - **Ninja second and third moves** ([characters.md](characters.md#ninja)). It

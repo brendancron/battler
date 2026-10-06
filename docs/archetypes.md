@@ -44,7 +44,7 @@ Each character is listed under its primary archetype only.
 | Barbarian   | Warrior   | Normal   |
 | Warlock     | Mage      | Slow     |
 | Ranger      | Rogue     | Fast     |
-| Paladin     | Tank      | Slow     |
+| Paladin     | Tank      | Normal   |
 | Cleric      | Support   | Normal   |
 | Monk        | Warrior   | Normal   |
 | Witch       | Mage      | Normal   |

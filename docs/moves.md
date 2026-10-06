@@ -37,7 +37,7 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Ranger      | Hunter's Mark  | 3 |
 | Ranger      | Venom Arrow    | 2 |
 | Paladin     | Smite          | 2 |
-| Paladin     | Guard          | 3 |
+| Paladin     | Guard          | 4 |
 | Paladin     | Lay on Hands   | 3 |
 | Cleric      | Prayer         | 4 |
 | Cleric      | Purify         | 3 |
@@ -45,35 +45,37 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Witch       | Brimstone      | 5 |
 | Witch       | Hex            | 4 |
 | Alchemist   | Panacea Mist   | 3 |
-| Alchemist   | Energizer Potion | 3 |
+| Alchemist   | Last Breath    | 3 |
 | Alchemist   | Acid Flask     | 4 |
 | Monk        | Disarming Palm | 2 |
 | Monk        | Crippling Blow | 2 |
 | Monk        | Flurry of Blows| 3 |
 | Grim Reaper | Reap           | 3 |
-| Grim Reaper | Soul Siphon    | 2 |
+| Grim Reaper | Spirit Link    | 3 |
 | Warlock     | Writhing Depths | 5 |
 | Warlock     | The Final Offering | 5 |
-| Shaman      | Healing Rain   | 5 |
-| Shaman      | Spirit Link    | 3 |
+| Shaman      | Attune         | 3 |
+| Shaman      | Healing Rain   | 4 |
 | Shaman      | Totem          | 3, from when the totem is destroyed ([summons.md](summons.md)) |
 | Knight      | Shield Bash    | 3 |
 | Knight      | Bulwark        | 3 |
 | Assassin    | Backstab       | 3 |
 | Assassin    | Execution      | 4 |
-| Bard        | Allegro        | 3 |
-| Bard        | Largo          | 3 |
+| Bard        | Allegro        | 4 |
+| Bard        | Heckle         | 4 |
+| Bard        | Curtains       | 5 |
 | Fairy       | Fairy Ring     | 7 |
 | Fairy       | Pixie Dust     | 4 |
 | Necromancer | Wither         | 4 |
 | Necromancer | Raise Dead     | 5 |
 | Vampire     | Bite           | 2 |
 | Vampire     | Hemorrhage     | 3 |
+| Vampire     | Crimson Veil   | 3 |
 | Cryomancer  | Blizzard       | 4 |
-| Cryomancer  | Frostbite      | 2 |
+| Cryomancer  | Icicle Barrage | 3 |
+| Cryomancer  | Cryosleep      | 4 |
 | Frost Giant | Avalanche      | 4 |
 | Frost Giant | Glacial Roar   | 3 |
-| Frost Giant | Cryosleep      | 4 |
 | Construct   | Piston Slam    | 3 |
 | Construct   | Lockdown       | 4 |
 | Construct   | Overclock      | 6 |
@@ -86,6 +88,7 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Swashbuckler | En Garde      | 4 |
 | Jester      | Trick Blade    | 2 |
 | Jester      | Puppeteer      | 5, from when the puppet falls ([summons.md](summons.md#the-jesters-puppets)) |
+| Jester      | Pandemonium    | 3 |
 
 ## Basic attacks
 

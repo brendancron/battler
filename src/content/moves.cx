@@ -4,31 +4,31 @@ import { TargetShape, Target } from "../core/target";
 import { MoveDef, hit, follow_up_hit, damage } from "../core/move";
 import { character, Tier, Effect } from "../core/creature";
 import {
-    attack_up, attack_down, defense_down, poison, regen, retaliate, taunt, guarding_taunt, timed, hex, greater_health_potion, energize, energized, barrier, shield, heal_block, silence, parry, panacea, spirit_link_buff, spirit_link_debuff,
-    minion_marker, totems_blessing, totem_spirit, speed_up, speed_down, attack_up_next_turn, invincible, bleed, chill, cryosleep, strings, copy_effect, shroud
+    attack_up, attack_down, defense_down, poison, regen, retaliate, taunt, guarding_taunt, timed, hex, greater_health_potion, energize, energized, attuned, barrier, shield, heal_block, silence, parry, panacea, spirit_link_buff, spirit_link_debuff,
+    minion_marker, totem_taunt, totem_mending, totem_spirit, speed_up, speed_down, attack_up_next_turn, heckled, curtains, marked, chaos, last_breath, invincible, bleed, chill, cryosleep, strings, copy_effect, shroud
 } from "effects";
 import {
     cleave_power, cleave_cooldown, smite_power, smite_cooldown, guard_rounds,
     guard_cooldown, lay_on_hands_heal, lay_on_hands_cooldown, aimed_shot_power,
-    aimed_shot_cooldown, hunters_mark_rounds, hunters_mark_cooldown, venom_arrow_power, venom_arrow_poison, venom_arrow_cooldown, prayer_heal,
+    aimed_shot_cooldown, hunters_mark_power, hunters_mark_rounds, hunters_mark_cooldown, venom_arrow_power, venom_arrow_poison, venom_arrow_cooldown, prayer_heal,
     prayer_cooldown, purify_heal, purify_cooldown, sanctuary_heal, sanctuary_cooldown,
     brimstone_power, brimstone_drain_percent, brimstone_cooldown, hex_cooldown,
-    acid_flask_poison, acid_flask_cooldown, potion_heal, potion_cooldown, energize_cooldown, energizer_cooldown, energizer_heal, panacea_mist_heal, panacea_mist_cooldown,
+    acid_flask_poison, acid_flask_cooldown, potion_heal, potion_cooldown, energize_cooldown, energizer_cooldown, energizer_heal, last_breath_cooldown, panacea_mist_heal, panacea_mist_cooldown,
     disarming_palm_power, disarming_palm_rounds, disarming_palm_cooldown, crippling_blow_power,
     crippling_blow_turns, crippling_blow_cooldown, flurry_power, flurry_picks, flurry_cooldown,
     reap_power, reap_wound_divisor, reap_cooldown, soul_siphon_power, soul_siphon_drain_percent,
     soul_siphon_cooldown, writhing_depths_power, writhing_depths_cooldown, shield_bash_power,
     shield_bash_rounds, shield_bash_cooldown, bulwark_shield, bulwark_cooldown,
-    healing_rain_heal, healing_rain_regen, healing_rain_rounds, healing_rain_cooldown, resurrection_percent,
+    healing_rain_heal, healing_rain_cooldown, attune_cooldown, resurrection_percent,
     resurrection_cooldown, spirit_link_cooldown, totem_hp, totem_defense, backstab_power, backstab_cooldown,
-    execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown,
+    execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown, heckle_rounds, heckle_cooldown, curtains_line_percent, curtains_cooldown,
     largo_rounds, largo_cooldown, fairy_ring_cooldown, wither_power, wither_cooldown,
-    raise_dead_cooldown, skeleton_hp, skeleton_attack, skeleton_defense, bite_power, bite_cooldown, hemorrhage_power,
-    hemorrhage_bleed, hemorrhage_rounds, hemorrhage_cooldown, blizzard_power, blizzard_cooldown, frostbite_power,
-    frostbite_cooldown, avalanche_power, avalanche_cooldown, glacial_roar_rounds, glacial_roar_cooldown, cryosleep_heal,
+    raise_dead_cooldown, skeleton_hp, skeleton_attack, skeleton_defense, bite_power, bite_cooldown, crimson_veil_power, crimson_veil_cooldown,
+    hemorrhage_bleed, hemorrhage_rounds, hemorrhage_cooldown, blizzard_power, blizzard_cooldown, icicle_barrage_power,
+    icicle_barrage_picks, icicle_barrage_cooldown, avalanche_power, avalanche_cooldown, glacial_roar_rounds, glacial_roar_cooldown, cryosleep_heal,
     cryosleep_cooldown, piston_slam_power, piston_slam_cooldown, piston_slam_rounds, lockdown_rounds, lockdown_cooldown, overclock_cut, overclock_cooldown, thunderstorm_power,
     thunderstorm_cooldown, chain_lightning_powers, chain_lightning_cooldown, shuriken_power, shuriken_cooldown, shadow_strike_power, shadow_strike_cooldown, plunder_power,
-    plunder_cooldown, pistol_shot_power, pistol_shot_cooldown, en_garde_cooldown, trick_blade_power, trick_blade_cooldown, trick_blade_silence_turns, puppet_percent, pixie_dust_shield, pixie_dust_cooldown
+    plunder_cooldown, pistol_shot_power, pistol_shot_cooldown, en_garde_cooldown, trick_blade_power, trick_blade_cooldown, trick_blade_silence_turns, puppet_percent, pandemonium_power, pandemonium_cooldown, pixie_dust_shield, pixie_dust_cooldown
 } from "tuning";
 
 // Shapes shared by many moves.
@@ -131,7 +131,8 @@ fn aimed_shot_apply(battle: Battle, user: Character, target: Target): List<Actio
 
 fn hunters_mark_apply(battle: Battle, user: Character, target: Target): List<Action> {
     match target {
-        Target.Single(defender) => { return [Action.AddEffect(defender, timed(defense_down(), hunters_mark_rounds()))]; }
+        // The hit lands before the mark, so the mark doesn't boost it.
+        Target.Single(defender) => { return [hit(user, defender, hunters_mark_power()), Action.AddEffect(defender, marked(hunters_mark_rounds()))]; }
         _ => { return []; }
     }
     return [];
@@ -142,7 +143,7 @@ fn aimed_shot(): MoveDef {
     return MoveDef { name: "Aimed Shot", shape: TargetShape.SingleFoe, apply: aimed_shot_apply, cooldown: aimed_shot_cooldown(), basic: false };
 }
 
-/** One foe: defense down. */
+/** One foe: a light hit, then Marked, so hits on it land harder. (Until v0.0.9 no hit, and defense down.) */
 fn hunters_mark(): MoveDef {
     return MoveDef { name: "Hunter's Mark", shape: TargetShape.SingleFoe, apply: hunters_mark_apply, cooldown: hunters_mark_cooldown(), basic: false };
 }
@@ -307,9 +308,22 @@ fn energizer_potion_apply(battle: Battle, user: Character, target: Target): List
     return [];
 }
 
-/** One ally, or the Alchemist: a stack of Energized, for the rest of the battle, and a heal. */
+/** One ally, or the Alchemist: a stack of Energized, for the rest of the battle, and a heal. (The Alchemist's in v0.0.7 and v0.0.8.) */
 fn energizer_potion(): MoveDef {
     return MoveDef { name: "Energizer Potion", shape: TargetShape.SingleAlly, apply: energizer_potion_apply, cooldown: energizer_cooldown(), basic: false };
+}
+
+fn last_breath_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(ally) => { return [Action.AddEffect(ally, last_breath())]; }
+        _ => { return []; }
+    }
+    return [];
+}
+
+/** One ally, or the Alchemist: until the end of the round, damage that would knock it out leaves it at 1 HP instead. */
+fn last_breath_move(): MoveDef {
+    return MoveDef { name: "Last Breath", shape: TargetShape.SingleAlly, apply: last_breath_apply, cooldown: last_breath_cooldown(), basic: false };
 }
 
 fn acid_flask(): MoveDef {
@@ -482,13 +496,30 @@ fn bulwark(): MoveDef {
 
 // Shaman. See docs/characters.md.
 
+fn attune_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(allies) => {
+            for (a in allies) { out.push(Action.AddEffect(a, attuned())); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All allies, the Shaman included: a stack of Attuned each, for the rest of the battle. */
+fn attune(): MoveDef {
+    return MoveDef { name: "Attune", shape: TargetShape.AllAllies, apply: attune_apply, cooldown: attune_cooldown(), basic: false };
+}
+
 fn healing_rain_apply(battle: Battle, user: Character, target: Target): List<Action> {
     var out: List<Action> = [];
     match target {
         Target.Spread(allies) => {
+            // Cleanse first, so a Heal Block is gone before the heal.
             for (a in allies) {
+                out.push(Action.Cleanse(a));
                 out.push(Action.Heal(a, healing_rain_heal()));
-                out.push(Action.AddEffect(a, regen(healing_rain_regen(), healing_rain_rounds())));
             }
         }
         _ => {}
@@ -496,7 +527,7 @@ fn healing_rain_apply(battle: Battle, user: Character, target: Target): List<Act
     return out;
 }
 
-/** All allies, the user included: a heal at once, then regen on each. */
+/** All allies, the user included: each cleansed of its debuffs, then healed. (Until v0.0.9 a heal, then regen.) */
 fn healing_rain(): MoveDef {
     return MoveDef { name: "Healing Rain", shape: TargetShape.AllAllies, apply: healing_rain_apply, cooldown: healing_rain_cooldown(), basic: false };
 }
@@ -578,29 +609,29 @@ fn spirit_link_apply(battle: Battle, user: Character, target: Target): List<Acti
     return [];
 }
 
-/** One foe: linked to the Shaman, which passes it part of its damage and takes part of its healing. */
+/** One foe: linked to the user (the Grim Reaper), which passes it part of its damage and takes part of its healing. */
 fn spirit_link(): MoveDef {
     return MoveDef { name: "Spirit Link", shape: TargetShape.SingleFoe, apply: spirit_link_apply, cooldown: spirit_link_cooldown(), basic: false };
 }
 
-/** The Shaman's totem: a small minion that takes no turns. See docs/summons.md. */
+/** The Shaman's totem: a small minion that takes no turns, taunts, and heals the team each round. See docs/summons.md. */
 fn new_totem(summoner: Character): Character {
     var t = character("Totem", 0, totem_defense(), Tier.Slow);
     t.base_max_hp = totem_hp();
     t.hp = totem_hp();
     t.effects.push(minion_marker(true));
     t.effects.push(totem_spirit(summoner));
-    t.effects.push(totems_blessing());
+    t.effects.push(totem_taunt());
+    t.effects.push(totem_mending());
     return t;
 }
 
-/** The totem carries its blessing as an aura, so it reaches the whole team, and whoever joins later, while it stands. */
 fn totem_apply(battle: Battle, user: Character, target: Target): List<Action> {
     return [Action.Summon(user, new_totem(user))];
 }
 
 /**
- * Summons a totem: the whole team has more attack and defense while it stands.
+ * Summons a totem: it draws the foes' attacks and heals the team while it stands.
  * One at a time; the cooldown starts when the totem is destroyed, so the move
  * itself has none.
  */
@@ -611,16 +642,50 @@ fn totem_move(): MoveDef {
 // Bard. See docs/characters.md#bard.
 
 fn allegro_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
     match target {
-        Target.Single(ally) => { return [Action.AddEffect(ally, speed_up()), Action.AddEffect(ally, attack_up_next_turn())]; }
+        Target.Spread(allies) => {
+            for (a in allies) { out.push(Action.AddEffect(a, speed_up())); }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All allies, the Bard included: a tier faster for each one's next turn. (Until v0.0.9 one ally, with attack up too.) */
+fn allegro(): MoveDef {
+    return MoveDef { name: "Allegro", shape: TargetShape.AllAllies, apply: allegro_apply, cooldown: allegro_cooldown(), basic: false };
+}
+
+fn heckle_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    match target {
+        Target.Single(foe) => { return [Action.AddEffect(foe, heckled(heckle_rounds())), Action.AddEffect(foe, timed(defense_down(), heckle_rounds()))]; }
         _ => { return []; }
     }
     return [];
 }
 
-/** One ally, not the Bard: a tier faster and attack up, both for its next turn. */
-fn allegro(): MoveDef {
-    return MoveDef { name: "Allegro", shape: TargetShape.OtherAlly, apply: allegro_apply, cooldown: allegro_cooldown(), basic: false };
+/** One foe: taunted for the Bard's team, with defense down, so everyone focuses it. */
+fn heckle(): MoveDef {
+    return MoveDef { name: "Heckle", shape: TargetShape.SingleFoe, apply: heckle_apply, cooldown: heckle_cooldown(), basic: false };
+}
+
+fn curtains_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(foes) => {
+            for (f in foes) {
+                if (f.hp * 100 < f.max_health() * curtains_line_percent()) { out.push(Action.AddEffect(f, curtains())); }
+            }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All foes below the line: hits deal them double until the end of the round. */
+fn curtains_move(): MoveDef {
+    return MoveDef { name: "Curtains", shape: TargetShape.AllFoes, apply: curtains_apply, cooldown: curtains_cooldown(), basic: false };
 }
 
 fn largo_apply(battle: Battle, user: Character, target: Target): List<Action> {
@@ -631,7 +696,7 @@ fn largo_apply(battle: Battle, user: Character, target: Target): List<Action> {
     return [];
 }
 
-/** One foe: a tier slower for its next turn, and attack down. */
+/** One foe: a tier slower for its next turn, and attack down. (The Bard's until v0.0.9; no one has it now.) */
 fn largo(): MoveDef {
     return MoveDef { name: "Largo", shape: TargetShape.SingleFoe, apply: largo_apply, cooldown: largo_cooldown(), basic: false };
 }
@@ -718,16 +783,19 @@ fn bite(): MoveDef { return single_hit("Bite", bite_power(), bite_cooldown()); }
 
 fn hemorrhage_apply(battle: Battle, user: Character, target: Target): List<Action> {
     match target {
-        Target.Single(foe) => { return [hit(user, foe, hemorrhage_power()), Action.AddEffect(foe, bleed(user, hemorrhage_bleed(), hemorrhage_rounds()))]; }
+        Target.Single(foe) => { return [Action.AddEffect(foe, bleed(user, hemorrhage_bleed(), hemorrhage_rounds()))]; }
         _ => { return []; }
     }
     return [];
 }
 
-/** One foe: a light hit, and a bleed the Vampire deals. */
+/** One foe: a bleed the Vampire deals, and no hit (until v0.0.9 a light hit too). */
 fn hemorrhage(): MoveDef {
     return MoveDef { name: "Hemorrhage", shape: TargetShape.SingleFoe, apply: hemorrhage_apply, cooldown: hemorrhage_cooldown(), basic: false };
 }
+
+/** All foes: a light hit on each, so Sanguine heals from every one. */
+fn crimson_veil(): MoveDef { return area_hit("Crimson Veil", crimson_veil_power(), crimson_veil_cooldown()); }
 
 // Cryomancer and Frost Giant. See docs/characters.md.
 
@@ -751,17 +819,33 @@ fn chilling_area(name: string, power: int, cooldown: int): MoveDef {
 
 fn blizzard(): MoveDef { return chilling_area("Blizzard", blizzard_power(), blizzard_cooldown()); }
 
-fn frostbite_apply(battle: Battle, user: Character, target: Target): List<Action> {
+fn icicle_barrage_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    var struck: List<Character> = [];
     match target {
-        Target.Single(foe) => { return [hit(user, foe, frostbite_power()), Action.AddEffect(foe, chill())]; }
-        _ => { return []; }
+        Target.Spread(picks) => {
+            for (p in picks) {
+                var again = false;
+                for (q in struck) {
+                    if (same(p, q)) { again = true; }
+                }
+                if (again) {
+                    out.push(follow_up_hit(user, p, icicle_barrage_power()));
+                } else {
+                    out.push(hit(user, p, icicle_barrage_power()));
+                    struck.push(p);
+                }
+                out.push(Action.AddEffect(p, chill()));
+            }
+        }
+        _ => {}
     }
-    return [];
+    return out;
 }
 
-/** One foe: a direct hit and a chill. */
-fn frostbite(): MoveDef {
-    return MoveDef { name: "Frostbite", shape: TargetShape.SingleFoe, apply: frostbite_apply, cooldown: frostbite_cooldown(), basic: false };
+/** Three picks, like Flurry of Blows: each a direct hit and a chill, so they stack to freeze one foe or spread. (Frostbite, one foe, until v0.0.9.) */
+fn icicle_barrage(): MoveDef {
+    return MoveDef { name: "Icicle Barrage", shape: TargetShape.FoePicks(icicle_barrage_picks()), apply: icicle_barrage_apply, cooldown: icicle_barrage_cooldown(), basic: false };
 }
 
 fn avalanche(): MoveDef { return chilling_area("Avalanche", avalanche_power(), avalanche_cooldown()); }
@@ -776,7 +860,7 @@ fn cryosleep_apply(battle: Battle, user: Character, target: Target): List<Action
     return [];
 }
 
-/** One ally, not the Frost Giant: heals it, and it sleeps in the ice through its next turn, taking no damage. */
+/** One ally, not the user (the Cryomancer; the Frost Giant until v0.0.9): heals it, and it sleeps in the ice through its next turn, taking no damage. */
 fn cryosleep_move(): MoveDef {
     return MoveDef { name: "Cryosleep", shape: TargetShape.OtherAlly, apply: cryosleep_apply, cooldown: cryosleep_cooldown(), basic: false };
 }
@@ -937,4 +1021,23 @@ fn puppeteer_apply(battle: Battle, user: Character, target: Target): List<Action
  */
 fn puppeteer(): MoveDef {
     return MoveDef { name: "Puppeteer", shape: TargetShape.PuppetCorpse, apply: puppeteer_apply, cooldown: 0, basic: false };
+}
+
+fn pandemonium_apply(battle: Battle, user: Character, target: Target): List<Action> {
+    var out: List<Action> = [];
+    match target {
+        Target.Spread(foes) => {
+            for (f in foes) {
+                out.push(hit(user, f, pandemonium_power()));
+                out.push(Action.AddEffect(f, chaos()));
+            }
+        }
+        _ => {}
+    }
+    return out;
+}
+
+/** All foes: a light hit on each, and a stack of Chaos, which eats the next buff it would get (v0.0.9). */
+fn pandemonium(): MoveDef {
+    return MoveDef { name: "Pandemonium", shape: TargetShape.AllFoes, apply: pandemonium_apply, cooldown: pandemonium_cooldown(), basic: false };
 }

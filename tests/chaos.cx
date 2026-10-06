@@ -1,0 +1,66 @@
+import { Character, Action, EventKind } from "battler/core/creature";
+import { Battle, Slot } from "battler/core/battle";
+import { engine, perform } from "battler/core/engine";
+import { use_move, damage } from "battler/core/move";
+import { Choice } from "battler/core/target";
+import { chaos, attack_up, attuned, chill, panacea } from "battler/content/effects";
+import { pandemonium } from "battler/content/moves";
+import { pandemonium_power } from "battler/content/tuning";
+import { duel, who, slot, has_effect } from "support";
+
+// The Jester's Pandemonium and Chaos, which eats the next buff (docs/effects.md#chaos).
+
+fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
+
+@test
+fn chaos_eats_the_next_buff_and_is_used_up() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, chaos())]);
+    add(b, [Action.AddEffect(a, attack_up())]);
+    assert(!has_effect(a, "Attack up") && !has_effect(a, "Chaos"), "the buff never landed, and the stack is gone");
+    add(b, [Action.AddEffect(a, attack_up())]);
+    assert(has_effect(a, "Attack up"), "the next one lands");
+}
+
+@test
+fn chaos_eats_a_buff_that_cant_be_removed() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, chaos()), Action.AddEffect(a, attuned())]);
+    assert(!has_effect(a, "Attuned"), "eaten before it landed");
+}
+
+@test
+fn chaos_stacks_and_lets_debuffs_through() {
+    var b = duel(["A"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, chaos()), Action.AddEffect(a, chaos()), Action.AddEffect(a, chill())]);
+    assert(has_effect(a, "Chill") && has_effect(a, "Chaos"), "a debuff lands, the stacks stay");
+    add(b, [Action.AddEffect(a, attack_up()), Action.AddEffect(a, panacea())]);
+    assert(!has_effect(a, "Attack up") && !has_effect(a, "Panacea") && !has_effect(a, "Chaos"), "two stacks ate two buffs");
+}
+
+@test
+fn a_cleanse_removes_chaos_and_a_panacea_blocks_it() {
+    var b = duel(["A", "C"], ["B"]);
+    var a = who(b, slot(0, 0));
+    add(b, [Action.AddEffect(a, chaos()), Action.AddEffect(a, chaos()), Action.Cleanse(a)]);
+    assert(!has_effect(a, "Chaos"), "cleansed");
+    var c = who(b, slot(0, 1));
+    add(b, [Action.AddEffect(c, panacea()), Action.AddEffect(c, chaos())]);
+    assert(!has_effect(c, "Chaos") && !has_effect(c, "Panacea"), "the Panacea blocked it and was used up");
+}
+
+@test
+fn pandemonium_hits_every_foe_lightly_and_gives_each_chaos() {
+    var b = duel(["Jester", "Ally"], ["B", "C"]);
+    var d = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), pandemonium_power());
+    assert(use_move(engine(), b, slot(0, 0), pandemonium(), Choice.NoTarget), "used");
+    var n = 0;
+    while (n < 2) {
+        assert(who(b, slot(1, n)).hp == 100 - d && has_effect(who(b, slot(1, n)), "Chaos"), "hit, with a stack of Chaos");
+        n = n + 1;
+    }
+    assert(!has_effect(who(b, slot(0, 1)), "Chaos"), "not its own side");
+}

@@ -3,9 +3,9 @@ import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { use_move, damage } from "battler/core/move";
 import { Choice } from "battler/core/target";
-import { chill, freeze, hex, cold_aura, cryosleep, panacea, barrier, shield } from "battler/content/effects";
-import { blizzard, frostbite, avalanche, glacial_roar, cryosleep_move, plunder } from "battler/content/moves";
-import { chill_rounds, blizzard_power, frostbite_power, avalanche_power, glacial_roar_rounds, cryosleep_heal } from "battler/content/tuning";
+import { chill, freeze, hex, cold_aura, cryosleep, panacea, barrier, shield, frostbite } from "battler/content/effects";
+import { blizzard, icicle_barrage, avalanche, glacial_roar, cryosleep_move, plunder } from "battler/content/moves";
+import { chill_rounds, blizzard_power, icicle_barrage_power, icicle_barrage_picks, frostbite_damage, avalanche_power, glacial_roar_rounds, cryosleep_heal } from "battler/content/tuning";
 import { duel, who, slot, has_effect } from "support";
 
 // Chill and freeze, the Cryomancer, and the Frost Giant (docs/effects.md#chill-and-freeze).
@@ -99,14 +99,65 @@ fn a_barrier_blocks_the_hit_but_not_the_chill() {
     assert(who(b, slot(1, 0)).hp == 100 && has_effect(who(b, slot(1, 0)), "Chill"), "no damage, still chilled");
 }
 
+/** `icicle_barrage_picks` picks: all on `first` but the last, which goes to `last`. */
+fn barrage_on(first: Slot, last: Slot): Choice {
+    var picks: List<Slot> = [];
+    var i = 0;
+    while (i < icicle_barrage_picks() - 1) { picks.push(first); i = i + 1; }
+    picks.push(last);
+    return Choice.Slots(picks);
+}
+
 @test
-fn frostbite_hits_one_foe_and_chills_it() {
-    var b = duel(["Cryomancer"], ["B"]);
-    var expected = damage(who(b, slot(0, 0)), who(b, slot(1, 0)), frostbite_power());
-    use_move(engine(), b, slot(0, 0), frostbite(), at(slot(1, 0)));
-    assert(who(b, slot(1, 0)).hp == 100 - expected && has_effect(who(b, slot(1, 0)), "Chill"), "hit and chilled");
-    use_move(engine(), b, slot(0, 0), frostbite(), at(slot(1, 0)));
-    assert(has_effect(who(b, slot(1, 0)), "Freeze"), "a second chill freezes");
+fn icicle_barrage_stacked_on_one_foe_freezes_it() {
+    var b = duel(["Cryomancer"], ["B", "C"]);
+    var foe = who(b, slot(1, 0));
+    var first = damage(who(b, slot(0, 0)), foe, icicle_barrage_power());
+    assert(use_move(engine(), b, slot(0, 0), icicle_barrage(), barrage_on(slot(1, 0), slot(1, 1))), "used");
+    assert(has_effect(foe, "Freeze") && !has_effect(foe, "Chill"), "two chills on B freeze it");
+    assert(foe.hp < 100 - first, "and every pick on it hit");
+    assert(has_effect(who(b, slot(1, 1)), "Chill"), "the last pick chilled C");
+}
+
+@test
+fn icicle_barrage_spread_after_blizzard_freezes_each_foe_it_picks() {
+    var b = duel(["Cryomancer"], ["B", "C", "D"]);
+    use_move(engine(), b, slot(0, 0), blizzard(), Choice.NoTarget);
+    var picks: List<Slot> = [];
+    var i = 0;
+    while (i < icicle_barrage_picks()) { picks.push(slot(1, i % 3)); i = i + 1; }
+    use_move(engine(), b, slot(0, 0), icicle_barrage(), Choice.Slots(picks));
+    var n = 0;
+    while (n < icicle_barrage_picks() && n < 3) {
+        assert(has_effect(who(b, slot(1, n)), "Freeze"), "each picked foe frozen");
+        n = n + 1;
+    }
+}
+
+// Frostbite, the Cryomancer's passive
+
+/** A Cryomancer with Frostbite and an ally, against a chilled foe, a frozen foe and a warm one. */
+fn with_frostbite(): Battle {
+    var b = duel(["Cryomancer", "Ally"], ["Chilled", "Frozen", "Warm"]);
+    who(b, slot(0, 0)).effects.push(frostbite());
+    add(b, [Action.AddEffect(who(b, slot(1, 0)), chill()), Action.AddEffect(who(b, slot(1, 1)), freeze())]);
+    return b;
+}
+
+@test
+fn frostbite_hurts_every_chilled_or_frozen_foe_at_the_round_end() {
+    var b = with_frostbite();
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(who(b, slot(1, 0)).hp == 100 - frostbite_damage() && who(b, slot(1, 1)).hp == 100 - frostbite_damage(), "chilled and frozen");
+    assert(who(b, slot(1, 2)).hp == 100 && who(b, slot(0, 1)).hp == 100, "not the warm foe, not allies");
+}
+
+@test
+fn frostbite_stops_while_the_cryomancer_is_down() {
+    var b = with_frostbite();
+    add(b, [Action.Damage(who(b, slot(0, 0)), Option.None, 1000, false)]);
+    announce(engine(), b, EventKind.RoundEnded);
+    assert(who(b, slot(1, 0)).hp == 100, "no damage");
 }
 
 // Frost Giant

@@ -8,13 +8,13 @@ import { spirit_link } from "battler/content/moves";
 import { spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
-// The Shaman's Spirit Link (docs/characters.md#shaman).
+// The Grim Reaper's Spirit Link (docs/characters.md#grim-reaper; the Shaman's until v0.0.9).
 
 fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
 
-/** A Shaman linked to the first of two foes, all sturdy so no share knocks anyone out. */
+/** A Grim Reaper linked to the first of two foes, all sturdy so no share knocks anyone out. */
 fn linked(): Battle {
-    var b = duel(["Shaman"], ["Foe", "Other"]);
+    var b = duel(["Grim Reaper"], ["Foe", "Other"]);
     sturdy(who(b, slot(0, 0)));
     sturdy(who(b, slot(1, 0)));
     use_move(engine(), b, slot(0, 0), spirit_link(), Choice.Slots([slot(1, 0)]));
@@ -22,45 +22,45 @@ fn linked(): Battle {
 }
 
 @test
-fn the_link_puts_a_buff_on_the_shaman_and_a_debuff_on_the_foe() {
+fn the_link_puts_a_buff_on_the_reaper_and_a_debuff_on_the_foe() {
     var b = linked();
     assert(has_effect(who(b, slot(0, 0)), "Spirit Link") && has_effect(who(b, slot(1, 0)), "Spirit Link"), "both ends");
     assert(!has_effect(who(b, slot(1, 1)), "Spirit Link"), "only the chosen foe");
 }
 
 @test
-fn part_of_the_shamans_damage_goes_to_the_foe() {
+fn part_of_the_reapers_damage_goes_to_the_foe() {
     var b = linked();
-    var shaman = who(b, slot(0, 0));
+    var reaper = who(b, slot(0, 0));
     var foe = who(b, slot(1, 0));
-    add(b, [Action.Damage(shaman, Option.Some(who(b, slot(1, 1))), 100, true)]);
+    add(b, [Action.Damage(reaper, Option.Some(who(b, slot(1, 1))), 100, true)]);
     var passed = 100 * spirit_link_damage_percent() / 100;
     assert(foe.hp == 1000 - passed, "the foe takes its share");
-    assert(shaman.hp == 1000 - (100 - passed), "the Shaman the rest");
+    assert(reaper.hp == 1000 - (100 - passed), "the Grim Reaper the rest");
 }
 
 @test
-fn part_of_the_foes_healing_goes_to_the_shaman() {
+fn part_of_the_foes_healing_goes_to_the_reaper() {
     var b = linked();
-    var shaman = who(b, slot(0, 0));
+    var reaper = who(b, slot(0, 0));
     var foe = who(b, slot(1, 0));
-    shaman.take(500);
+    reaper.take(500);
     foe.take(500);
     add(b, [Action.Heal(foe, 100)]);
     var passed = 100 * spirit_link_heal_percent() / 100;
-    assert(shaman.hp == 500 + passed, "the Shaman takes its share");
+    assert(reaper.hp == 500 + passed, "the Grim Reaper takes its share");
     assert(foe.hp == 500 + (100 - passed), "the foe the rest");
 }
 
 @test
 fn only_healing_the_foe_could_take_is_shared() {
     var b = linked();
-    var shaman = who(b, slot(0, 0));
+    var reaper = who(b, slot(0, 0));
     var foe = who(b, slot(1, 0));
-    shaman.take(500);
+    reaper.take(500);
     foe.take(10);
     add(b, [Action.Heal(foe, 100)]);
-    assert(shaman.hp == 500 + 10 * spirit_link_heal_percent() / 100, "a share of the 10 it was missing");
+    assert(reaper.hp == 500 + 10 * spirit_link_heal_percent() / 100, "a share of the 10 it was missing");
 }
 
 @test
@@ -68,13 +68,13 @@ fn cleansing_the_foe_ends_both_ends() {
     var b = linked();
     add(b, [Action.Cleanse(who(b, slot(1, 0)))]);
     assert(!has_effect(who(b, slot(1, 0)), "Spirit Link") && !has_effect(who(b, slot(0, 0)), "Spirit Link"), "gone from both");
-    var shaman = who(b, slot(0, 0));
-    add(b, [Action.Damage(shaman, Option.None, 100, false)]);
-    assert(shaman.hp == 900, "no sharing after");
+    var reaper = who(b, slot(0, 0));
+    add(b, [Action.Damage(reaper, Option.None, 100, false)]);
+    assert(reaper.hp == 900, "no sharing after");
 }
 
 @test
-fn dispelling_the_shaman_ends_both_ends() {
+fn dispelling_the_reaper_ends_both_ends() {
     var b = linked();
     add(b, [Action.Dispel(who(b, slot(0, 0)))]);
     assert(!has_effect(who(b, slot(0, 0)), "Spirit Link") && !has_effect(who(b, slot(1, 0)), "Spirit Link"), "gone from both");
@@ -94,20 +94,20 @@ fn the_link_wears_off_after_its_rounds() {
 
 @test
 fn a_panacea_on_the_foe_stops_the_link_holding() {
-    var b = duel(["Shaman"], ["Foe"]);
+    var b = duel(["Grim Reaper"], ["Foe"]);
     sturdy(who(b, slot(0, 0)));
     sturdy(who(b, slot(1, 0)));
     add(b, [Action.AddEffect(who(b, slot(1, 0)), panacea())]);
     use_move(engine(), b, slot(0, 0), spirit_link(), Choice.Slots([slot(1, 0)]));
     assert(!has_effect(who(b, slot(1, 0)), "Spirit Link"), "blocked");
-    var shaman = who(b, slot(0, 0));
-    add(b, [Action.Damage(shaman, Option.None, 100, false)]);
-    assert(shaman.hp == 900 && who(b, slot(1, 0)).hp == 1000, "nothing shared without the foe's end");
+    var reaper = who(b, slot(0, 0));
+    add(b, [Action.Damage(reaper, Option.None, 100, false)]);
+    assert(reaper.hp == 900 && who(b, slot(1, 0)).hp == 1000, "nothing shared without the foe's end");
 }
 
 @test
-fn the_shamans_end_cant_be_stolen() {
+fn the_reapers_end_cant_be_stolen() {
     var b = linked();
     add(b, [Action.Steal(who(b, slot(0, 0)), who(b, slot(1, 1)))]);
-    assert(has_effect(who(b, slot(0, 0)), "Spirit Link") && !has_effect(who(b, slot(1, 1)), "Spirit Link"), "stays on the Shaman");
+    assert(has_effect(who(b, slot(0, 0)), "Spirit Link") && !has_effect(who(b, slot(1, 1)), "Spirit Link"), "stays on the Grim Reaper");
 }

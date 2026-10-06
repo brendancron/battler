@@ -1,11 +1,12 @@
-import { Character, Action, EventKind, Tier, character } from "battler/core/creature";
+import { Character, Effect, Action, EventKind, Tier, character } from "battler/core/creature";
 import { Battle, Slot } from "battler/core/battle";
 import { engine, perform, announce } from "battler/core/engine";
 import { MoveDef, use_move, usable, turn_over } from "battler/core/move";
 import { Choice, has_targets } from "battler/core/target";
 import { phases, start_round, begin_phase, next_actor } from "battler/core/order";
 import { totem_move, new_totem, brimstone, prayer, cleave } from "battler/content/moves";
-import { totem_hp, totem_bonus_percent, totem_cooldown } from "battler/content/tuning";
+import { base } from "battler/content/effects";
+import { totem_hp, totem_heal, totem_cooldown } from "battler/content/tuning";
 import { duel, who, slot, logged, has_effect } from "support";
 
 /** Shaman in slot 0 with an ally, against one foe, with the totem summoned into slot 2. */
@@ -27,52 +28,104 @@ fn the_totem_joins_its_team_as_an_idle_minion() {
     assert(logged(b, "Shaman summoned a Totem (" + str(totem_hp()) + "/" + str(totem_hp()) + ")."), "logged");
 }
 
+fn end_round(b: Battle) { announce(engine(), b, EventKind.RoundEnded); }
+
 @test
-fn the_team_gets_more_attack_and_defense() {
+fn the_totem_taunts_so_foes_must_pick_it() {
+    var b = with_totem();
+    var picks = b.targetable_foes(slot(1, 0));
+    assert(picks.len() == 1 && same_slot(picks[0], slot(0, 2)), "only the totem");
+    assert(has_effect(totem(b), "Taunt"), "a taunt on the totem");
+}
+
+fn same_slot(a: Slot, b: Slot): bool { return a.side == b.side && a.index == b.index; }
+
+@test
+fn the_totem_heals_every_ally_at_the_end_of_each_round() {
     var b = with_totem();
     var shaman = who(b, slot(0, 0));
     var ally = who(b, slot(0, 1));
-    var blessed = 100 * (100 + totem_bonus_percent()) / 100;
-    assert(ally.current_attack() == blessed && ally.current_defense() == blessed, "the bonus on both");
-    assert(shaman.current_attack() == blessed, "the Shaman too");
+    shaman.take(50);
+    ally.take(50);
+    totem(b).take(totem_heal() + 1);
+    end_round(b);
+    assert(shaman.hp == 50 + totem_heal() && ally.hp == 50 + totem_heal(), "the allies, by its heal");
+    assert(totem(b).hp == totem_hp() - 1, "the totem too");
+    assert(who(b, slot(1, 0)).hp == 100, "not the foe");
+    end_round(b);
+    assert(ally.hp == 50 + 2 * totem_heal(), "again the next round");
+}
+
+@test
+fn the_totems_taunt_and_heal_cant_be_dispelled_or_stolen() {
+    var b = with_totem();
+    perform(engine(), b, "test", [Action.Dispel(totem(b)), Action.Steal(totem(b), who(b, slot(1, 0)))]);
+    assert(has_effect(totem(b), "Taunt") && has_effect(totem(b), "Mending"), "still on the totem");
+    assert(!has_effect(who(b, slot(1, 0)), "Taunt"), "the foe took nothing");
+}
+
+// Auras (docs/effects.md#auras), on a test aura since the totem lost its own in v0.0.9.
+
+fn aura_attack(owner: Character, fx: Effect, attack: int): int { return attack * 2; }
+
+/** An aura doubling attack across its owner's team. */
+fn doubling_aura(): Effect {
+    var e = base("Banner", true);
+    e.immune = true;
+    e.aura = true;
+    e.scale_attack = aura_attack;
+    return e;
+}
+
+/** The Shaman's team, with the ally holding the doubling aura. */
+fn with_aura(): Battle {
+    var b = duel(["Shaman", "Ally"], ["Foe"]);
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 1)), doubling_aura())]);
+    return b;
+}
+
+@test
+fn an_aura_reaches_the_whole_team_but_not_the_foes() {
+    var b = with_aura();
+    assert(who(b, slot(0, 0)).current_attack() == 200 && who(b, slot(0, 1)).current_attack() == 200, "both allies");
+    assert(!has_effect(who(b, slot(0, 0)), "Banner"), "on its owner only");
     assert(who(b, slot(1, 0)).current_attack() == 100, "not the foe");
 }
 
 @test
-fn the_blessing_is_an_aura_on_the_totem_not_a_buff_on_each_ally() {
-    var b = with_totem();
-    assert(has_effect(totem(b), "Totem's Blessing"), "on the totem");
-    assert(!has_effect(who(b, slot(0, 0)), "Totem's Blessing") && !has_effect(who(b, slot(0, 1)), "Totem's Blessing"), "not on the allies");
+fn an_aura_reaches_a_minion_summoned_later() {
+    var b = with_aura();
+    perform(engine(), b, "test", [Action.Summon(who(b, slot(0, 0)), character("Late", 100, 100, Tier.Normal))]);
+    assert(who(b, slot(0, 2)).current_attack() == 200, "on arrival");
 }
 
 @test
-fn the_aura_reaches_a_minion_summoned_after_the_totem() {
-    var b = with_totem();
-    perform(engine(), b, "test", [Action.Summon(who(b, slot(0, 1)), character("Late", 100, 100, Tier.Normal))]);
-    var late = who(b, slot(0, 3));
-    assert(late.current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "blessed on arrival");
-}
-
-@test
-fn the_aura_cant_be_dispelled_or_stolen() {
-    var b = with_totem();
-    perform(engine(), b, "test", [Action.Dispel(totem(b)), Action.Steal(totem(b), who(b, slot(1, 0)))]);
-    assert(who(b, slot(0, 1)).current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "still blessed");
+fn an_aura_cant_be_dispelled_or_stolen() {
+    var b = with_aura();
+    perform(engine(), b, "test", [Action.Dispel(who(b, slot(0, 1))), Action.Steal(who(b, slot(0, 1)), who(b, slot(1, 0)))]);
+    assert(who(b, slot(0, 0)).current_attack() == 200, "still there");
     assert(who(b, slot(1, 0)).current_attack() == 100, "the foe took nothing");
 }
 
 @test
 fn two_of_the_same_aura_dont_stack() {
-    var b = with_totem();
-    perform(engine(), b, "test", [Action.Summon(who(b, slot(0, 1)), new_totem(who(b, slot(0, 1))))]);
-    assert(who(b, slot(0, 1)).current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "one blessing");
+    var b = with_aura();
+    perform(engine(), b, "test", [Action.AddEffect(who(b, slot(0, 0)), doubling_aura())]);
+    assert(who(b, slot(0, 0)).current_attack() == 200, "doubled once");
+}
+
+@test
+fn an_ally_resurrected_while_an_aura_stands_gets_it_again() {
+    var b = with_aura();
+    var shaman = who(b, slot(0, 0));
+    perform(engine(), b, "test", [Action.Damage(shaman, Option.None, 200, false), Action.Resurrect(shaman, 50)]);
+    assert(!shaman.fainted() && shaman.current_attack() == 200, "again");
 }
 
 @test
 fn foes_can_target_the_totem_and_area_moves_hit_it() {
     var b = with_totem();
-    var picks = b.targetable_foes(slot(1, 0));
-    assert(picks.len() == 3, "Shaman, Ally and Totem");
+    assert(b.targetable_foes(slot(1, 0)).len() == 1, "the taunting totem");
     use_move(engine(), b, slot(1, 0), brimstone(), Choice.NoTarget);
     assert(totem(b).hp < totem_hp(), "Brimstone hit it");
 }
@@ -86,14 +139,17 @@ fn allies_can_heal_the_totem() {
 }
 
 @test
-fn destroying_the_totem_ends_the_bonus_and_starts_the_cooldown() {
+fn destroying_the_totem_ends_its_taunt_and_heal_and_starts_the_cooldown() {
     var b = with_totem();
     var shaman = who(b, slot(0, 0));
     assert(shaman.cooldown_left("Totem") == 0, "no cooldown while it stands");
     perform(engine(), b, "test", [Action.Damage(totem(b), Option.None, 1000, false)]);
     assert(totem(b).fainted() && !totem(b).corpse, "destroyed, no corpse");
     assert(logged(b, "Totem was destroyed!"), "logged");
-    assert(!has_effect(who(b, slot(0, 1)), "Totem's Blessing") && who(b, slot(0, 1)).current_attack() == 100, "bonus gone");
+    assert(b.targetable_foes(slot(1, 0)).len() == 2, "no taunt: the foe can pick the Shaman or the ally");
+    who(b, slot(0, 1)).take(50);
+    end_round(b);
+    assert(who(b, slot(0, 1)).hp == 50, "no heal");
     assert(shaman.cooldown_left("Totem") == totem_cooldown() && !usable(shaman, totem_move()), "cooling down");
     var i = 0;
     while (i < totem_cooldown()) { turn_over(shaman, Option.None); i = i + 1; }
@@ -146,10 +202,3 @@ fn the_totem_never_takes_a_turn() {
     assert(seen == 3, "Shaman, Ally and Foe");
 }
 
-@test
-fn an_ally_resurrected_while_the_totem_stands_gets_the_blessing() {
-    var b = with_totem();
-    var ally = who(b, slot(0, 1));
-    perform(engine(), b, "test", [Action.Damage(ally, Option.None, 200, false), Action.Resurrect(ally, 50)]);
-    assert(!ally.fainted() && ally.current_attack() == 100 * (100 + totem_bonus_percent()) / 100, "blessed again");
-}

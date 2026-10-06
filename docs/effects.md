@@ -93,8 +93,9 @@ size, and then is used up. It isn't a shield.
 
 **Speed up** is a buff that moves the character one speed tier faster
 ([speed.md](speed.md)); **speed down** is a debuff that moves it one tier
-slower. The Bard's Allegro and Largo give them
-([characters.md](characters.md#bard)).
+slower. The Bard's Allegro gives speed up to every ally
+([characters.md](characters.md#bard)); speed down came from its Largo until
+v0.0.9.
 
 - They last for the character's next turn: they go away when that turn ends,
   like Heal Block counting down on the character's own turns.
@@ -175,7 +176,7 @@ Details (placeholders, to revisit once a character uses them):
 
 ## Cryosleep
 
-A buff from the Frost Giant's Cryosleep ([characters.md](characters.md#frost-giant)).
+A buff from the Cryomancer's Cryosleep ([characters.md](characters.md#cryomancer); the Frost Giant's until v0.0.9).
 The character sleeps in ice: it skips its next turn, and until that turn has
 passed it takes no damage. Then it wakes and the buff goes away.
 
@@ -192,6 +193,26 @@ It works like a freeze and Invincible together, but it's its own effect:
   comes up in the order with nothing done. Like freeze and Hex, it takes a
   turn of its own: a character in Cryosleep and Hexed loses two.
 - It isn't a freeze, so the character can still be chilled while it sleeps.
+
+## Chaos
+
+A debuff from the Jester's Pandemonium ([characters.md](characters.md#jester);
+v0.0.9): the reverse of a Panacea. Each stack **eats the next buff that
+would be put on its holder**: the buff never lands, and the stack is used
+up.
+
+- **Stacks add up,** like Panacea's charges: two stacks eat the next two
+  buffs. Each Pandemonium adds one.
+- **Any buff that would be put on the holder,** immune ones included: a
+  stack of Attuned or Energized, a shield, a taunt, a speed up, Invincible,
+  a Panacea. Being eaten isn't being removed, so immunity to cleanse,
+  dispel and steal doesn't help. A team-wide buff (Attune, Pixie Dust,
+  Allegro) is eaten only on the allies that hold Chaos.
+- **Not what isn't put on it:** auras (the Bard's Overture reaches it
+  anyway), passives, and effects a character comes with (a totem's taunt).
+- **Chaos is a debuff,** so a cleanse removes every stack, and a Panacea
+  blocks a stack from landing (the Panacea is used up, as for any debuff).
+- It does nothing else: until a buff comes, the holder plays as normal.
 
 ## Silence
 
@@ -230,9 +251,9 @@ the battle.
 An **aura** is an effect on one character that changes the stats of its whole
 side. Nobody else gets a buff: each character's attack and defense are worked
 out from its own effects, then from every aura on a standing character of
-its side, itself included. Totem's Blessing is an aura on the Shaman's totem
-([summons.md](summons.md#the-shamans-totem)), and the Bard's Crescendo one on
-the Bard ([characters.md](characters.md#bard)).
+its side, itself included. The Bard's Overture is one, on the Bard
+([characters.md](characters.md#bard)). (Until v0.0.9 the Shaman's totem had
+one, Totem's Blessing, and the Bard's was Crescendo.)
 
 - **It lives and ends with its owner.** While the owner stands, the aura
   reaches everyone on its side, including anyone who joins later (a

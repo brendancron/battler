@@ -16,7 +16,7 @@
  * with every balance change, here or in roster.cx: the balance checker keeps
  * each version's games apart, in balance-data/<version>/.
  */
-fn balance_version(): string { return "v0.0.8"; }
+fn balance_version(): string { return "v0.0.9"; }
 
 // Barbarian
 
@@ -29,11 +29,11 @@ fn rage_b(): float { return 1.75; }
 
 // Paladin
 
-fn smite_power(): int { return 20; }
+fn smite_power(): int { return 30; }
 fn smite_cooldown(): int { return 2; }
 /** Rounds of taunt with defense up. */
 fn guard_rounds(): int { return 2; }
-fn guard_cooldown(): int { return 3; }
+fn guard_cooldown(): int { return 4; }
 /** Heals the ally this much, and the Paladin this much too. */
 fn lay_on_hands_heal(): int { return 15; }
 fn lay_on_hands_cooldown(): int { return 3; }
@@ -44,8 +44,11 @@ fn last_rites_percent(): int { return 50; }
 
 fn aimed_shot_power(): int { return 30; }
 fn aimed_shot_cooldown(): int { return 2; }
-/** Rounds of defense down. */
+/** Hunter's Mark: a hit of this power, then Marked for its rounds... */
+fn hunters_mark_power(): int { return 15; }
 fn hunters_mark_rounds(): int { return 2; }
+/** ...making hits on the foe deal this percent more (its defense × 100 / (100 + this)). */
+fn marked_percent(): int { return 30; }
 fn hunters_mark_cooldown(): int { return 3; }
 fn venom_arrow_power(): int { return 18; }
 /** Poison Venom Arrow puts on the foe. */
@@ -81,7 +84,9 @@ fn panacea_mist_cooldown(): int { return 3; }
 /** Poison on each foe. */
 fn acid_flask_poison(): int { return 6; }
 fn acid_flask_cooldown(): int { return 4; }
-/** Energizer Potion: each stack of Energized multiplies attack and defense by 100 + this, over 100. */
+/** Last Breath: no number; the ally stays up at 1 HP. */
+fn last_breath_cooldown(): int { return 3; }
+/** Energizer Potion (the Alchemist's in v0.0.7 and v0.0.8): each stack of Energized multiplies attack and defense by 100 + this, over 100. */
 fn energizer_bonus_percent(): int { return 15; }
 fn energizer_cooldown(): int { return 3; }
 /** Energizer Potion also heals the ally this much. */
@@ -115,6 +120,12 @@ fn reap_power(): int { return 30; }
 /** Reap takes 1/this of its damage off max HP too. */
 fn reap_wound_divisor(): int { return 3; }
 fn reap_cooldown(): int { return 3; }
+/** Spirit Link (the Shaman's until v0.0.9): the share of the Grim Reaper's damage that goes to the linked foe, and of the foe's healing that goes to the Grim Reaper. */
+fn spirit_link_damage_percent(): int { return 50; }
+fn spirit_link_heal_percent(): int { return 75; }
+fn spirit_link_rounds(): int { return 2; }
+fn spirit_link_cooldown(): int { return 3; }
+/** Soul Siphon, the Grim Reaper's until v0.0.9 (no one has it now). */
 fn soul_siphon_power(): int { return 25; }
 /** Heals this percent of the HP the foe lost. */
 fn soul_siphon_drain_percent(): int { return 50; }
@@ -140,40 +151,46 @@ fn bulwark_cooldown(): int { return 3; }
 
 // Shaman
 
-/** Healing Rain heals each ally this much at once (placeholder), then regen per round, for how many rounds. */
-fn healing_rain_heal(): int { return 25; }
-fn healing_rain_regen(): int { return 25; }
-fn healing_rain_rounds(): int { return 5; }
-fn healing_rain_cooldown(): int { return 5; }
-/** Spirit Link: the share of the Shaman's damage that goes to the linked foe, and of the foe's healing that goes to the Shaman. */
-fn spirit_link_damage_percent(): int { return 50; }
-fn spirit_link_heal_percent(): int { return 75; }
-fn spirit_link_rounds(): int { return 2; }
-fn spirit_link_cooldown(): int { return 3; }
+/** Attune: each stack of Attuned multiplies an ally's attack and defense by 100 + this, over 100. */
+fn attune_bonus_percent(): int { return 25; }
+fn attune_cooldown(): int { return 3; }
+/** Healing Rain cleanses every ally, then heals each this much. */
+fn healing_rain_heal(): int { return 30; }
+fn healing_rain_cooldown(): int { return 4; }
 fn totem_hp(): int { return 40; }
 fn totem_defense(): int { return 32; }
-/** The team's attack and defense go up this percent while the totem stands. */
-fn totem_bonus_percent(): int { return 35; }
+/** The totem heals every ally this much at the end of each round while it stands. */
+fn totem_heal(): int { return 5; }
 /** Rounds the Totem move cools down once the totem is destroyed. */
 fn totem_cooldown(): int { return 3; }
 
 // Assassin
 
-fn backstab_power(): int { return 40; }
+fn backstab_power(): int { return 36; }
 fn backstab_cooldown(): int { return 3; }
 fn execution_power(): int { return 20; }
 fn execution_cooldown(): int { return 4; }
 /** Predator: this percent more damage against a target below `predator_line_percent` of its max HP. */
 fn predator_bonus_percent(): int { return 50; }
-fn predator_line_percent(): int { return 50; }
+fn predator_line_percent(): int { return 75; }
 
 // Bard
 
-fn allegro_cooldown(): int { return 3; }
-/** Rounds of Largo's attack down. */
+/** Overture: the team's attack goes up this percent in round 1... */
+fn overture_percent(): int { return 30; }
+/** ...and this much less at each round end, down to nothing. */
+fn overture_fade_percent(): int { return 10; }
+fn allegro_cooldown(): int { return 4; }
+/** Rounds of Heckle's taunt and defense down on the foe. */
+fn heckle_rounds(): int { return 2; }
+fn heckle_cooldown(): int { return 4; }
+/** Curtains reaches foes below this percent of their max HP. */
+fn curtains_line_percent(): int { return 50; }
+fn curtains_cooldown(): int { return 5; }
+/** Largo (the Bard's until v0.0.9; no one has it now): rounds of attack down. */
 fn largo_rounds(): int { return 2; }
 fn largo_cooldown(): int { return 3; }
-/** Crescendo: each stack (a foe character fallen) adds this percent to the team's attack... */
+/** Crescendo (the Bard's passive until v0.0.9): each stack (a foe character fallen) adds this percent to the team's attack... */
 fn crescendo_attack_percent(): int { return 17; }
 /** ...and this percent to its defense. */
 fn crescendo_defense_percent(): int { return 20; }
@@ -200,22 +217,30 @@ fn bone_claw_power(): int { return 10; }
 
 // Vampire
 
-fn bite_power(): int { return 25; }
+fn bite_power(): int { return 30; }
 fn bite_cooldown(): int { return 2; }
-fn hemorrhage_power(): int { return 10; }
-/** Bleed damage per round, and for how many rounds. */
-fn hemorrhage_bleed(): int { return 10; }
+/** Hemorrhage's bleed per round (it has no hit since v0.0.9), and for how many rounds. */
+fn hemorrhage_bleed(): int { return 15; }
 fn hemorrhage_rounds(): int { return 3; }
 fn hemorrhage_cooldown(): int { return 3; }
 /** Sanguine: heals this percent of the HP its damage takes off. */
-fn sanguine_percent(): int { return 30; }
+fn sanguine_percent(): int { return 75; }
+fn crimson_veil_power(): int { return 10; }
+fn crimson_veil_cooldown(): int { return 3; }
 
 // Cryomancer
 
 fn blizzard_power(): int { return 20; }
 fn blizzard_cooldown(): int { return 4; }
-fn frostbite_power(): int { return 20; }
-fn frostbite_cooldown(): int { return 2; }
+/** Icicle Barrage: this many picks, each a hit of this power and a chill. */
+fn icicle_barrage_power(): int { return 10; }
+fn icicle_barrage_picks(): int { return 3; }
+fn icicle_barrage_cooldown(): int { return 3; }
+/** Frostbite (the passive): damage to each chilled or frozen foe at every round end. */
+fn frostbite_damage(): int { return 8; }
+/** Cryosleep (the Frost Giant's until v0.0.9). */
+fn cryosleep_heal(): int { return 15; }
+fn cryosleep_cooldown(): int { return 4; }
 
 // Frost Giant
 
@@ -224,8 +249,6 @@ fn avalanche_cooldown(): int { return 4; }
 /** Rounds of taunt. */
 fn glacial_roar_rounds(): int { return 2; }
 fn glacial_roar_cooldown(): int { return 3; }
-fn cryosleep_heal(): int { return 15; }
-fn cryosleep_cooldown(): int { return 4; }
 
 // Construct
 
@@ -240,7 +263,7 @@ fn lockdown_cooldown(): int { return 4; }
 fn overclock_cut(): int { return 2; }
 fn overclock_cooldown(): int { return 6; }
 /** Ironclad: no one instance of damage takes more than this percent of its max HP. */
-fn ironclad_cap_percent(): int { return 25; }
+fn ironclad_cap_percent(): int { return 22; }
 
 // Stormbringer
 
@@ -277,6 +300,9 @@ fn trick_blade_silence_turns(): int { return 1; }
 fn puppet_percent(): int { return 33; }
 /** Turns Puppeteer cools down once the puppet falls. */
 fn puppeteer_cooldown(): int { return 5; }
+/** Pandemonium: a hit of this power on every foe, and a stack of Chaos on each. */
+fn pandemonium_power(): int { return 10; }
+fn pandemonium_cooldown(): int { return 3; }
 
 // Shared: chill and freeze (docs/effects.md#chill-and-freeze)
 

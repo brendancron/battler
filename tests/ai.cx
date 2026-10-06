@@ -7,8 +7,8 @@ import { Pick, score } from "battler/agents/scoring";
 import { best } from "battler/agents/greedy";
 import { planned } from "battler/agents/tactician";
 import { random_pick } from "battler/agents/random";
-import { hex, taunt, panacea, heal_block, barrier, poison, energized, energized_stat } from "battler/content/effects";
-import { cleave, smite, guard, lay_on_hands, prayer, purify, sanctuary, hex_move, brimstone, acid_flask, greater_health_potion_move, energize_move, energizer_potion, flurry_of_blows, soul_siphon, reap, backstab } from "battler/content/moves";
+import { hex, taunt, panacea, heal_block, barrier, poison, energized, energized_stat, attuned_stat } from "battler/content/effects";
+import { cleave, smite, guard, lay_on_hands, prayer, purify, sanctuary, hex_move, brimstone, acid_flask, greater_health_potion_move, energize_move, energizer_potion, attune, flurry_of_blows, soul_siphon, reap, backstab } from "battler/content/moves";
 import { basic_attack, damage } from "battler/core/move";
 import { cleave_power, prayer_heal, purify_heal, flurry_power, flurry_picks, soul_siphon_power, potion_heal, potion_line_percent, acid_flask_poison, brimstone_power, backstab_power } from "battler/content/tuning";
 import { duel, who, slot } from "support";
@@ -230,6 +230,15 @@ fn energized_is_worth_what_it_adds_to_attack_and_defense() {
     var b = duel(["A", "B"], ["C"]);
     match score(b, slot(0, 0), energizer_potion(), at(slot(0, 1))) {
         Option.Some(s) => { assert(s == 2 * (energized_stat(100, 1) - 100), "one stack's gain, on attack and on defense"); }
+        Option.None => { assert(false, "scored"); }
+    }
+}
+
+@test
+fn attuned_is_worth_what_it_adds_to_each_ally() {
+    var b = duel(["A", "B"], ["C"]);
+    match score(b, slot(0, 0), attune(), Choice.NoTarget) {
+        Option.Some(s) => { assert(s == 2 * 2 * (attuned_stat(100, 1) - 100), "one stack's gain, on attack and defense, for each of the two"); }
         Option.None => { assert(false, "scored"); }
     }
 }

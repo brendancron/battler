@@ -21,24 +21,21 @@ come later.)
 ## The Shaman's totem
 
 - Summoned by the Shaman's Totem move ([characters.md](characters.md#shaman)).
-  It's a minion, and it doesn't take turns: it just stands there giving its
-  bonus.
+  It's a minion, and it doesn't take turns: it just stands there.
 - Has its own HP pool, and is fairly squishy.
-- While it stands, every character on the Shaman's team has **+35% attack and
-  +35% defense** (25% until v0.0.4). This is its own multiplier (× 1.35), separate from the
-  × 1.5 stat ups and downs ([effects.md](effects.md)), and it multiplies with
-  them.
-- The bonus is an **aura** on the totem, Totem's Blessing
-  ([effects.md](effects.md#auras)), not a buff on each ally: it reaches
-  everyone on the team while the totem stands, including anyone who joins
-  later (a resurrected ally, a skeleton), and nothing done to an ally can
-  take it off. It can't be dispelled or stolen from the totem, and a second
-  totem doesn't add to it. (Until v0.0.3 each ally had its own copy as a
-  buff.)
-- When it's destroyed, the bonus ends.
+- **It taunts** for as long as it stands: its targeting tier is 1
+  ([targeting.md](targeting.md)), so foes' single-target moves have to pick
+  it (or another taunting character) first, unless they ignore targeting. The
+  taunt is part of the totem: it can't be dispelled or stolen.
+- **It heals every ally 5** (placeholder) at the end of each round while it
+  stands: everyone on its team standing then, the Shaman and the totem
+  included. The heal is an effect on the totem, so it ends when the totem is
+  destroyed.
+- Until v0.0.9 it had no taunt or heal, and gave the team **+35% attack and
+  defense** instead, as an aura, Totem's Blessing (25% until v0.0.4).
 - Foes can target it like a character: single-target moves can pick it
   (targeting tiers apply to it as to anyone), and area moves hit it along with
-  everyone else. Killing it is how a foe ends the bonus.
+  everyone else. Killing it is how a foe ends the taunt and the heal.
 - It's an ally like any other for its team: single-target heals, shields and
   buffs can pick it, and team-wide ones (Prayer, Healing Rain) reach it too.
 - One totem at a time, and it stays until it's destroyed. The Totem move can't
@@ -47,7 +44,7 @@ come later.)
   3 of the Shaman's turns after the totem falls. A totem that stands for many
   turns doesn't use those turns up; the cooldown only begins once it's gone.
 - Its HP and defense are placeholders: **40 HP and 32 defense** (43 with its
-  own aura). From v0.0.4 it takes a deliberate effort to kill rather than
+  own aura until v0.0.9). From v0.0.4 it takes a deliberate effort to kill rather than
   falling to a stray hit; it had 20 HP before, and 40 defense without an
   aura until v0.0.3.
 

@@ -263,6 +263,14 @@ fn fall_instead(target: Character): Option<Character> {
     return Option.None;
 }
 
+/** The target's effect that keeps it standing at 1 HP (the Alchemist's Last Breath), if it has one. */
+fn staying_up(target: Character): Option<Effect> {
+    for (e in target.effects) {
+        if (e.stays_up) { return Option.Some(e); }
+    }
+    return Option.None;
+}
+
 /**
  * Uses up one charge of a barrier on the target, if it has one: the hit is
  * blocked. Answers whether it was.
@@ -320,6 +328,21 @@ fn execute(battle: Battle, action: Action): List<EventKind> {
             var rest = soak(battle, target, amount);
             var before = target.hp;
             target.take(rest);
+            // A Last Breath: the target stays up at 1 HP and the potion is used up. It never falls,
+            // so nothing that keys off a fall happens, and it comes before a Fae Bargain.
+            if (target.fainted() && target.max_health() > 0) {
+                match staying_up(target) {
+                    Option.Some(fx) => {
+                        target.hp = 1;
+                        battle.say(target.name + " took " + str(rest) + " (1/" + str(target.max_health()) + ").");
+                        out.push(EventKind.Damaged(target, source, amount, direct, before - 1));
+                        battle.say(target.name + "'s " + fx.kind + " kept it standing!");
+                        for (k in execute(battle, Action.RemoveEffect(target, fx.kind))) { out.push(k); }
+                        return out;
+                    }
+                    Option.None => {}
+                }
+            }
             // A Fae Bargain: the ally falls instead, and the target stands with its HP. Nothing
             // that keys off the target falling happens; the ally's fall is a fall like any other.
             if (target.fainted()) {
@@ -349,7 +372,7 @@ fn execute(battle: Battle, action: Action): List<EventKind> {
                 battle.say(target.name + " can't be healed (" + healing_blocker(target) + ").");
                 return out;
             }
-            // A Spirit Link on the target sends a share of the healing it would take to the Shaman.
+            // A Spirit Link on the target sends a share of the healing it would take to the linker.
             var taken = amount;
             if (taken > target.max_health() - target.hp) { taken = target.max_health() - target.hp; }
             for (e in target.effects) {

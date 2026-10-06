@@ -10,7 +10,7 @@ import { Fighter, jester, cleric } from "battler/content/roster";
 import { moves_at } from "battler/game/game";
 import {
     wither_power, skeleton_hp, bone_claw_power, puppet_percent, puppeteer_cooldown, final_offering_power,
-    sanguine_percent, bite_power, hemorrhage_power, hemorrhage_bleed, hemorrhage_rounds, death_throes_power
+    sanguine_percent, bite_power, hemorrhage_bleed, hemorrhage_rounds, death_throes_power
 } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
@@ -211,9 +211,10 @@ fn hemorrhage_bleeds_and_the_vampire_heals_from_each_tick() {
     add(b, [Action.AddEffect(v, sanguine())]);
     sturdy(foe);
     v.take(90);
-    var d = damage(v, foe, hemorrhage_power());
+    // No hit since v0.0.9: just the bleed.
+    var d = 0;
     use_move(engine(), b, slot(0, 0), hemorrhage(), at(slot(1, 0)));
-    assert(foe.hp == 1000 - d && has_effect(foe, "Bleed"), "hit and bleeding");
+    assert(foe.hp == 1000 && has_effect(foe, "Bleed") && v.hp == 10, "bleeding, no hit, so nothing to feed on yet");
     var vamp = v.hp;
     announce(engine(), b, EventKind.RoundEnded);
     assert(foe.hp == 1000 - d - hemorrhage_bleed(), "a tick");
