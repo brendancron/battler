@@ -52,9 +52,10 @@ characters, speed tiers, targeting, effects and draft. The design lives in `docs
 ```
 cx run                                       # play: coin flip, draft, battle vs the AI
 cx test                                      # the test suite (tests/*.cx)
-cx run src/balance.cx -- --games 200 --ai Greedy,Tactician --jobs 4   # balance checker
-cx run src/balance.cx -- --games 200 --ai Marshal --order Keeper,Planner --jobs 8   # order AIs
-cx run src/balance.cx -- --games forever --ai Greedy,Tactician --jobs 8 quiet   # until Ctrl+C
+cx run src/balance.cx -- --games 2000 --ai Marshal --jobs 8   # balance checker: characters, fresh teams every game
+cx run src/balance.cx -- --games 200 --ai Greedy,Tactician --repeat 4 --jobs 4   # compare move AIs in whole blocks
+cx run src/balance.cx -- --games 200 --ai Marshal --order Keeper,Planner --repeat 8 --jobs 8   # order AIs
+cx run src/balance.cx -- --games forever --ai Marshal --jobs 8 quiet   # until Ctrl+C
 cx run src/balance.cx -- --compare v0.0.1 v0.0.2   # what a balance patch changed
 ```
 

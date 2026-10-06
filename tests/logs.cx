@@ -46,10 +46,11 @@ fn the_folder_is_everything_before_the_last_slash() {
 
 @test
 fn a_game_record_is_one_line_of_json() {
-    var line = game_record(sample(1), 1700000000);
+    var line = game_record(sample(1), 1700000000, 4);
     assert(line.index_of("\n") < 0, "one line");
     var d = parse_json(line);
     assert(number(field(d, "time")) == 1700000000.0 && number(field(d, "winner")) == 1.0 && number(field(d, "rounds")) == 12.0, "fields");
+    assert(number(field(d, "repeat")) == 4.0, "the drawing's repeat");
     match field(d, "home") {
         Data.Seq(names) => { assert(names.len() == 2, "the home team"); }
         _ => { assert(false, "home is a list"); }

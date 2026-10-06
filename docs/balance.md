@@ -40,38 +40,67 @@ Battles are 4 against 4, so Elo is applied team-style:
 ## Keeping the numbers fair
 
 Two things can make a number lie: the AIs playing it, and the side it was on.
-Games are played in **blocks of 4** that cancel both out:
+Each **drawing** of two random teams can play a **block** of games that
+cancels both out:
 
 1. Two random teams, X and Y, and two AIs, A and B, drawn from the AIs allowed
    for the run (they may be the same one).
 2. A plays X against B with Y, and A plays Y against B with X, each twice with
-   home and away swapped.
+   home and away swapped: 4 games.
 
 Each team is played by each AI equally often, and each AI plays each team from
 each side. So one block rates the characters, archetypes, mixes and sides (AI
 skill cancels out) and the AIs (team strength and home priority cancel out)
 at the same time. AIs are only rated in games between two different AIs.
 
-Allowing only the strongest AI gives the cleanest character numbers; allowing
-several also rates the AIs against each other.
-
 Order AIs, which arrange each team into slots before the battle, are a
 separate kind of AI ([ordering.md](ordering.md#in-the-balance-checker)).
-They're drawn from their own list, `--order LIST`, and a block with two
-different order AIs doubles to 8 games, so each team is ordered by each one.
+They're drawn from their own list, `--order LIST`, and with two different
+order AIs the block doubles to 8 games, so each team is ordered by each one.
+
+### Repeats: how many games a drawing plays
+
+A block's games share their two teams, so their results move together: the
+stronger team wins most of them (81% of a block's games in v0.0.8, and 36%
+of 8-game blocks were 8-0). For the characters a block is worth far fewer
+than its games: over v0.0.8's first 6,480 games in 8-game blocks, a
+character's win rate varied about 4 times as much as independent games
+would make it, so they were worth about 1,600. What teaches the most about
+the characters is many different teams, not the same two again.
+
+So **`--repeat N`** sets how many games each drawing plays (default **1**).
+The checker builds the drawing's whole block as above (4 or 8 games' worth
+of who plays which team, from which side, with which order AIs), shuffles
+it, and plays the first N, going round again if N is bigger than the block.
+
+| `--repeat` | A drawing plays | Good for |
+|---|---|---|
+| 1 (default) | one game: the side, the AIs and the order AIs drawn at random | the characters: every game counts in full |
+| 2 | two games of the block | the characters, with more games on each team |
+| 4 | the 4-game block | comparing move AIs: team strength cancels within every drawing |
+| 8 | the 8-game block (with more than one order AI) | comparing order AIs |
+
+With N short of a whole block, AI comparisons still work, as every
+arrangement is equally likely, but team strength only cancels on average
+rather than within each drawing, so they need more games. Character runs
+want 1; AI runs want a whole block. Allowing only the strongest AI gives the
+cleanest character numbers.
+
+Each game in the log records its drawing's `repeat`.
 
 ## Running it
 
 ```
-cx run src/balance.cx -- [--games N] [--ai Greedy,Random] [--order Keeper,Planner] [--version V] [--file PATH] [--jobs N] [quiet]
+cx run src/balance.cx -- [--games N] [--repeat N] [--ai Greedy,Random] [--order Keeper,Planner] [--version V] [--file PATH] [--jobs N] [quiet]
 cx run src/balance.cx -- --compare A B
 ```
 
 | Option | Default | Meaning |
 |--------|---------|---------|
-| `--games N` | 100 | games to play this run, rounded up to whole blocks (4 games, or 8 with more than one order AI); `0` just prints the report from the file; `forever` plays until cancelled (see [Running overnight](#running-overnight)) |
-| `--ai LIST` | Greedy | the AIs that may be drawn for a block |
-| `--order LIST` | Keeper | the order AIs that may be drawn for a block ([ordering.md](ordering.md#in-the-balance-checker)); with more than one, each block draws two different ones and plays 8 games |
+| `--games N` | 100 | games to play this run, rounded up to whole drawings (`--repeat` games each); `0` just prints the report from the file; `forever` plays until cancelled (see [Running overnight](#running-overnight)) |
+| `--repeat N` | 1 | games each drawing of two teams plays ([Repeats](#repeats-how-many-games-a-drawing-plays)): 1 for the characters, 4 (or 8 with more than one order AI) to compare AIs |
+| `--ai LIST` | Greedy | the AIs that may be drawn for a drawing |
+| `--order LIST` | Keeper | the order AIs that may be drawn for a drawing ([ordering.md](ordering.md#in-the-balance-checker)); with more than one, each drawing draws two different ones |
 | `--version V` | `balance_version()` in tuning.cx | the [balance version](#versions) whose totals to add to or report |
 | `--file PATH` | balance-data/*version*/balance.json | where the running totals live; the folder is made if it isn't there |
 | `--compare A B` | | print how versions A and B differ and write the compare page ([Versions](#versions)) |
@@ -96,7 +125,7 @@ Each AI is a generation: it plays like the one before it plus one new idea,
 and lives in its own file. A better way to play goes into a **new** AI, not
 into an old one, so the old ones stay as fixed benchmarks and the balance
 checker can show whether each generation really beats the last
-(`--ai Tactician,Guardian`). Random (0), Greedy (1), Tactician (2),
+(`--ai Tactician,Guardian --repeat 4`, in whole blocks). Random (0), Greedy (1), Tactician (2),
 Guardian (3), Marshal (4). Guardian replaced the Strategist, which counted what a
 cooldown costs (waste × cooldown ÷ 4) and didn't beat the Tactician by
 enough to keep.
@@ -187,12 +216,16 @@ with menus for the two versions (the two newest by default, or
 version's report page links to it. It reads each version's data script, so
 during a run a refresh shows the latest.
 
-The standard error is widened for the blocks: games come in blocks of 4 with
-the same two teams, so their results move together, and over v0.0.1's 409k
-games a character's win rate varied 2.5-2.8 times as much as independent
-games would make it. The checker counts it as 3 (`block_spread` in
-`src/balance/versions.cx`). Two runs of the same tuning should show about 1
-row in 20 as likely and almost none as real.
+The standard error is widened for the blocks: games used to come in blocks
+of 4 with the same two teams, so their results move together, and over
+v0.0.1's 409k games a character's win rate varied 2.5-2.8 times as much as
+independent games would make it. The checker counts it as 3 (`block_spread`
+in `src/balance/versions.cx`). Two runs of the same tuning should show about
+1 row in 20 as likely and almost none as real. Games played with
+`--repeat 1` vary about as independent games do, so for them this is
+cautious: a change needs about 3 times the games it really would to show as
+real. (The totals don't record how their games were drawn, so the compare
+can't tell.)
 
 How many games a new version needs: each game has 8 of the 23 characters, so
 a version with N games has about 0.35 N per character, and against v0.0.1's
@@ -255,14 +288,14 @@ and the game log are each written whole or not at all.
 
 The games are played by **worker processes**, each the checker itself run as
 `cx run src/balance.cx -- --worker --games K --ai LIST`, while the main
-process only records them. A worker plays its blocks and prints one line per
+process only records them. A worker plays its drawings and prints one line per
 game (`src/balance/jobs.cx`); it never reads or writes the totals file. The
 main process reads every worker at once and records each game as it arrives,
 so the totals still live in one place and Elo is still applied one game at a
 time; only the order games are recorded in changes. Run it from the project's
 root, with `cx` on `PATH`.
 
-`--jobs N` runs N **lanes** at once, sharing the games out in whole blocks.
+`--jobs N` runs N **lanes** at once, sharing the games out in whole drawings.
 Each lane runs workers one after another, each playing at most 1000 games
 (`worker_games` in `src/balance.cx`), so a normal run is one worker per lane.
 

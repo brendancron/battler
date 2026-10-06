@@ -132,16 +132,19 @@ the foe's order until the battle starts.
 Order AIs have their own list, `--order LIST`, beside `--ai LIST`, and their
 own ratings ([balance.md](balance.md#keeping-the-numbers-fair)):
 
-1. With more than one order AI in the list, a block draws two different ones,
-   P and Q, as well as the two teams and the two move AIs.
-2. It plays the usual 4 games with team X ordered by P and team Y by Q, then
-   the same 4 with X ordered by Q and Y by P: **8 games**.
+1. With more than one order AI in the list, a drawing draws two different
+   ones, P and Q, as well as the two teams and the two move AIs.
+2. Its block is the usual 4 games with team X ordered by P and team Y by Q,
+   then the same 4 with X ordered by Q and Y by P: **8 games**.
 3. With one order AI in the list (the default, `Keeper`), both teams use it
    and the block is the usual 4 games.
+4. A drawing plays `--repeat` games of its block, shuffled (default 1;
+   [balance.md](balance.md#repeats-how-many-games-a-drawing-plays)). To
+   compare order AIs, play whole blocks: `--repeat 8`.
 
-Each team is ordered by each order AI equally often, so team strength cancels
-out, and order AIs are rated, like move AIs, only in games between two
-different ones. Each game asks the order AIs afresh, so an order AI with
+With whole blocks, each team is ordered by each order AI equally often, so
+team strength cancels out, and order AIs are rated, like move AIs, only in
+games between two different ones. Each game asks the order AIs afresh, so an order AI with
 some randomness in it is sampled in every game.
 
 Each game in the log (`balance.games.jsonl`) names its order AIs
