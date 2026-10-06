@@ -2,7 +2,7 @@ import { Character, Effect, Event, EventKind, Action, trigger_id, in_chain, max_
 import { pow } from "../core/maths";
 import { damage } from "../core/move";
 import {
-    rage_c, rage_a, rage_b, last_rites_percent, vigil_heal, potion_line_percent, energize_bonus_percent, energizer_bonus_percent, attune_bonus_percent, totem_heal, totem_cooldown,
+    rage_c, rage_a, rage_b, last_rites_percent, guard_defense_percent, vigil_heal, potion_line_percent, energize_bonus_percent, energizer_bonus_percent, attune_bonus_percent, totem_heal, totem_cooldown,
     predator_bonus_percent, predator_line_percent, shield_decay, crescendo_attack_percent, crescendo_defense_percent, overture_percent, overture_fade_percent, marked_percent, frostbite_damage, sanguine_percent, chill_rounds, ironclad_cap_percent,
     puppeteer_cooldown, riposte_power, spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds, soul_harvest_heal, death_throes_power
 } from "tuning";
@@ -77,12 +77,17 @@ fn taunt(rounds: int): Effect {
     return timed(e, rounds);
 }
 
-fn guard_label(owner: Character, fx: Effect): string { return "Taunt, DEF up (" + str(fx.rounds) + ")"; }
+fn guard_label(owner: Character, fx: Effect): string { return "Taunt, DEF +" + str(guard_defense_percent()) + "% (" + str(fx.rounds) + ")"; }
 
-/** The Paladin's Guard: a taunt that also gives defense up (× 1.5) while it lasts. */
+fn guard_defense(owner: Character, fx: Effect, defense: int): int { return defense * (100 + guard_defense_percent()) / 100; }
+
+/**
+ * The Paladin's Guard: a taunt that also raises defense by `guard_defense_percent`
+ * while it lasts. Its own multiplier, not a stat step (it was × 1.5, a step, until v0.0.9).
+ */
 fn guarding_taunt(rounds: int): Effect {
     var e = taunt(rounds);
-    e.defense_steps = 1;
+    e.scale_defense = guard_defense;
     e.label = guard_label;
     return e;
 }

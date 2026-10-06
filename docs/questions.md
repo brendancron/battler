@@ -57,7 +57,7 @@ Set aside on purpose; can be added without changing what exists.
 - **Witch passive and third move** ([characters.md](characters.md)). The Witch
   has Brimstone and Hex for now.
 - **Grim Reaper third move** ([characters.md](characters.md)). It has Reap and
-  Spirit Link for now.
+  Soul Siphon for now.
 - **Warlock passive and third move** ([characters.md](characters.md#warlock)).
   It has Writhing Depths (it was the Pyromancer's Inferno) and The Final
   Offering.

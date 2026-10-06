@@ -13,7 +13,7 @@ import {
     brimstone_power, brimstone_drain_percent, acid_flask_poison, energize_bonus_percent, energizer_heal, panacea_mist_heal, disarming_palm_power,
     crippling_blow_power, crippling_blow_turns, flurry_power, flurry_picks, reap_power, reap_wound_divisor,
     soul_siphon_power, soul_siphon_drain_percent, writhing_depths_power, shield_bash_power, bulwark_shield,
-    healing_rain_heal, hunters_mark_power, marked_percent, crimson_veil_power, sanguine_percent, backstab_power, execution_power, resurrection_percent, predator_line_percent
+    healing_rain_heal, guard_defense_percent, hunters_mark_power, marked_percent, crimson_veil_power, sanguine_percent, backstab_power, execution_power, resurrection_percent, predator_line_percent
 } from "battler/content/tuning";
 import { duel, who, slot, logged, has_effect, sturdy } from "support";
 
@@ -162,7 +162,7 @@ fn guard_taunts_the_user_with_defense_up() {
     use(b, slot(0, 1), "guard", Choice.NoTarget);
     var picks = b.targetable_foes(slot(1, 0));
     assert(picks.len() == 1 && picks[0].index == 1, "only the guard");
-    assert(who(b, slot(0, 1)).current_defense() > 100, "and defense up");
+    assert(who(b, slot(0, 1)).current_defense() == 100 * (100 + guard_defense_percent()) / 100, "and defense up by its percent");
 }
 
 @test

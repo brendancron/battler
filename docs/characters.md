@@ -118,13 +118,14 @@ Rejected so far:
 
 Tank ([archetypes.md](archetypes.md)). Normal ([speed.md](speed.md); Slow
 until v0.0.9). All numbers here are placeholders to tinker with.
+Stats (placeholders): attack 85, defense 137 (90 and 156 until v0.0.9).
 
 **v0.0.9: protect sooner, close harder.** In v0.0.8 it won 78% of games
 over in 4 rounds and 58% past round 15, but only **32% in rounds 9-14**
 (the other tanks held 41-56% there), and 20% there against the Cleric. Slow,
 its Guard always came after the foes had acted, so its team lost characters
 mid-game, and once thinned out it couldn't close (Smite did about 29 a
-turn). So it's Normal now, and Smite hits harder; Guard's cooldown went up
+turn). So it's Normal now, and Smite hits harder (25); Guard's cooldown went up
 by one to pay for the earlier, more useful taunt.
 
 **Passive: Last Rites.** When the Paladin falls, it resurrects the first
@@ -143,15 +144,16 @@ fallen ally in slot order at 50% of its max HP ([fainting.md](fainting.md#resurr
 
 | Move         | Target              | Effect |
 |--------------|---------------------|--------|
-| Smite        | one foe             | Dispels the foe's buffs ([effects.md](effects.md#removing-and-moving-effects)), then a direct hit, power 30 (20 until v0.0.9; [damage.md](damage.md)). It used to add attack down for 2 rounds too. Cooldown 2. |
-| Guard        | the user            | Taunt with defense up: the Paladin's targeting tier goes to 1 ([targeting.md](targeting.md)) and its defense is × 1.5, both for 2 rounds. Cooldown 4 (3 until v0.0.9). |
+| Smite        | one foe             | Dispels the foe's buffs ([effects.md](effects.md#removing-and-moving-effects)), then a direct hit, power 25 (20 until v0.0.9; 30 in v0.0.9's first games, about 74% for the Paladin; [damage.md](damage.md)). It used to add attack down for 2 rounds too. Cooldown 2. |
+| Guard        | the user            | Taunt with defense up: the Paladin's targeting tier goes to 1 ([targeting.md](targeting.md)) and its defense is × 1.25 (× 1.5 until v0.0.9), both for 2 rounds. Cooldown 4 (3 until v0.0.9). |
 | Lay on Hands | one ally, or itself | Heals the ally 15 and the Paladin 15. Used on itself, the Paladin heals 30. |
 
 - Smite dispels first, so a shield or barrier is gone before the hit lands.
   Every buff goes, taunts included: Smiting a taunting Tank frees the
   Paladin's team to pick anyone. Passives can't be dispelled.
 - Guard's taunt and defense up are one effect that counts down at the end of
-  each round, like other effects ([effects.md](effects.md)). Used in round 1,
+  each round, like other effects ([effects.md](effects.md)). Since v0.0.9 the defense up is its own × 1.25, not a stat step, so it
+  multiplies with any other defense up rather than replacing it. Used in round 1,
   it lasts through the end of round 2. Other taunts, like the Knight's, don't
   raise defense.
 - Before this, the defense up came from the passive, Steadfast (defense ×1.5
@@ -160,7 +162,7 @@ fallen ally in slot order at 50% of its max HP ([fainting.md](fainting.md#resurr
 ### Ranger
 
 Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
-Stats (placeholders): attack 115, defense **45** (55 until v0.0.9).
+Stats (placeholders): attack 112, defense **45** (attack 115 and defense 55 until v0.0.9).
 
 **Strength and weakness (v0.0.9).** It out-tempos and snipes: Fast, hard
 hitting, and Keen Eye lets no taunt protect its target. But it can't take a
@@ -204,7 +206,7 @@ Rejected so far:
 
 Support ([archetypes.md](archetypes.md)).
 
-Stats (placeholders): attack 67, defense 72 (70 and 75 until v0.0.6; defense 81 until v0.0.4).
+Stats (placeholders): attack 67, defense 69 (72 until v0.0.9; 70 and 75 until v0.0.6; defense 81 until v0.0.4).
 
 **Passive: Vigil.** At the end of each round, heals the ally with the lowest
 HP for 8. The Cleric counts as an ally, and a tie goes to the lowest slot.
@@ -261,16 +263,17 @@ Hex details:
 ### Alchemist
 
 Support ([archetypes.md](archetypes.md)).
-Stats (placeholders): attack 75, defense 85 (80 until v0.0.8; 60 before that).
+Stats (placeholders): attack 75, defense 90 (85 until v0.0.9, 80 until v0.0.8; 60 before that).
 
 Each move brews something and throws it. Its potions go to its allies (or
-the Alchemist itself) and its acid goes on the foes. Since v0.0.9 its
-strength is timing: Last Breath, thrown on the ally about to fall, turns a
-knockout into one more turn at 1 HP, which suits a Barbarian best. Its healing
-is light (Panacea Mist's 15 per ally): it can't keep a team up the way the
-Cleric can; that's the weakness. (In v0.0.7 and v0.0.8 its strength was
-scaling, through Energizer Potion; that stacking buff is the Shaman's
-Attune now.)
+the Alchemist itself) and its acid goes on the foes. Since v0.0.7 its
+strength is scaling: Energizer Potion builds up an ally a little at a time
+for the rest of the battle, so the longer the fight goes, the more the
+Alchemist has added. Its healing is light: Panacea Mist's 15 per ally, and
+Energizer Potion's 30 on the ally it energizes. It can't keep a team up the
+way the Cleric can; that's the weakness. (v0.0.9's first design swapped
+Energizer for Last Breath, below; it came back in testing. The Shaman's
+Attune is a team-wide cousin of Energized.)
 
 **Passive: Panacea Supply.** At the start of the battle, every teammate (the
 Alchemist included) gets a Panacea, which blocks the next debuff that would
@@ -282,8 +285,8 @@ more. (Until v0.0.3 it topped up every round, to one each.)
 | Move             | Target   | Potion |
 |------------------|----------|--------|
 | Panacea Mist     | all allies, itself too | Heals each ally 15 and gives it a Panacea, on top of any it holds. Cooldown 3. |
-| Last Breath | one ally, or itself | A potion that holds off death for the round: if damage would knock the ally out before the round ends, it **doesn't fall: it's left at 1 HP** instead. Unused, it wears off at the end of the round. Cooldown 3. (v0.0.9; it replaced Energizer Potion, whose stacking buff went to the Shaman's Attune.) |
-| ~~Energizer Potion~~ | one ally, or itself | Until v0.0.9: a stack of Energized: each stack multiplies the ally's attack and defense by 1.15 (1.1 until v0.0.8) for the rest of the battle. Then heals the ally 30 (placeholder; since v0.0.8). Cooldown 3. |
+| ~~Last Breath~~ | one ally, or itself | *In v0.0.9's first design only; the Alchemist went back to Energizer Potion in testing, and no one has Last Breath now.* A potion that holds off death for the round: if damage would knock the ally out before the round ends, it **doesn't fall: it's left at 1 HP** instead. Unused, it wears off at the end of the round. Cooldown 3. (v0.0.9; it replaced Energizer Potion, whose stacking buff went to the Shaman's Attune.) |
+| Energizer Potion | one ally, or itself | A stack of Energized: each stack multiplies the ally's attack and defense by 1.15 (1.1 until v0.0.8) for the rest of the battle. Then heals the ally 30 (placeholder; since v0.0.8). Cooldown 3. |
 | Acid Flask       | all foes | 6 poison on every foe standing ([effects.md](effects.md#poison)): 21 damage each over six rounds. Cooldown 4 (3 until v0.0.7). |
 
 Its basic attack is Bottle Bash (power 8). The 15, 6 poison and cooldowns
@@ -375,6 +378,7 @@ v0.0.2 it healed itself 8 instead.)
 ### Grim Reaper
 
 Warrior ([archetypes.md](archetypes.md)). Slow ([speed.md](speed.md)).
+Stats (placeholders): attack 105, defense 65 (115 and 70 until v0.0.9).
 
 **Passive: Soul Harvest.** Any foe that falls while the Grim Reaper is
 standing leaves no corpse: it's removed at once, so the foe can never be
@@ -399,31 +403,17 @@ Reaper heals 20 (placeholder) for each one. (The name is a placeholder.)
 | Move        | Target  | Effect |
 |-------------|---------|--------|
 | Reap        | one foe | A scythe hit, power 30 ([damage.md](damage.md)). A third of the damage also comes off the foe's max HP. |
-| Spirit Link | one foe | Links the Grim Reaper to the foe for 2 rounds: 50% of the damage the Grim Reaper takes goes to the foe instead, and 75% of the healing the foe takes goes to the Grim Reaper. Cooldown 3. (The Shaman's until v0.0.9.) |
+| Soul Siphon | one foe | A hit, power 25. The Grim Reaper heals half the damage dealt. Cooldown 2. |
 | —           |         | To be designed. |
 
 Max HP lost to Reap can't be healed back: a foe Reaped for 30 has max HP 90,
 so heals stop at 90. Every character still starts at 100 max HP; this is the
 only way it goes down.
 
-Until v0.0.9 the second move was **Soul Siphon** (one foe, a hit of power
-25; the Grim Reaper healed half the HP the foe lost). Spirit Link took its
-place.
-
-- **Spirit Link is two ends,** a buff on the Grim Reaper and a debuff on the
-  foe. The link holds only while both do: dispelling the Grim Reaper's end or
-  cleansing the foe's ends the whole link, and so does either wearing off. A
-  Panacea on the foe blocks its end, so the link never holds. The Grim
-  Reaper's end can't be stolen.
-- **The damage share** is taken after any cap and before shields, and reaches
-  the foe as indirect damage from the Grim Reaper (so barriers and parries
-  don't stop it). It's lost if the foe has fallen.
-- **The healing share** is of the healing the foe could take: healing past
-  its max HP isn't shared. Heal Block on the foe stops the heal, and so the
-  share; healing past the Grim Reaper's max HP is lost. It stacks with Soul
-  Harvest's heals.
-- The 50%, 75%, 2 rounds and cooldown are placeholders, carried over from the
-  Shaman.
+Soul Siphon heals half the HP the foe actually lost, rounded down: hitting a
+foe with 10 HP left for 30 heals 5, not 15. (v0.0.9's first design gave the
+Grim Reaper the Shaman's Spirit Link in its place; it went back to Soul
+Siphon in testing, and no one has Spirit Link now.)
 
 ### Warlock
 
@@ -479,7 +469,7 @@ v0.0.3, 70 until v0.0.4).
 
 **Reworked in v0.0.9.** The Shaman is in the Warlock's niche: frail and
 Slow, but devastating if its team keeps it alive. Every Attune makes the
-whole team a quarter stronger for good, so a Shaman left alone for a few
+whole team half again stronger for good, so a Shaman left alone for a few
 turns snowballs its team out of reach; a foe that gets to it early stops
 that. The totem draws the foes' attacks away from it and keeps healing, and
 Healing Rain wipes the slate. It
@@ -492,7 +482,7 @@ short games): it's Slow and frail, and its old kit only paid off late.
 
 | Move         | Target     | Effect |
 |--------------|------------|--------|
-| Attune       | all allies, itself too | A stack of Attuned on every ally: attack and defense × 1.25 for the rest of the battle, stacking like the Alchemist's Energized (two stacks × 1.56, three × 1.95). Cooldown 3. |
+| Attune       | all allies, itself too | A stack of Attuned on every ally: attack and defense × 1.5 for the rest of the battle, stacking like the Alchemist's Energized (two stacks × 2.25, three × 3.38), and a heal of 10 at once. Cooldown 3. |
 | Totem        | —          | Summons a totem that **taunts** while it stands ([targeting.md](targeting.md)) and **heals every ally 5** at the end of each round. No aura any more. One at a time; the cooldown (3) starts when it's destroyed. |
 | Healing Rain | all allies | Cleanses every ally's debuffs, then heals each a flat 30. No regen any more. Cooldown 4. |
 
@@ -501,9 +491,9 @@ short games): it's Slow and frail, and its old kit only paid off late.
   cleanse, dispel and steal. They're separate effects, so an ally with both
   multiplies by each. It reaches every ally standing, minions (the totem)
   included, but not one that joins later.
-- **× 1.25 a stack is meant to be powerful** (the user's call, over a
-  starting × 1.07): it's the Shaman's whole payoff, as Writhing Depths is the
-  Warlock's.
+- **× 1.5 a stack is meant to be powerful** (the user's call: × 1.07 to
+  start, × 1.25 in v0.0.9's first games, where the Shaman won about 26%):
+  it's the Shaman's whole payoff, as Writhing Depths is the Warlock's.
 - **The totem's taunt** puts it at targeting tier 1 for as long as it
   stands, like the Knight's Shield Bash but with no end. It's part of the
   totem, so it can't be dispelled (Smite doesn't free the foes from it) or
@@ -514,8 +504,8 @@ short games): it's Slow and frail, and its old kit only paid off late.
   as with the Cleric's Purify.
 - Until v0.0.9: Healing Rain was the first move (a heal of 25 at once, then
   regen 25 for 5 rounds), the totem's aura gave the team +35% attack and
-  defense, and the second move was **Spirit Link**, which went to the
-  [Grim Reaper](#grim-reaper).
+  defense, and the second move was **Spirit Link**. It went to the Grim
+  Reaper in v0.0.9's first design, then out of the game.
 
 ### Knight
 
@@ -537,8 +527,8 @@ also goes up earlier in the round.
 ### Assassin
 
 Rogue ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
-Stats (placeholders): attack 77, defense 52 (attack 83 until v0.0.9, 88
-until v0.0.6).
+Stats (placeholders): attack 80, defense 52 (attack 83 until v0.0.9, 88
+until v0.0.6; 77 in v0.0.9's first games).
 
 **Passive: Predator.** The Assassin deals **50% more damage** (placeholder; 25% before v0.0.2)
 to a target **below 75%** of its max HP (50% until v0.0.9). It finishes off
@@ -583,7 +573,7 @@ Support ([archetypes.md](archetypes.md)). Fast ([speed.md](speed.md)).
 Stats (placeholders): attack 70, defense 65 (75 until v0.0.9).
 
 The Bard is the **early spike**: its team is at its strongest in the first
-three rounds and the Bard's power fades after that. It sets up a fast start
+rounds and the Bard's power fades after that. It sets up a fast start
 (everyone acting sooner and hitting harder) so its team can take the lead
 before the foes get going, and it has little to offer a long fight. It
 controls tempo through speed tiers ([speed.md](speed.md)), and is Fast, so it
@@ -596,9 +586,10 @@ an early support, and the Bard topped every balance run (56-57% in v0.0.8,
 
 **Passive: Overture.** A team aura ([effects.md](effects.md#auras)) that
 opens the battle strong and fades: the whole team, the Bard included, has
-× 1.3 attack in round 1, × 1.2 in round 2 and × 1.1 in round 3, and nothing
-from round 4 on. Kills don't matter. (The 1.3, the 0.1 a round and attack
-only are placeholders.)
+× 1.4 attack in round 1, × 1.3 in round 2, × 1.2 in round 3 and × 1.1 in
+round 4, and nothing from round 5 on. Kills don't matter. (The 1.4, the 0.1
+a round and attack only are placeholders; in v0.0.9's testing it also
+opened at × 1.3 and × 1.5.)
 
 - **It's an aura, so it lives with the Bard.** While the Bard is down the
   bonus stops. It fades at each round end the Bard sees standing, so a Bard
@@ -785,7 +776,7 @@ standing ([damage.md](damage.md)). (The name and the 25 are placeholders.)
 Warrior ([archetypes.md](archetypes.md)). Normal ([speed.md](speed.md)).
 
 The Vampire is frail and lives on what it drains. Its defense is low, a
-little above the Rogues' (placeholder: attack 107, defense 62; attack 115
+little above the Rogues' (placeholder: attack 102, defense 62; attack 115
 until v0.0.9, defense 50 until v0.0.2), so it takes a lot from
 each hit, and gets its staying power from healing it back with every hit it
 deals. It wins one-on-ones the way Warriors should, but through sustain
@@ -850,7 +841,7 @@ Rejected so far:
 ### Cryomancer
 
 Mage ([archetypes.md](archetypes.md)). Normal ([speed.md](speed.md)).
-Stats (placeholders): attack 110, defense 55.
+Stats (placeholders): attack 95, defense 55 (attack 110 until v0.0.9).
 
 The Cryomancer brings chill and freeze ([effects.md](effects.md#chill-and-freeze)).
 

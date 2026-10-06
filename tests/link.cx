@@ -8,7 +8,7 @@ import { spirit_link } from "battler/content/moves";
 import { spirit_link_damage_percent, spirit_link_heal_percent, spirit_link_rounds } from "battler/content/tuning";
 import { duel, who, slot, has_effect, sturdy } from "support";
 
-// The Grim Reaper's Spirit Link (docs/characters.md#grim-reaper; the Shaman's until v0.0.9).
+// Spirit Link, the Shaman's until v0.0.9 and no one's now; the effect is tested on a Grim Reaper.
 
 fn add(b: Battle, fx: List<Action>) { perform(engine(), b, "test", fx); }
 

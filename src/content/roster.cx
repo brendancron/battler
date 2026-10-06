@@ -3,8 +3,8 @@ import { MoveDef, basic_attack } from "../core/move";
 import { rage, last_rites, keen_eye, vigil, inner_peace, soul_harvest, death_throes, predator, panacea_supply, fae_bargain, sanguine, cold_aura, ironclad, shadowed, overture, frostbite } from "effects";
 import {
     cleave, smite, guard, lay_on_hands, aimed_shot, hunters_mark, venom_arrow, prayer, purify, sanctuary, brimstone, hex_move,
-    acid_flask, last_breath_move, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows,
-    reap, writhing_depths, shield_bash, bulwark, healing_rain, attune, spirit_link, backstab, execution, resurrection, totem_move,
+    acid_flask, energizer_potion, panacea_mist, disarming_palm, crippling_blow, flurry_of_blows,
+    reap, soul_siphon, writhing_depths, shield_bash, bulwark, healing_rain, attune, backstab, execution, resurrection, totem_move,
     final_offering, allegro, heckle, curtains_move, fairy_ring, pixie_dust, wither, raise_dead, bite, hemorrhage, crimson_veil, blizzard, icicle_barrage,
     avalanche, glacial_roar, cryosleep_move, piston_slam, lockdown, overclock, thunderstorm, chain_lightning, shuriken, shadow_strike, plunder, pistol_shot, en_garde,
     trick_blade, puppeteer, pandemonium
@@ -30,13 +30,13 @@ fn fighter(archetype: string, body: Character, passive: List<Effect>, moves: Lis
 
 fn barbarian(): Fighter { return fighter("Warrior", character("Barbarian", 125, 72, Tier.Normal), [rage()], [basic_attack("Axe Swing", 12), cleave()]); }
 
-fn ranger(): Fighter { return fighter("Rogue", character("Ranger", 115, 45, Tier.Fast), [keen_eye()], [basic_attack("Quick Shot", 10), aimed_shot(), hunters_mark(), venom_arrow()]); }
+fn ranger(): Fighter { return fighter("Rogue", character("Ranger", 112, 45, Tier.Fast), [keen_eye()], [basic_attack("Quick Shot", 10), aimed_shot(), hunters_mark(), venom_arrow()]); }
 
-fn cleric(): Fighter { return fighter("Support", character("Cleric", 67, 72, Tier.Normal), [vigil()], [basic_attack("Holy Spark", 8), prayer(), purify(), resurrection()]); }
+fn cleric(): Fighter { return fighter("Support", character("Cleric", 67, 69, Tier.Normal), [vigil()], [basic_attack("Holy Spark", 8), prayer(), purify(), resurrection()]); }
 
-fn paladin(): Fighter { return fighter("Tank", character("Paladin", 90, 156, Tier.Normal), [last_rites()], [basic_attack("Mace Strike", 8), smite(), guard(), lay_on_hands()]); }
+fn paladin(): Fighter { return fighter("Tank", character("Paladin", 85, 137, Tier.Normal), [last_rites()], [basic_attack("Mace Strike", 8), smite(), guard(), lay_on_hands()]); }
 
-fn grim_reaper(): Fighter { return fighter("Warrior", character("Grim Reaper", 115, 70, Tier.Slow), [soul_harvest()], [basic_attack("Scythe Slash", 10), reap(), spirit_link()]); }
+fn grim_reaper(): Fighter { return fighter("Warrior", character("Grim Reaper", 105, 65, Tier.Slow), [soul_harvest()], [basic_attack("Scythe Slash", 10), reap(), soul_siphon()]); }
 
 fn monk(): Fighter {
     return fighter("Warrior", character("Monk", 95, 60, Tier.Normal), [inner_peace()], [basic_attack("Jab", 10), disarming_palm(), crippling_blow(), flurry_of_blows()]);
@@ -45,7 +45,7 @@ fn monk(): Fighter {
 fn witch(): Fighter { return fighter("Mage", character("Witch", 112, 48, Tier.Normal), [], [basic_attack("Curse Bolt", 10), brimstone(), hex_move()]); }
 
 fn alchemist(): Fighter {
-    return fighter("Support", character("Alchemist", 75, 85, Tier.Normal), [panacea_supply()], [basic_attack("Bottle Bash", 8), panacea_mist(), last_breath_move(), acid_flask()]);
+    return fighter("Support", character("Alchemist", 75, 90, Tier.Normal), [panacea_supply()], [basic_attack("Bottle Bash", 8), panacea_mist(), energizer_potion(), acid_flask()]);
 }
 
 fn warlock(): Fighter { return fighter("Mage", character("Warlock", 110, 45, Tier.Slow), [], [basic_attack("Void Bolt", 10), writhing_depths(), final_offering()]); }
@@ -55,7 +55,7 @@ fn knight(): Fighter { return fighter("Tank", character("Knight", 85, 140, Tier.
 fn shaman(): Fighter { return fighter("Support", character("Shaman", 65, 55, Tier.Slow), [], [basic_attack("Spirit Strike", 8), attune(), totem_move(), healing_rain()]); }
 
 fn assassin(): Fighter {
-    return fighter("Rogue", character("Assassin", 77, 52, Tier.Fast), [predator()], [basic_attack("Quick Cut", 10), backstab(), execution()]);
+    return fighter("Rogue", character("Assassin", 80, 52, Tier.Fast), [predator()], [basic_attack("Quick Cut", 10), backstab(), execution()]);
 }
 
 fn bard(): Fighter { return fighter("Support", character("Bard", 70, 65, Tier.Fast), [overture()], [basic_attack("Lute Strike", 8), allegro(), heckle(), curtains_move()]); }
@@ -64,9 +64,9 @@ fn fairy(): Fighter { return fighter("Support", character("Fairy", 65, 62, Tier.
 
 fn necromancer(): Fighter { return fighter("Mage", character("Necromancer", 105, 60, Tier.Slow), [death_throes()], [basic_attack("Bone Spike", 10), wither(), raise_dead()]); }
 
-fn vampire(): Fighter { return fighter("Warrior", character("Vampire", 107, 62, Tier.Normal), [sanguine()], [basic_attack("Claw", 10), bite(), hemorrhage(), crimson_veil()]); }
+fn vampire(): Fighter { return fighter("Warrior", character("Vampire", 102, 62, Tier.Normal), [sanguine()], [basic_attack("Claw", 10), bite(), hemorrhage(), crimson_veil()]); }
 
-fn cryomancer(): Fighter { return fighter("Mage", character("Cryomancer", 110, 55, Tier.Normal), [frostbite()], [basic_attack("Ice Shard", 10), blizzard(), icicle_barrage(), cryosleep_move()]); }
+fn cryomancer(): Fighter { return fighter("Mage", character("Cryomancer", 95, 55, Tier.Normal), [frostbite()], [basic_attack("Ice Shard", 10), blizzard(), icicle_barrage(), cryosleep_move()]); }
 
 fn frost_giant(): Fighter {
     return fighter("Tank", character("Frost Giant", 93, 150, Tier.Slow), [cold_aura()], [basic_attack("Frozen Fist", 8), avalanche(), glacial_roar()]);

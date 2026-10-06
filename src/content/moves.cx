@@ -19,7 +19,7 @@ import {
     reap_power, reap_wound_divisor, reap_cooldown, soul_siphon_power, soul_siphon_drain_percent,
     soul_siphon_cooldown, writhing_depths_power, writhing_depths_cooldown, shield_bash_power,
     shield_bash_rounds, shield_bash_cooldown, bulwark_shield, bulwark_cooldown,
-    healing_rain_heal, healing_rain_cooldown, attune_cooldown, resurrection_percent,
+    healing_rain_heal, healing_rain_cooldown, attune_cooldown, attune_heal, resurrection_percent,
     resurrection_cooldown, spirit_link_cooldown, totem_hp, totem_defense, backstab_power, backstab_cooldown,
     execution_power, execution_cooldown, final_offering_power, final_offering_cooldown, allegro_cooldown, heckle_rounds, heckle_cooldown, curtains_line_percent, curtains_cooldown,
     largo_rounds, largo_cooldown, fairy_ring_cooldown, wither_power, wither_cooldown,
@@ -308,7 +308,7 @@ fn energizer_potion_apply(battle: Battle, user: Character, target: Target): List
     return [];
 }
 
-/** One ally, or the Alchemist: a stack of Energized, for the rest of the battle, and a heal. (The Alchemist's in v0.0.7 and v0.0.8.) */
+/** One ally, or the Alchemist: a stack of Energized, for the rest of the battle, and a heal. */
 fn energizer_potion(): MoveDef {
     return MoveDef { name: "Energizer Potion", shape: TargetShape.SingleAlly, apply: energizer_potion_apply, cooldown: energizer_cooldown(), basic: false };
 }
@@ -321,7 +321,7 @@ fn last_breath_apply(battle: Battle, user: Character, target: Target): List<Acti
     return [];
 }
 
-/** One ally, or the Alchemist: until the end of the round, damage that would knock it out leaves it at 1 HP instead. */
+/** One ally, or the user: until the end of the round, damage that would knock it out leaves it at 1 HP instead. (The Alchemist's in v0.0.9's first design; no one has it now.) */
 fn last_breath_move(): MoveDef {
     return MoveDef { name: "Last Breath", shape: TargetShape.SingleAlly, apply: last_breath_apply, cooldown: last_breath_cooldown(), basic: false };
 }
@@ -500,14 +500,17 @@ fn attune_apply(battle: Battle, user: Character, target: Target): List<Action> {
     var out: List<Action> = [];
     match target {
         Target.Spread(allies) => {
-            for (a in allies) { out.push(Action.AddEffect(a, attuned())); }
+            for (a in allies) {
+                out.push(Action.AddEffect(a, attuned()));
+                out.push(Action.Heal(a, attune_heal()));
+            }
         }
         _ => {}
     }
     return out;
 }
 
-/** All allies, the Shaman included: a stack of Attuned each, for the rest of the battle. */
+/** All allies, the Shaman included: a stack of Attuned each, for the rest of the battle, and a small heal. */
 fn attune(): MoveDef {
     return MoveDef { name: "Attune", shape: TargetShape.AllAllies, apply: attune_apply, cooldown: attune_cooldown(), basic: false };
 }
@@ -609,7 +612,7 @@ fn spirit_link_apply(battle: Battle, user: Character, target: Target): List<Acti
     return [];
 }
 
-/** One foe: linked to the user (the Grim Reaper), which passes it part of its damage and takes part of its healing. */
+/** One foe: linked to the user, which passes it part of its damage and takes part of its healing. (The Shaman's until v0.0.9; no one has it now.) */
 fn spirit_link(): MoveDef {
     return MoveDef { name: "Spirit Link", shape: TargetShape.SingleFoe, apply: spirit_link_apply, cooldown: spirit_link_cooldown(), basic: false };
 }

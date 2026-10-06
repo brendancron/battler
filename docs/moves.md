@@ -45,13 +45,13 @@ Placeholders until balancing; the live values are in `src/content/tuning.cx`.
 | Witch       | Brimstone      | 5 |
 | Witch       | Hex            | 4 |
 | Alchemist   | Panacea Mist   | 3 |
-| Alchemist   | Last Breath    | 3 |
+| Alchemist   | Energizer Potion | 3 |
 | Alchemist   | Acid Flask     | 4 |
 | Monk        | Disarming Palm | 2 |
 | Monk        | Crippling Blow | 2 |
 | Monk        | Flurry of Blows| 3 |
 | Grim Reaper | Reap           | 3 |
-| Grim Reaper | Spirit Link    | 3 |
+| Grim Reaper | Soul Siphon    | 2 |
 | Warlock     | Writhing Depths | 5 |
 | Warlock     | The Final Offering | 5 |
 | Shaman      | Attune         | 3 |

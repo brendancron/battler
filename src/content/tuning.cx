@@ -29,10 +29,12 @@ fn rage_b(): float { return 1.75; }
 
 // Paladin
 
-fn smite_power(): int { return 30; }
+fn smite_power(): int { return 25; }
 fn smite_cooldown(): int { return 2; }
 /** Rounds of taunt with defense up. */
 fn guard_rounds(): int { return 2; }
+/** Guard's defense up: this percent more defense while it lasts (× 1.5, a stat step, until v0.0.9). */
+fn guard_defense_percent(): int { return 25; }
 fn guard_cooldown(): int { return 4; }
 /** Heals the ally this much, and the Paladin this much too. */
 fn lay_on_hands_heal(): int { return 15; }
@@ -84,9 +86,9 @@ fn panacea_mist_cooldown(): int { return 3; }
 /** Poison on each foe. */
 fn acid_flask_poison(): int { return 6; }
 fn acid_flask_cooldown(): int { return 4; }
-/** Last Breath: no number; the ally stays up at 1 HP. */
+/** Last Breath (the Alchemist's in v0.0.9's first design; no one has it now): no number; the ally stays up at 1 HP. */
 fn last_breath_cooldown(): int { return 3; }
-/** Energizer Potion (the Alchemist's in v0.0.7 and v0.0.8): each stack of Energized multiplies attack and defense by 100 + this, over 100. */
+/** Energizer Potion: each stack of Energized multiplies attack and defense by 100 + this, over 100. */
 fn energizer_bonus_percent(): int { return 15; }
 fn energizer_cooldown(): int { return 3; }
 /** Energizer Potion also heals the ally this much. */
@@ -120,12 +122,12 @@ fn reap_power(): int { return 30; }
 /** Reap takes 1/this of its damage off max HP too. */
 fn reap_wound_divisor(): int { return 3; }
 fn reap_cooldown(): int { return 3; }
-/** Spirit Link (the Shaman's until v0.0.9): the share of the Grim Reaper's damage that goes to the linked foe, and of the foe's healing that goes to the Grim Reaper. */
+/** Spirit Link (the Shaman's until v0.0.9; no one has it now): the share of the linker's damage that goes to the linked foe, and of the foe's healing that goes to the linker. */
 fn spirit_link_damage_percent(): int { return 50; }
 fn spirit_link_heal_percent(): int { return 75; }
 fn spirit_link_rounds(): int { return 2; }
 fn spirit_link_cooldown(): int { return 3; }
-/** Soul Siphon, the Grim Reaper's until v0.0.9 (no one has it now). */
+/** Soul Siphon. */
 fn soul_siphon_power(): int { return 25; }
 /** Heals this percent of the HP the foe lost. */
 fn soul_siphon_drain_percent(): int { return 50; }
@@ -152,8 +154,10 @@ fn bulwark_cooldown(): int { return 3; }
 // Shaman
 
 /** Attune: each stack of Attuned multiplies an ally's attack and defense by 100 + this, over 100. */
-fn attune_bonus_percent(): int { return 25; }
+fn attune_bonus_percent(): int { return 50; }
 fn attune_cooldown(): int { return 3; }
+/** Attune also heals every ally this much at once. */
+fn attune_heal(): int { return 10; }
 /** Healing Rain cleanses every ally, then heals each this much. */
 fn healing_rain_heal(): int { return 30; }
 fn healing_rain_cooldown(): int { return 4; }
@@ -177,7 +181,7 @@ fn predator_line_percent(): int { return 75; }
 // Bard
 
 /** Overture: the team's attack goes up this percent in round 1... */
-fn overture_percent(): int { return 30; }
+fn overture_percent(): int { return 40; }
 /** ...and this much less at each round end, down to nothing. */
 fn overture_fade_percent(): int { return 10; }
 fn allegro_cooldown(): int { return 4; }
