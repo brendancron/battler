@@ -1,28 +1,55 @@
 import { Command, Stdio, status } from "std/os/Process";
-import { Console, Stream } from "std/io/Console";
+import { Console, Stream, read_line } from "std/io/Console";
 import { Throw } from "std/core/Error";
 
 /**
  * Whether standard input is a terminal a person is typing at, rather than a
- * pipe or file. Where there's no `test` to ask (Windows), it answers false
- * and the game prints the plain transcript.
+ * pipe or file. Unix has `test -t 0` to ask; Windows has no `test`, so there
+ * PowerShell answers. If neither can be asked, it answers false and the game
+ * prints the plain transcript.
  */
 fn interactive(): bool {
     var yes = false;
+    var unix = true;
     run {
         yes = status(Command.new("test").arg("-t").arg("0").stdin(Stdio.Inherit)) == 0;
+    } handle Throw {
+        final ctl throw(e) { unix = false; }
+    }
+    if (!unix) { return windows_console(); }
+    return yes;
+}
+
+/** Whether PowerShell says standard input is a console, not redirected; false if PowerShell can't be run. */
+fn windows_console(): bool {
+    var yes = false;
+    run {
+        var asked = Command.new("powershell").arg("-NoProfile").arg("-NonInteractive").arg("-Command").arg("exit [int][Console]::IsInputRedirected");
+        yes = status(asked.stdin(Stdio.Inherit)) == 0;
     } handle Throw {
         final ctl throw(e) {}
     }
     return yes;
 }
 
-/** Waits for any single key, without Enter and without echoing it. */
+/**
+ * Waits for a key. Where `stty` can put the terminal in key-at-a-time mode,
+ * any key will do and isn't echoed. Where it can't (Windows), it waits for
+ * Enter.
+ */
 fn wait_key() {
-    // Read a key at a time with no echo, then put the terminal back.
-    status(Command.new("stty").arg("-icanon").arg("-echo").stdin(Stdio.Inherit));
-    stdin().read(1);
-    status(Command.new("stty").arg("icanon").arg("echo").stdin(Stdio.Inherit));
+    var raw = true;
+    run {
+        status(Command.new("stty").arg("-icanon").arg("-echo").stdin(Stdio.Inherit));
+    } handle Throw {
+        final ctl throw(e) { raw = false; }
+    }
+    if (raw) {
+        stdin().read(1);
+        status(Command.new("stty").arg("icanon").arg("echo").stdin(Stdio.Inherit));
+    } else {
+        read_line();
+    }
 }
 
 /** Clears the terminal and moves the cursor to the top left. */
